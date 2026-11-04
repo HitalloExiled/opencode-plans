@@ -23,7 +23,7 @@ const EN: Table = {
   "filters.label": "Plan filters",
   "status.active": "Active",
   "status.done": "Done",
-  "status.abandoned": "Abandoned",
+  "status.abandoned": "Archived",
   "status.superseded": "Superseded",
   "filter.active": "Active",
   "filter.done": "Done",
