@@ -217,7 +217,7 @@ export function PlansView() {
         if (!found) setSelectedID(null);
       }
     } catch (cause) {
-      if (gen === loadGen) setError(formatError(cause));
+      if (gen === loadGen) setError(String(cause));
     } finally {
       if (gen === loadGen) setLoading(false);
     }
@@ -252,17 +252,8 @@ export function PlansView() {
     setDetail(null);
   };
 
-  const formatError = (cause: unknown): string => {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    // The Electron main process keeps its GUI entry loaded across window
-    // reloads; a contract change needs a full app restart to reach it.
-    return message.includes("SchemaError") || message.includes("Expected ")
-      ? t("error.contract")
-      : message;
-  };
-
   const showError = (title: string, cause: unknown) => {
-    const message = formatError(cause);
+    const message = cause instanceof Error ? cause.message : String(cause);
     setError(message);
     ctx.toast.show({ title, description: message, variant: "error" });
   };
