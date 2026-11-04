@@ -30,26 +30,24 @@ const CSS = `
 .plans-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
 .plans-count { font-size: 11px; color: var(--v2-text-text-muted); }
 .plans-actions { display: flex; align-items: center; gap: 6px; }
-.plans-filters { display: flex; align-items: center; gap: 8px; }
-.plans-scope {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11.5px;
+.plans-filters { display: flex; flex-direction: column; gap: 8px; }
+.plans-toggles { display: flex; align-items: center; gap: 4px; }
+.plans-toggle {
+  border: 0;
+  background: transparent;
   color: var(--v2-text-text-muted);
-}
-.plans-select {
-  flex: 1; min-width: 0;
-  background: var(--v2-background-bg-layer-02);
-  color: var(--v2-text-text-base);
-  border: 1px solid var(--v2-border-border-muted);
+  padding: 4px 9px;
   border-radius: 6px;
-  padding: 5px 6px;
-  font-size: 12px;
+  font-size: 11.5px;
+  cursor: pointer;
 }
-.plans-select:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
+.plans-toggle:hover { color: var(--v2-text-text-base); background: var(--v2-overlay-simple-overlay-hover); }
+.plans-toggle.is-active {
+  color: var(--v2-text-text-base);
+  background: var(--v2-overlay-simple-overlay-pressed);
+  font-weight: 600;
+}
+.plans-toggle:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
 .plans-error {
   padding: 8px 10px;
   border-radius: 6px;
@@ -78,7 +76,6 @@ const CSS = `
 .plan-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .plan-updated { font-size: 10.5px; color: var(--v2-text-text-faint); }
 .plan-card-title { font-weight: 600; font-size: 13px; line-height: 1.3; overflow-wrap: anywhere; }
-.plan-card-project { font-size: 11px; color: var(--v2-text-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plan-status {
   display: inline-flex;
   align-items: center;
@@ -138,6 +135,7 @@ export function PlansView() {
   const t = useT();
 
   const [plans, setPlans] = createSignal<Plan[]>([]);
+  const [query, setQuery] = createSignal("");
   const [selectedID, setSelectedID] = createSignal<string | null>(null);
   const [detail, setDetail] = createSignal<Plan | null>(null);
   const [statusFilter, setStatusFilter] = createSignal<"active" | "done" | "all">("active");
@@ -146,6 +144,15 @@ export function PlansView() {
   const [error, setError] = createSignal("");
 
   const selectedPlan = createMemo(() => (selectedID() ? detail() : null));
+
+  const filteredPlans = createMemo(() => {
+    const q = query().trim().toLowerCase();
+    if (!q) return plans();
+    return plans().filter((plan) => {
+      const haystack = [plan.title, plan.body, ...plan.steps.map((step) => step.text)].join("\n").toLowerCase();
+      return haystack.includes(q);
+    });
+  });
 
   const currentSession = () => ctx.sessions.current();
 
@@ -341,7 +348,7 @@ export function PlansView() {
         <div class="plans-title">
           <ctx.ui.Icon name="file-document" size="small" />
           <span>{t("title")}</span>
-          <span class="plans-count">{plans().length}</span>
+          <span class="plans-count">{filteredPlans().length}</span>
         </div>
         <div class="plans-actions">
           <ctx.ui.Button size="small" variant="contrast" icon="plus" busy={saving()} onClick={() => void saveLast()}>
@@ -356,23 +363,46 @@ export function PlansView() {
       </div>
 
       <div class="plans-filters">
-        <span class="plans-scope">{activeProjectName() || t("project")}</span>
-        <select
-          class="plans-select"
-          value={statusFilter()}
-          onChange={(event) => setStatusFilter(event.currentTarget.value as "active" | "done" | "all")}
-        >
-          <option value="active">{t("filter.active")}</option>
-          <option value="done">{t("filter.done")}</option>
-          <option value="all">{t("filter.all")}</option>
-        </select>
+        <ctx.ui.TextInput
+          type="search"
+          label={t("search.label")}
+          placeholder={t("search.placeholder")}
+          value={query()}
+          onInput={setQuery}
+        />
+        <div class="plans-toggles" role="group" aria-label={t("filters.label")}>
+          <button
+            type="button"
+            class="plans-toggle"
+            classList={{ "is-active": statusFilter() === "active" }}
+            onClick={() => setStatusFilter("active")}
+          >
+            {t("filter.active")}
+          </button>
+          <button
+            type="button"
+            class="plans-toggle"
+            classList={{ "is-active": statusFilter() === "done" }}
+            onClick={() => setStatusFilter("done")}
+          >
+            {t("filter.done")}
+          </button>
+          <button
+            type="button"
+            class="plans-toggle"
+            classList={{ "is-active": statusFilter() === "all" }}
+            onClick={() => setStatusFilter("all")}
+          >
+            {t("filter.all")}
+          </button>
+        </div>
       </div>
 
       <Show when={error()}>
         <div class="plans-error">{error()}</div>
       </Show>
 
-      <Show when={loading() && plans().length === 0}>
+      <Show when={loading() && filteredPlans().length === 0}>
         <div class="plans-loading">
           <ctx.ui.Loader size="small" /> {t("loading")}
         </div>
@@ -380,14 +410,18 @@ export function PlansView() {
 
       <Show when={!selectedPlan()}>
         <div class="plans-list">
-          <Show when={!loading() && plans().length === 0}>
+          <Show when={!loading() && filteredPlans().length === 0}>
             <div class="plans-empty">
               <ctx.ui.Icon name="file-document" size="large" class="plans-empty-icon" />
-              <div class="plans-empty-title">{t("empty.title")}</div>
-              <div class="plans-empty-hint">{t("empty.hint")}</div>
+              <div class="plans-empty-title">
+                {query().trim() ? t("empty.search") : t("empty.title")}
+              </div>
+              <div class="plans-empty-hint">
+                {query().trim() ? t("empty.searchHint") : t("empty.hint")}
+              </div>
             </div>
           </Show>
-          <For each={plans()}>
+          <For each={filteredPlans()}>
             {(plan) => (
               <button type="button" class="plan-card" onClick={() => select(plan)}>
                 <div class="plan-card-top">
@@ -395,7 +429,6 @@ export function PlansView() {
                   <span class="plan-updated">{formatDate(plan.updatedAt)}</span>
                 </div>
                 <div class="plan-card-title">{plan.title}</div>
-                <div class="plan-card-project">{projectLabel(plan)}</div>
                 <div class="plan-progress-row">
                   <div class="plan-progress">
                     <div class="plan-progress-bar" style={{ width: `${percent(plan)}%` }} />
