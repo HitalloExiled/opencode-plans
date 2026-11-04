@@ -51,8 +51,9 @@ e o `npm run gui:build`).
    ficam `done`, o plano vira `done`.
 4. **Injeta contexto**: agentes fora do Plan recebem um bloco curto com os
    planos ativos do projeto e os passos pendentes do plano da sessão.
-5. **Painel lateral**: lista por projeto, progresso, checklist interativo,
-   ações (concluir, reabrir, arquivar, remover) e Markdown do plano.
+5. **Painel lateral**: lista apenas os planos do **projeto da sessão ativa**,
+   com progresso, checklist interativo, ações (concluir, reabrir, arquivar,
+   remover) e Markdown do plano.
 6. **Salvar o último plano**: `/save-plan` (servidor) e o botão do painel
    usam a última mensagem do agente `plan` na sessão.
 

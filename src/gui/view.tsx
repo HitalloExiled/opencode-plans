@@ -30,7 +30,16 @@ const CSS = `
 .plans-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
 .plans-count { font-size: 11px; color: var(--v2-text-text-muted); }
 .plans-actions { display: flex; align-items: center; gap: 6px; }
-.plans-filters { display: flex; gap: 6px; }
+.plans-filters { display: flex; align-items: center; gap: 8px; }
+.plans-scope {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--v2-text-text-muted);
+}
 .plans-select {
   flex: 1; min-width: 0;
   background: var(--v2-background-bg-layer-02);
@@ -123,18 +132,14 @@ const CSS = `
 }
 `;
 
-type ProjectOption = { id: string; name: string; canonical: string };
-
 export function PlansView() {
   const ctx = usePlugin();
   const api = ctx.main(PlansApi);
   const t = useT();
 
   const [plans, setPlans] = createSignal<Plan[]>([]);
-  const [projects, setProjects] = createSignal<ProjectOption[]>([]);
   const [selectedID, setSelectedID] = createSignal<string | null>(null);
   const [detail, setDetail] = createSignal<Plan | null>(null);
-  const [projectID, setProjectID] = createSignal<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = createSignal<"active" | "done" | "all">("active");
   const [loading, setLoading] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
@@ -146,15 +151,20 @@ export function PlansView() {
 
   const basename = (path: string): string => path.split("/").pop() || path;
 
+  /** The app lists plans for the routed session's project only. */
+  const activeProjectID = (): string | undefined => currentSession()?.project?.id;
+
+  const activeProjectName = (): string => {
+    const project = currentSession()?.project;
+    return project?.name || (project?.worktree ? basename(project.worktree) : "");
+  };
+
   const formatDate = (iso: string): string => {
     const date = new Date(iso);
     return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
   };
 
-  const projectLabel = (plan: Plan): string => {
-    const project = projects().find((item) => item.id === plan.projectID);
-    return project?.name ?? basename(plan.projectDirectory);
-  };
+  const projectLabel = (plan: Plan): string => activeProjectName() || basename(plan.projectDirectory);
 
   const progress = (plan: Plan): { done: number; total: number } => ({
     done: plan.steps.filter((step) => step.status === "done").length,
@@ -168,40 +178,24 @@ export function PlansView() {
 
   const statusClass = (status: PlanStatus): string => `status-${status}`;
 
-  // Default the project filter to the routed session's project.
-  createEffect(() => {
-    const id = currentSession()?.project?.id;
-    if (id && projectID() === undefined) setProjectID(id);
-  });
-
-  // Projects come from opencode itself, never from opencode.db.
-  let projectsGen = 0;
-  createEffect(() => {
-    ctx.sessions.list(); // re-fetch when the open-tab set changes
-    const gen = ++projectsGen;
-    void ctx.client.project
-      .list()
-      .then((list) => {
-        if (gen !== projectsGen) return;
-        setProjects(
-          list.map((project) => ({
-            id: project.id,
-            name: project.name || basename(project.canonical),
-            canonical: project.canonical,
-          })),
-        );
-      })
-      .catch(() => undefined);
-  });
-
   let loadGen = 0;
   const load = async () => {
     const gen = ++loadGen;
-    setLoading(true);
     setError("");
+
+    const projectID = activeProjectID();
+    if (!projectID) {
+      setPlans([]);
+      setSelectedID(null);
+      setDetail(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
     try {
       const list = await api.list({
-        projectID: projectID(),
+        projectID,
         status: statusFilter(),
         limit: 200,
       });
@@ -223,8 +217,10 @@ export function PlansView() {
   };
 
   createEffect(() => {
-    projectID();
+    activeProjectID();
     statusFilter();
+    setSelectedID(null);
+    setDetail(null);
     void load();
   });
 
@@ -360,16 +356,7 @@ export function PlansView() {
       </div>
 
       <div class="plans-filters">
-        <select
-          class="plans-select"
-          value={projectID() ?? ""}
-          onChange={(event) => setProjectID(event.currentTarget.value || undefined)}
-        >
-          <option value="">{t("allProjects")}</option>
-          <For each={projects()}>
-            {(project) => <option value={project.id}>{project.name}</option>}
-          </For>
-        </select>
+        <span class="plans-scope">{activeProjectName() || t("project")}</span>
         <select
           class="plans-select"
           value={statusFilter()}
