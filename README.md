@@ -32,9 +32,9 @@ ln -sfn "$PWD" ~/.config/opencode/plugins/plans
 > vite >= 6 enquanto o build usa vite 5.
 
 Reinicie o OpenCode (ou aguarde o hot-reload). O plugin não precisa de CLI
-externa: tools e GUI leem/gravam o `plans.db` com o `node:sqlite` embutido no
-runtime (in-process, síncrono) — o mesmo backend no processo Bun das tools e no
-processo principal do Electron.
+externa: as tools leem/gravam o `plans.db` com o `node:sqlite` embutido no
+runtime (in-process, síncrono). A GUI fala com o plugin servidor via RPC, então
+não abre o banco nem depende do processo principal do Electron.
 
 O repo `opencode-tools` consome este projeto como **git submodule** em
 `plugins/plans` e faz o symlink via `setup.sh` (que também roda o `npm install`
@@ -111,14 +111,14 @@ PLANS_DB=/tmp/plans-test.db bun -e 'import("./src/store.ts").then(async (m) => {
 ## Estrutura
 
 ```
-index.ts                 registra tools + /save-plan + injeção de contexto
+index.ts                 registra tools + /save-plan + RPC + injeção de contexto
 plans.ts                 definições das tools plans.*
 src/store.ts             camada única: node:sqlite, schema, migrações, SQL
+src/rpc.ts               handlers RPC do servidor (list/read/write)
 src/capture.ts           extrai o último plano do agente Plan da sessão
 src/inject.ts            blocos injetados no Plan e nos demais agentes
-src/gui.tsx              ./gui-experimental → { main, setup }
-src/gui/main.ts          provider IPC (PlansApi) sobre o store
-src/gui/contract.ts      contrato IPC + schemas
+src/gui.tsx              ./gui-experimental → setup
+src/gui/contract.ts      contrato RPC + schemas
 src/gui/setup.tsx        painel, comando e menu
 src/gui/view.tsx         UI SolidJS
 src/gui/i18n.ts          PT-BR / EN-US

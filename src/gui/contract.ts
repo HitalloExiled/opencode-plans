@@ -1,12 +1,13 @@
 /**
- * Plans GUI — IPC contract.
+ * Plans GUI/server contract.
  *
- * Types are declared next to the runtime Effect schemas so the window and the
- * main process stay in lockstep. Only app-provided modules are importable
- * here: `effect` and `@opencode/plugin/gui`.
+ * The window talks to the server plugin over RPC, not to a GUI main process:
+ * the server entry is the process that owns `plans.db` and hot-reloads with
+ * the plugin. That keeps list/read/write on one schema and lets the panel work
+ * even while the desktop's GUI host still has an older main entry loaded.
  */
 
-import { Ipc } from "@opencode/plugin/gui";
+import { Rpc } from "@opencode/schema/rpc";
 import { Schema } from "effect";
 
 /* ------------------------------------------------------------------ */
@@ -45,7 +46,6 @@ export type PlanResult = {
 };
 
 export type ListOptions = {
-  projectID?: string | undefined;
   status?: PlanStatus | "all" | undefined;
   limit?: number | undefined;
 };
@@ -125,7 +125,6 @@ export const planResultSchema = Schema.Struct({
 });
 
 export const listOptionsSchema = Schema.Struct({
-  projectID: optString,
   status: Schema.optional(Schema.Union([planStatusSchema, Schema.Literal("all")])),
   limit: optNum,
 });
@@ -158,17 +157,36 @@ export const statusSchema = Schema.Struct({
 });
 
 /* ------------------------------------------------------------------ */
-/* The Ipc                                                             */
+/* The RPC                                                             */
 /* ------------------------------------------------------------------ */
 
-export const PlansApi = Ipc.define({
-  id: "plans",
+export const PlansRpc = Rpc.define({
+  id: "opencode.plans",
   methods: {
-    status: { output: statusSchema },
-    list: { input: listOptionsSchema, output: Schema.Array(planSchema) },
-    get: { input: Schema.String, output: Schema.optional(planSchema) },
-    update: { input: updateInputSchema, output: planResultSchema },
-    setStep: { input: stepInputSchema, output: planResultSchema },
-    remove: { input: removeInputSchema, output: planResultSchema },
+    status: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({})),
+      output: Schema.toStandardSchemaV1(statusSchema),
+    },
+    list: {
+      input: Schema.toStandardSchemaV1(listOptionsSchema),
+      output: Schema.toStandardSchemaV1(Schema.Array(planSchema)),
+    },
+    get: {
+      input: Schema.toStandardSchemaV1(Schema.String),
+      output: Schema.toStandardSchemaV1(Schema.NullOr(planSchema)),
+    },
+    update: {
+      input: Schema.toStandardSchemaV1(updateInputSchema),
+      output: Schema.toStandardSchemaV1(planResultSchema),
+    },
+    setStep: {
+      input: Schema.toStandardSchemaV1(stepInputSchema),
+      output: Schema.toStandardSchemaV1(planResultSchema),
+    },
+    remove: {
+      input: Schema.toStandardSchemaV1(removeInputSchema),
+      output: Schema.toStandardSchemaV1(planResultSchema),
+    },
   },
+  events: {},
 });

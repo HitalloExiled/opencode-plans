@@ -16,6 +16,8 @@ import type { SessionContext } from "@opencode/plugin/promise/session";
 import { findLastPlanMessage, type SessionMessageLike } from "./src/capture.js";
 import { PLAN_SAVE_INSTRUCTION, renderBuildContext } from "./src/inject.js";
 import { deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
+import { PlansRpc } from "./src/gui/contract.js";
+import { createRpcHandlers } from "./src/rpc.js";
 import { listPlans, planProgress, requireStore, savePlan } from "./src/store.js";
 
 type Ctx = Plugin.Context;
@@ -142,6 +144,7 @@ export default Plugin.define({
     const registrations = await Promise.all([
       registerTools(ctx),
       registerCommand(ctx),
+      ctx.rpc.register(PlansRpc, createRpcHandlers(ctx)),
       ctx.session.hook("context", (event) => injectContext(ctx, event)),
     ]);
 

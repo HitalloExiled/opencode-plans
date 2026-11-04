@@ -1,18 +1,16 @@
 /**
  * Plans GUI — the `./gui-experimental` entry.
  *
- * `main` runs in the desktop main process (Electron): it serves the IPC over
- * plans.db. `setup` runs in the renderer: it registers the "Planos" side
- * panel, the command palette entry and the "+ / New tab" menu entry.
+ * The panel reads and writes plans through the server plugin's RPC
+ * (`PlansRpc`), so there is no GUI main-process data layer: the same
+ * hot-reloaded server process owns plans.db and serves the window.
  */
 
 import { Plugin } from "@opencode/plugin/gui";
-import { main } from "./gui/main";
 import { setup } from "./gui/setup";
 
 const definition = Plugin.define({
   stores: {},
-  main,
   setup,
 });
 

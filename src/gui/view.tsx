@@ -1,15 +1,15 @@
 /**
  * Plans side panel — SolidJS UI.
  *
- * Reads and writes plans over the GUI IPC (`ctx.main(PlansApi)`), the same
- * contract the desktop main process provides over `plans.db`. The panel is a
- * master/detail view: plan cards with status/progress, then a detail with the
- * checklist and the original Markdown.
+ * Reads and writes plans over the server plugin's RPC (`PlansRpc`). The
+ * server owns `plans.db`, so list/read/write share one schema and follow the
+ * plugin's hot reload. The panel is a master/detail view: plan cards with
+ * status/progress, then a detail with the checklist and the original Markdown.
  */
 
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { usePlugin } from "@opencode/plugin/gui";
-import { PlansApi } from "./contract";
+import { PlansRpc } from "./contract";
 import type { Plan, PlanStatus, PlanStep } from "./contract";
 import { useT } from "./i18n";
 
@@ -131,7 +131,6 @@ const CSS = `
 
 export function PlansView() {
   const ctx = usePlugin();
-  const api = ctx.main(PlansApi);
   const t = useT();
 
   const [plans, setPlans] = createSignal<Plan[]>([]);
@@ -186,12 +185,13 @@ export function PlansView() {
   const statusClass = (status: PlanStatus): string => `status-${status}`;
 
   let loadGen = 0;
+  let loadController: AbortController | undefined;
   const load = async () => {
     const gen = ++loadGen;
     setError("");
 
-    const projectID = activeProjectID();
-    if (!projectID) {
+    const session = currentSession();
+    if (!session) {
       setPlans([]);
       setSelectedID(null);
       setDetail(null);
@@ -199,29 +199,33 @@ export function PlansView() {
       return;
     }
 
+    loadController?.abort();
+    const controller = new AbortController();
+    loadController = controller;
     setLoading(true);
+
     try {
-      const list = await api.list({
-        projectID,
-        status: statusFilter(),
-        limit: 200,
-      });
+      const rpc = session.server.client.rpc(PlansRpc);
+      const options = { location: { directory: session.directory }, signal: controller.signal };
+      const list = await rpc.list({ status: statusFilter(), limit: 200 }, options);
       if (gen !== loadGen) return;
       setPlans([...list]);
 
       const id = selectedID();
       if (id) {
-        const found = list.find((plan) => plan.id === id) ?? (await api.get(id));
+        const found = list.find((plan) => plan.id === id) ?? (await rpc.get(id, options));
         if (gen !== loadGen) return;
         setDetail(found ?? null);
         if (!found) setSelectedID(null);
       }
     } catch (cause) {
-      if (gen === loadGen) setError(String(cause));
+      if (gen === loadGen && !controller.signal.aborted) setError(String(cause));
     } finally {
       if (gen === loadGen) setLoading(false);
     }
   };
+
+  onCleanup(() => loadController?.abort());
 
   createEffect(() => {
     activeProjectID();
@@ -260,10 +264,15 @@ export function PlansView() {
 
   const toggleStep = async (step: PlanStep, done: boolean) => {
     const id = selectedID();
-    if (!id) return;
+    const session = currentSession();
+    if (!id || !session) return;
     setSaving(true);
     try {
-      const result = await api.setStep({ id, stepID: step.id, done, sessionID: currentSession()?.id });
+      const rpc = session.server.client.rpc(PlansRpc);
+      const result = await rpc.setStep(
+        { id, stepID: step.id, done, sessionID: session.id },
+        { location: { directory: session.directory } },
+      );
       if (!result.ok) throw new Error(result.error ?? "erro ao atualizar o passo");
       if (result.plan) setDetail(result.plan);
       await load();
@@ -276,10 +285,15 @@ export function PlansView() {
 
   const changeStatus = async (status: PlanStatus) => {
     const id = selectedID();
-    if (!id) return;
+    const session = currentSession();
+    if (!id || !session) return;
     setSaving(true);
     try {
-      const result = await api.update({ id, status, sessionID: currentSession()?.id });
+      const rpc = session.server.client.rpc(PlansRpc);
+      const result = await rpc.update(
+        { id, status, sessionID: session.id },
+        { location: { directory: session.directory } },
+      );
       if (!result.ok) throw new Error(result.error ?? "erro ao atualizar o plano");
       if (result.plan) setDetail(result.plan);
       await load();
@@ -293,7 +307,8 @@ export function PlansView() {
 
   const removeCurrent = async () => {
     const id = selectedID();
-    if (!id) return;
+    const session = currentSession();
+    if (!id || !session) return;
     const ok = await ctx.dialogs.confirm({
       title: t("confirm.remove.title"),
       description: t("confirm.remove.desc"),
@@ -303,7 +318,11 @@ export function PlansView() {
     if (!ok) return;
     setSaving(true);
     try {
-      const result = await api.remove({ id, sessionID: currentSession()?.id });
+      const rpc = session.server.client.rpc(PlansRpc);
+      const result = await rpc.remove(
+        { id, sessionID: session.id },
+        { location: { directory: session.directory } },
+      );
       if (!result.ok) throw new Error(result.error ?? "erro ao remover o plano");
       setSelectedID(null);
       setDetail(null);

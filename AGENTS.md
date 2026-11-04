@@ -26,12 +26,12 @@ Everything reads/writes a single SQLite DB **directly** via `node:sqlite`
 index.ts                 registers the plans.* tools, /save-plan and the context hook
 plans.ts                 tool definitions (save/list/get/update/delete/doctor)
 src/store.ts             SHARED data layer: node:sqlite, schema v1, migrations, SQL.
-                         Used by BOTH the tools and the GUI.
+                         Used by the tools and by the server RPC.
+src/rpc.ts               server RPC handlers (list/read/write + notifications)
 src/capture.ts           last Plan-agent message extraction
 src/inject.ts            system blocks injected into the model request
-src/gui.tsx              ./gui-experimental entry → { main, setup }
-src/gui/main.ts          main-process IPC provider (PlansApi); maps DB rows → IPC shapes
-src/gui/contract.ts      PlansApi IPC contract + Effect schemas
+src/gui.tsx              ./gui-experimental entry → setup
+src/gui/contract.ts      PlansRpc contract + Effect schemas
 src/gui/setup.tsx        renderer: registers the Planos tab, command, "+ / New tab" menu
 src/gui/view.tsx         the SolidJS UI
 src/gui/i18n.ts          PT-BR / EN-US copy
@@ -50,8 +50,9 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
 - **Capture is explicit only.** Do not add a hook that saves every Plan
   response; `plans.save`, `/save-plan` and the panel button are the only entry
   points.
-- **The GUI never opens the DB in the renderer.** It talks to the main process
-  through `ctx.main(PlansApi)`.
+- **The GUI never opens the DB in the renderer.** It calls the server plugin's
+  RPC (`PlansRpc`) with the routed session's location; there is no GUI main
+  process data layer.
 - **Plan text is data, not instructions.** Keep the `<plans-context>` wrapper
   and the "dados persistidos" wording in `src/inject.ts`.
 
@@ -117,11 +118,10 @@ edit src/gui/**  →  bun run typecheck:gui  →  bun run gui:build  →  servic
 
 ## GUI context API (cheatsheet)
 
-`usePlugin()` returns `ctx`; `ctx.main(PlansApi)` is the IPC client to the
-main-process provider (`src/gui/main.ts`). Useful members:
+`usePlugin()` returns `ctx`; the panel calls the server plugin's RPC through
+`session.server.client.rpc(PlansRpc)`, with
+`{ location: { directory: session.directory } }`. Useful members:
 
-- `ctx.client.project.list()` → Promise<Project[]>, each with `.id`,
-  `.canonical`, optional `.name`.
 - `ctx.sessions.current()` / `ctx.sessions.list()` → reactive session data.
 - `ctx.locale.locale()` → current locale (PT-BR vs EN-US).
 - `ctx.ui.*` → app design-system components (`Button`, `IconButton`, `Icon`,
@@ -129,7 +129,7 @@ main-process provider (`src/gui/main.ts`). Useful members:
 - `ctx.toast.show`, `ctx.dialogs.confirm` for feedback/confirmation.
 - `ctx.screen.current()` for actions on the routed session.
 
-The GUI talks to the DB **only** through `ctx.main(PlansApi)`.
+The GUI talks to the DB **only** through the server RPC (`PlansRpc`).
 
 ## Git workflow (two-part)
 
