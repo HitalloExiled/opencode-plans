@@ -110,6 +110,11 @@ edit src/gui/**  →  bun run typecheck:gui  →  bun run gui:build  →  servic
   - Any `level=ERROR`/`WARN` after the rebuild = something broke.
 - To verify the new code is in the deployed bundle, grep
   `dist/gui-experimental.cjs` for a symbol/label you just added.
+- **Contract changes need a full app restart.** The server tools hot-reload,
+  but the Electron main process can keep the old GUI entry across a window
+  reload. After changing `src/gui/main.ts`, `src/gui/contract.ts` or a status
+  enum, quit and reopen OpenCode Desktop. A stale main shows
+  `SchemaError(Expected ...)` in the panel.
 
 ## GUI context API (cheatsheet)
 

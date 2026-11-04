@@ -54,6 +54,8 @@ const EN: Table = {
   "toast.updateError": "Could not update the plan",
   "toast.removed": "Plan deleted",
   "toast.removeError": "Could not delete the plan",
+  "error.contract":
+    "The desktop app is still running an older version of the Plans plugin. Quit and reopen OpenCode Desktop to load the new contract.",
   "confirm.remove.title": "Delete this plan?",
   "confirm.remove.desc": "This removes the plan and its steps from plans.db. It cannot be undone.",
   "confirm.remove.confirm": "Delete",
@@ -100,6 +102,8 @@ const PT: Table = {
   "toast.updateError": "Não foi possível atualizar o plano",
   "toast.removed": "Plano removido",
   "toast.removeError": "Não foi possível remover o plano",
+  "error.contract":
+    "O app desktop ainda está com uma versão antiga do plugin Planos. Feche e reabra o OpenCode Desktop para carregar o novo contrato.",
   "confirm.remove.title": "Remover este plano?",
   "confirm.remove.desc": "Isso remove o plano e seus passos do plans.db. Não pode ser desfeito.",
   "confirm.remove.confirm": "Remover",
