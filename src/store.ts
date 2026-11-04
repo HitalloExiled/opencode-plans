@@ -115,7 +115,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -149,8 +149,27 @@ function apply(db: Db, statements: readonly string[]): void {
   for (const sql of statements) db.prepare(sql).run();
 }
 
+// v2 — `abandoned` became `archived`. Values are rewritten in place so the
+// tool/UI status union has a single spelling.
+const MIGRATION_002 = [`UPDATE plans SET status = 'archived' WHERE status = 'abandoned'`];
+
 export function initSchema(db: Db): void {
   apply(db, BASE_SCHEMA);
+  const current = schemaVersion(db);
+  if (current < 2) {
+    db.prepare("BEGIN").run();
+    try {
+      apply(db, MIGRATION_002);
+      db.prepare("COMMIT").run();
+    } catch (error) {
+      try {
+        db.prepare("ROLLBACK").run();
+      } catch {
+        /* best effort */
+      }
+      throw error;
+    }
+  }
   db.prepare(`PRAGMA user_version = ${SCHEMA_VERSION}`).run();
 }
 
@@ -212,7 +231,7 @@ export async function requireStore(): Promise<Store> {
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
 
-export type PlanStatus = "active" | "done" | "abandoned" | "superseded";
+export type PlanStatus = "active" | "done" | "archived" | "superseded";
 export type StepStatus = "todo" | "done";
 
 export type PlanRow = {
@@ -394,11 +413,11 @@ export function extractTitle(body: string, fallback = "Plan"): string {
 
 /**
  * A plan with no steps is active; a plan whose steps are all done is done.
- * Explicit terminal states (`abandoned`, `superseded`) are never overwritten
+ * Explicit terminal states (`archived`, `superseded`) are never overwritten
  * by the checklist.
  */
 export function deriveStatus(steps: readonly { status: StepStatus }[], current: PlanStatus = "active"): PlanStatus {
-  if (current === "abandoned" || current === "superseded") return current;
+  if (current === "archived" || current === "superseded") return current;
   if (steps.length > 0 && steps.every((step) => step.status === "done")) return "done";
   return "active";
 }

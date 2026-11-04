@@ -89,7 +89,7 @@ const CSS = `
 }
 .plan-status.status-active { color: #4f8cff; background: rgba(79,140,255,.12); }
 .plan-status.status-done { color: #2f9e44; background: rgba(47,158,68,.12); }
-.plan-status.status-abandoned { color: #e8590c; background: rgba(232,89,12,.12); }
+.plan-status.status-archived { color: #e8590c; background: rgba(232,89,12,.12); }
 .plan-status.status-superseded { color: var(--v2-text-text-muted); background: var(--v2-overlay-simple-overlay-pressed); }
 .plan-progress-row { display: flex; align-items: center; gap: 8px; }
 .plan-progress { flex: 1; height: 5px; border-radius: 999px; overflow: hidden; background: var(--v2-overlay-simple-overlay-pressed); }
@@ -500,7 +500,7 @@ export function PlansView() {
                   variant="ghost"
                   icon="outline-hexagonal-warning"
                   disabled={saving()}
-                  onClick={() => void changeStatus("abandoned")}
+                  onClick={() => void changeStatus("archived")}
                 >
                   {t("archive")}
                 </ctx.ui.Button>

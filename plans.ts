@@ -35,7 +35,7 @@ function fail(error: string): ToolResult {
   return { content: `❌ ${error}`, metadata: { rejected: true } };
 }
 
-const STATUS = z.enum(["active", "done", "abandoned", "superseded"]);
+const STATUS = z.enum(["active", "done", "archived", "superseded"]);
 
 function projectID(ctx: Ctx): string {
   return String(ctx.location.project.id);
@@ -278,7 +278,7 @@ export function doctorTool(ctx: Ctx) {
 export function deleteTool(ctx: Ctx) {
   return {
     name: "delete",
-    description: "Permanently delete a persisted plan and its steps. Prefer plans.update with status='abandoned' unless the user asked to delete it.",
+    description: "Permanently delete a persisted plan and its steps. Prefer plans.update with status='archived' unless the user asked to delete it.",
     input: z.object({ id: z.string().min(1) }),
     async execute(input: { id: string }): Promise<ToolResult> {
       try {

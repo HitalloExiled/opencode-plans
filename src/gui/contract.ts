@@ -13,7 +13,7 @@ import { Schema } from "effect";
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
 
-export type PlanStatus = "active" | "done" | "abandoned" | "superseded";
+export type PlanStatus = "active" | "done" | "archived" | "superseded";
 export type StepStatus = "todo" | "done";
 
 export type PlanStep = {
@@ -90,7 +90,7 @@ const optNum = Schema.optional(Schema.Number);
 export const planStatusSchema = Schema.Union([
   Schema.Literal("active"),
   Schema.Literal("done"),
-  Schema.Literal("abandoned"),
+  Schema.Literal("archived"),
   Schema.Literal("superseded"),
 ]);
 

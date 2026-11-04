@@ -94,7 +94,7 @@ describe("plans GUI main notifications", () => {
     notifications.length = 0;
     const result = await impl.update({
       id: plan.plan.id,
-      status: "abandoned",
+      status: "archived",
       sessionID: "s1",
     });
     expect(result.ok).toBe(true);

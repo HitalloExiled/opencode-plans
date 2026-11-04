@@ -47,7 +47,7 @@ const statusLabel = (status: PlanStatus): string => {
   switch (status) {
     case "done":
       return "concluído";
-    case "abandoned":
+    case "archived":
       return "arquivado";
     case "superseded":
       return "substituído";

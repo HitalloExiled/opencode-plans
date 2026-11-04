@@ -108,7 +108,7 @@ describe("deriveStatus", () => {
   });
 
   test("terminal states are preserved", () => {
-    expect(deriveStatus([{ status: "todo" }], "abandoned")).toBe("abandoned");
+    expect(deriveStatus([{ status: "todo" }], "archived")).toBe("archived");
     expect(deriveStatus([{ status: "todo" }], "superseded")).toBe("superseded");
   });
 });
@@ -119,7 +119,35 @@ describe("deriveStatus", () => {
 
 describe("plan lifecycle", () => {
   test("schema version is current", () => {
-    expect(schemaVersion(open())).toBe(1);
+    expect(schemaVersion(open())).toBe(2);
+  });
+
+  test("migrates legacy 'abandoned' status to 'archived'", () => {
+    const db = open();
+    db.prepare(
+      `INSERT INTO plans
+         (id, project_id, project_directory, session_id, message_id, title, body, status,
+          created_at, updated_at, completed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      "legacy",
+      "p1",
+      "/tmp/p1",
+      "s1",
+      null,
+      "Legacy",
+      "# Legacy",
+      "abandoned",
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-01T00:00:00.000Z",
+      null,
+    );
+    db.prepare("PRAGMA user_version = 1").run();
+
+    initSchema(db);
+
+    expect(schemaVersion(db)).toBe(2);
+    expect(getPlan(db, "legacy")?.status).toBe("archived");
   });
 
   test("save creates a plan with parsed steps", () => {
@@ -193,11 +221,11 @@ describe("plan lifecycle", () => {
     const updated = updatePlan(db, {
       id: created.plan.id,
       title: "Renamed",
-      status: "abandoned",
+      status: "archived",
     });
     if (!updated.ok) throw new Error(updated.error);
     expect(updated.plan.title).toBe("Renamed");
-    expect(updated.plan.status).toBe("abandoned");
+    expect(updated.plan.status).toBe("archived");
   });
 
   test("list filters by project and status, newest first", () => {

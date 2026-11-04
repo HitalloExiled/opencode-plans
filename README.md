@@ -47,7 +47,7 @@ e o `npm run gui:build`).
    existente.
 2. **Lista e lê planos** (`plans.list`, `plans.get`) por projeto e status.
 3. **Marca progresso** (`plans.update`): passos `todo`/`done` e status do
-   plano (`active`, `done`, `abandoned`, `superseded`). Quando todos os passos
+   plano (`active`, `done`, `archived`, `superseded`). Quando todos os passos
    ficam `done`, o plano vira `done`.
 4. **Injeta contexto**: agentes fora do Plan recebem um bloco curto com os
    planos ativos do projeto e os passos pendentes do plano da sessão.
