@@ -8,20 +8,19 @@
 
 import type { MainContext } from "@opencode/plugin/gui/main";
 import { PlansApi } from "./contract";
-import type { Plan, PlanResult, Status } from "./contract";
+import type { Plan, PlanResult, PlanStatus, RemoveInput, Status } from "./contract";
 import {
   deletePlan,
   getPlan,
   getStore,
   listPlans,
+  planProgress,
   plansDbPath,
   schemaVersion,
   setStep,
   updatePlan,
   requireStore,
   type Plan as StorePlan,
-  type SaveOk,
-  type WriteError,
 } from "../store.js";
 
 const toPlan = (plan: StorePlan): Plan => ({
@@ -44,8 +43,47 @@ const toPlan = (plan: StorePlan): Plan => ({
   })),
 });
 
-const fromWrite = (result: SaveOk | WriteError): PlanResult =>
-  result.ok ? { ok: true, plan: toPlan(result.plan) } : { ok: false, error: result.error };
+const statusLabel = (status: PlanStatus): string => {
+  switch (status) {
+    case "done":
+      return "concluído";
+    case "abandoned":
+      return "arquivado";
+    case "superseded":
+      return "substituído";
+    default:
+      return "reaberto";
+  }
+};
+
+/**
+ * Tell the session that the user changed a plan from the panel. The message is
+ * synthetic and does not resume the agent: it lands in the timeline and in the
+ * next model request, where the plans context already reflects the new state.
+ */
+async function notify(
+  ctx: MainContext,
+  sessionID: string | undefined,
+  text: string,
+  planID: string,
+): Promise<void> {
+  if (!sessionID) return;
+  try {
+    await ctx.client.session.synthetic({
+      sessionID,
+      text,
+      description: "Painel Planos",
+      resume: false,
+      metadata: { source: "plans", planID },
+    });
+  } catch (error) {
+    ctx.log.write("warn", "plans: could not notify the session", {
+      sessionID,
+      planID,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
 
 export function main(ctx: MainContext): void {
   ctx.provide(PlansApi, {
@@ -76,30 +114,53 @@ export function main(ctx: MainContext): void {
 
     update: async (input): Promise<PlanResult> => {
       const { db } = await requireStore();
-      return fromWrite(
-        updatePlan(db, {
-          id: input.id,
-          status: input.status,
-          title: input.title,
-          body: input.body,
-        }),
-      );
+      const result = updatePlan(db, {
+        id: input.id,
+        status: input.status,
+        title: input.title,
+        body: input.body,
+      });
+      if (!result.ok) return { ok: false, error: result.error };
+      if (input.status) {
+        await notify(
+          ctx,
+          input.sessionID,
+          `O usuário marcou o plano "${result.plan.title}" como ${statusLabel(input.status)}.`,
+          result.plan.id,
+        );
+      } else {
+        await notify(ctx, input.sessionID, `O usuário atualizou o plano "${result.plan.title}".`, result.plan.id);
+      }
+      return { ok: true, plan: toPlan(result.plan) };
     },
 
     setStep: async (input): Promise<PlanResult> => {
       const { db } = await requireStore();
-      return fromWrite(
-        setStep(db, {
-          id: input.id,
-          stepID: input.stepID,
-          done: input.done,
-        }),
+      const result = setStep(db, {
+        id: input.id,
+        stepID: input.stepID,
+        done: input.done,
+      });
+      if (!result.ok) return { ok: false, error: result.error };
+      const step = result.plan.steps.find((item) => item.step_id === input.stepID);
+      const { done, total } = planProgress(result.plan);
+      await notify(
+        ctx,
+        input.sessionID,
+        `O usuário marcou o passo "${step?.text ?? input.stepID}" como ${
+          step?.status === "done" ? "concluído" : "pendente"
+        } no plano "${result.plan.title}" (${done}/${total}).`,
+        result.plan.id,
       );
+      return { ok: true, plan: toPlan(result.plan) };
     },
 
-    remove: async (id): Promise<PlanResult> => {
+    remove: async (input: RemoveInput): Promise<PlanResult> => {
       const { db } = await requireStore();
-      return fromWrite(deletePlan(db, id));
+      const result = deletePlan(db, input.id);
+      if (!result.ok) return { ok: false, error: result.error };
+      await notify(ctx, input.sessionID, `O usuário removeu o plano "${result.plan.title}".`, result.plan.id);
+      return { ok: true, plan: toPlan(result.plan) };
     },
   });
 }

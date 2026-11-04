@@ -263,7 +263,7 @@ export function PlansView() {
     if (!id) return;
     setSaving(true);
     try {
-      const result = await api.setStep({ id, stepID: step.id, done });
+      const result = await api.setStep({ id, stepID: step.id, done, sessionID: currentSession()?.id });
       if (!result.ok) throw new Error(result.error ?? "erro ao atualizar o passo");
       if (result.plan) setDetail(result.plan);
       await load();
@@ -279,7 +279,7 @@ export function PlansView() {
     if (!id) return;
     setSaving(true);
     try {
-      const result = await api.update({ id, status });
+      const result = await api.update({ id, status, sessionID: currentSession()?.id });
       if (!result.ok) throw new Error(result.error ?? "erro ao atualizar o plano");
       if (result.plan) setDetail(result.plan);
       await load();
@@ -303,7 +303,7 @@ export function PlansView() {
     if (!ok) return;
     setSaving(true);
     try {
-      const result = await api.remove(id);
+      const result = await api.remove({ id, sessionID: currentSession()?.id });
       if (!result.ok) throw new Error(result.error ?? "erro ao remover o plano");
       setSelectedID(null);
       setDetail(null);
@@ -485,33 +485,37 @@ export function PlansView() {
             </div>
 
             <div class="plan-actions">
-              <ctx.ui.Button
-                size="small"
-                variant="contrast"
-                icon="circle-check"
-                busy={saving()}
-                onClick={() => void changeStatus("done")}
-              >
-                {t("markDone")}
-              </ctx.ui.Button>
-              <ctx.ui.Button
-                size="small"
-                variant="ghost"
-                icon="arrow-undo-down"
-                disabled={saving()}
-                onClick={() => void changeStatus("active")}
-              >
-                {t("reopen")}
-              </ctx.ui.Button>
-              <ctx.ui.Button
-                size="small"
-                variant="ghost"
-                icon="outline-hexagonal-warning"
-                disabled={saving()}
-                onClick={() => void changeStatus("abandoned")}
-              >
-                {t("archive")}
-              </ctx.ui.Button>
+              <Show when={plan().status === "active"}>
+                <ctx.ui.Button
+                  size="small"
+                  variant="contrast"
+                  icon="circle-check"
+                  busy={saving()}
+                  onClick={() => void changeStatus("done")}
+                >
+                  {t("markDone")}
+                </ctx.ui.Button>
+                <ctx.ui.Button
+                  size="small"
+                  variant="ghost"
+                  icon="outline-hexagonal-warning"
+                  disabled={saving()}
+                  onClick={() => void changeStatus("abandoned")}
+                >
+                  {t("archive")}
+                </ctx.ui.Button>
+              </Show>
+              <Show when={plan().status !== "active"}>
+                <ctx.ui.Button
+                  size="small"
+                  variant="ghost"
+                  icon="arrow-undo-down"
+                  disabled={saving()}
+                  onClick={() => void changeStatus("active")}
+                >
+                  {t("reopen")}
+                </ctx.ui.Button>
+              </Show>
               <ctx.ui.Button
                 size="small"
                 variant="ghost-muted"

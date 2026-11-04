@@ -56,6 +56,10 @@ e o `npm run gui:build`).
    remover) e Markdown do plano.
 6. **Salvar o último plano**: `/save-plan` (servidor) e o botão do painel
    usam a última mensagem do agente `plan` na sessão.
+7. **Notifica o agente**: quando o usuário marca/desmarca um passo, muda o
+   status ou remove um plano no painel, o main grava uma mensagem sintética na
+   sessão (`resume: false`, descrição “Painel Planos”). O agente vê a alteração
+   no próximo request, junto com o contexto atualizado do plano.
 
 ### Nomes e permissões
 

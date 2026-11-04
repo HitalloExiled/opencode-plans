@@ -55,12 +55,22 @@ export type UpdateInput = {
   status?: PlanStatus | undefined;
   title?: string | undefined;
   body?: string | undefined;
+  /** Session to notify about the user's change. */
+  sessionID?: string | undefined;
 };
 
 export type StepInput = {
   id: string;
   stepID: string;
   done: boolean;
+  /** Session to notify about the user's change. */
+  sessionID?: string | undefined;
+};
+
+export type RemoveInput = {
+  id: string;
+  /** Session to notify about the user's change. */
+  sessionID?: string | undefined;
 };
 
 export type Status = {
@@ -125,12 +135,19 @@ export const updateInputSchema = Schema.Struct({
   status: Schema.optional(planStatusSchema),
   title: optString,
   body: optString,
+  sessionID: optString,
 });
 
 export const stepInputSchema = Schema.Struct({
   id: Schema.String,
   stepID: Schema.String,
   done: Schema.Boolean,
+  sessionID: optString,
+});
+
+export const removeInputSchema = Schema.Struct({
+  id: Schema.String,
+  sessionID: optString,
 });
 
 export const statusSchema = Schema.Struct({
@@ -152,6 +169,6 @@ export const PlansApi = Ipc.define({
     get: { input: Schema.String, output: Schema.optional(planSchema) },
     update: { input: updateInputSchema, output: planResultSchema },
     setStep: { input: stepInputSchema, output: planResultSchema },
-    remove: { input: Schema.String, output: planResultSchema },
+    remove: { input: removeInputSchema, output: planResultSchema },
   },
 });
