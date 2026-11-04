@@ -1,0 +1,31 @@
+{
+  "name": "opencode-plans",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Plans plugin for OpenCode: persisted plans from Plan mode as typed tools (plans.*) and a SolidJS side-panel GUI (./gui-experimental), both over a dedicated SQLite plans.db.",
+  "exports": {
+    ".": {
+      "import": "./index.ts"
+    },
+    "./gui-experimental": {
+      "import": "./dist/gui-experimental.cjs"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "typecheck:gui": "tsc --noEmit -p tsconfig.gui.json",
+    "gui:build": "vite build",
+    "gui:watch": "vite --watch"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.2.0",
+    "@types/node": "24.12.2",
+    "effect": "4.0.1",
+    "solid-js": "1.9.18",
+    "typescript": "5.8.2",
+    "vite": "5.4.17",
+    "vite-plugin-solid": "2.11.15",
+    "zod": "4.6.7"
+  }
+}
