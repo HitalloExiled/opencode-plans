@@ -45,21 +45,24 @@ e o `npm run gui:build`).
 1. **Persiste um plano** (`plans.save`) com título, Markdown, passos e vínculo
    ao projeto/sessão. O `plans.save` aceita `id` para atualizar um plano
    existente.
-2. **Lista e lê planos** (`plans.list`, `plans.get`) por projeto e status.
+2. **Lista e lê planos** (`plans.list`, `plans.get`): por padrão só a
+   **sessão atual**; `scope: "project"` é opt-in para ver/ler planos de outras
+   sessões do mesmo projeto. O `get`/`update`/`delete` das tools recusam plano
+   de outra sessão.
 3. **Marca progresso** (`plans.update`): passos `todo`/`done` e status do
    plano (`active`, `done`, `archived`, `superseded`). Quando todos os passos
    ficam `done`, o plano vira `done`.
 4. **Injeta contexto**: agentes fora do Plan recebem um bloco curto com os
-   planos ativos do projeto e os passos pendentes do plano da sessão.
-5. **Painel lateral**: lista apenas os planos do **projeto da sessão ativa**,
-   com progresso, checklist interativo, ações (concluir, reabrir, arquivar,
-   remover) e Markdown do plano.
+   planos ativos **da sessão atual** e os passos pendentes do plano da sessão.
+5. **Painel lateral**: por padrão lista só a **sessão ativa**; o toggle
+   **Projeto** traz todos os planos do projeto, com a sessão de origem em cada
+   card. Planos de outra sessão têm o botão **Mover para esta sessão**.
 6. **Salvar o último plano**: `/save-plan` (servidor) e o botão do painel
    usam a última mensagem do agente `plan` na sessão.
 7. **Notifica o agente**: quando o usuário marca/desmarca um passo, muda o
-   status ou remove um plano no painel, o main grava uma mensagem sintética na
-   sessão (`resume: false`, descrição “Painel Planos”). O agente vê a alteração
-   no próximo request, junto com o contexto atualizado do plano.
+   status, move ou remove um plano no painel, o servidor grava uma mensagem
+   sintética na sessão (`resume: false`) com a ação na descrição. O agente vê a
+   alteração no próximo request.
 
 ### Nomes e permissões
 

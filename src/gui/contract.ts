@@ -16,6 +16,7 @@ import { Schema } from "effect";
 
 export type PlanStatus = "active" | "done" | "archived" | "superseded";
 export type StepStatus = "todo" | "done";
+export type PlanScope = "session" | "project";
 
 export type PlanStep = {
   id: string;
@@ -46,6 +47,8 @@ export type PlanResult = {
 };
 
 export type ListOptions = {
+  scope?: PlanScope | undefined;
+  sessionID?: string | undefined;
   status?: PlanStatus | "all" | undefined;
   limit?: number | undefined;
 };
@@ -73,6 +76,12 @@ export type RemoveInput = {
   sessionID?: string | undefined;
 };
 
+export type MoveInput = {
+  id: string;
+  /** Destination session. */
+  sessionID: string;
+};
+
 export type Status = {
   driver: "sqlite" | "none";
   dbPath: string;
@@ -93,6 +102,8 @@ export const planStatusSchema = Schema.Union([
   Schema.Literal("archived"),
   Schema.Literal("superseded"),
 ]);
+
+export const planScopeSchema = Schema.Union([Schema.Literal("session"), Schema.Literal("project")]);
 
 export const stepStatusSchema = Schema.Union([Schema.Literal("todo"), Schema.Literal("done")]);
 
@@ -125,6 +136,8 @@ export const planResultSchema = Schema.Struct({
 });
 
 export const listOptionsSchema = Schema.Struct({
+  scope: Schema.optional(planScopeSchema),
+  sessionID: optString,
   status: Schema.optional(Schema.Union([planStatusSchema, Schema.Literal("all")])),
   limit: optNum,
 });
@@ -147,6 +160,11 @@ export const stepInputSchema = Schema.Struct({
 export const removeInputSchema = Schema.Struct({
   id: Schema.String,
   sessionID: optString,
+});
+
+export const moveInputSchema = Schema.Struct({
+  id: Schema.String,
+  sessionID: Schema.String,
 });
 
 export const statusSchema = Schema.Struct({
@@ -185,6 +203,10 @@ export const PlansRpc = Rpc.define({
     },
     remove: {
       input: Schema.toStandardSchemaV1(removeInputSchema),
+      output: Schema.toStandardSchemaV1(planResultSchema),
+    },
+    move: {
+      input: Schema.toStandardSchemaV1(moveInputSchema),
       output: Schema.toStandardSchemaV1(planResultSchema),
     },
   },

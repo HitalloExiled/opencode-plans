@@ -65,19 +65,23 @@ const saveInput = z.object({
 });
 
 const listInput = z.object({
+  scope: z
+    .enum(["session", "project"])
+    .optional()
+    .describe("'session' (default) lists only this session's plans; 'project' lists every session in this project."),
   status: z
     .union([STATUS, z.literal("all")])
     .optional()
     .describe("Filter by status. Defaults to active."),
-  project: z
-    .enum(["current", "all"])
-    .optional()
-    .describe("'current' (default) lists this project; 'all' lists every project in plans.db."),
   limit: z.number().int().min(1).max(200).optional().describe("Maximum plans. Defaults to 50."),
 });
 
 const getInput = z.object({
   id: z.string().min(1).describe("Plan id, as returned by plans.list or plans.save."),
+  scope: z
+    .enum(["session", "project"])
+    .optional()
+    .describe("'session' (default) only reads a plan of this session; 'project' allows another session's plan."),
 });
 
 const updateInput = z.object({
@@ -109,6 +113,12 @@ export function saveTool(ctx: Ctx) {
     async execute(input: z.infer<typeof saveInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
         const store = await requireStore();
+        if (input.id) {
+          const existing = getPlan(store.db, input.id);
+          if (existing && existing.session_id !== String(toolCtx.sessionID)) {
+            return fail("plano pertence a outra sessão; peça ao usuário para mover o plano no painel");
+          }
+        }
         const result = savePlan(store.db, {
           id: input.id,
           title: input.title,
@@ -143,35 +153,43 @@ export function listTool(ctx: Ctx) {
   return {
     name: "list",
     description:
-      "List persisted plans for the current project (or every project with project='all'). Shows status and step progress. Use plans.get for the full plan before resuming work.",
+      "List persisted plans. Defaults to the current session only; use scope='project' to list every session in this project. Shows status and step progress. Use plans.get for the full plan before resuming work.",
     input: listInput,
-    async execute(input: z.infer<typeof listInput>): Promise<ToolResult> {
+    async execute(input: z.infer<typeof listInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
         const store = await requireStore();
+        const scope = input.scope ?? "session";
         const status = input.status ?? "active";
         const plans = listPlans(store.db, {
-          projectID: input.project === "all" ? undefined : projectID(ctx),
+          projectID: projectID(ctx),
+          sessionID: scope === "session" ? String(toolCtx.sessionID) : undefined,
           status: status as PlanStatus | "all",
           limit: input.limit ?? 50,
         });
         if (plans.length === 0) {
           return {
             content:
-              status === "all"
-                ? "Nenhum plano salvo neste projeto. Use plans.save para persistir um plano."
-                : `Nenhum plano com status '${status}' neste projeto. Use status='all' para ver todos.`,
-            metadata: { count: 0 },
+              scope === "session"
+                ? status === "all"
+                  ? "Nenhum plano nesta sessão. Use plans.save para persistir um plano."
+                  : `Nenhum plano com status '${status}' nesta sessão. Use status='all' para ver todos.`
+                : status === "all"
+                  ? "Nenhum plano salvo neste projeto."
+                  : `Nenhum plano com status '${status}' neste projeto. Use status='all' para ver todos.`,
+            metadata: { count: 0, scope },
           };
         }
-        const header = `Planos (${input.project === "all" ? "todos os projetos" : "projeto atual"}, status=${status}): ${plans.length}`;
+        const header = `Planos (${scope === "session" ? "sessão atual" : "projeto atual"}, status=${status}): ${plans.length}`;
         return {
           content: [
             header,
-            ...plans.map(renderPlanSummary),
+            ...plans.map((plan) =>
+              scope === "project" ? `${renderPlanSummary(plan)} session=${plan.session_id}` : renderPlanSummary(plan),
+            ),
             "",
             "Use plans.get <id> para ler o plano completo.",
           ].join("\n"),
-          metadata: { count: plans.length, planIDs: plans.map((plan) => plan.id) },
+          metadata: { count: plans.length, scope, planIDs: plans.map((plan) => plan.id) },
         };
       } catch (error) {
         return fail(error instanceof Error ? error.message : String(error));
@@ -184,13 +202,16 @@ export function getTool(ctx: Ctx) {
   return {
     name: "get",
     description:
-      "Read one persisted plan in full: metadata, checklist and original Markdown. Use it before resuming work from an earlier session.",
+      "Read one persisted plan in full: metadata, checklist and original Markdown. Defaults to plans of this session; pass scope='project' to read another session's plan.",
     input: getInput,
-    async execute(input: z.infer<typeof getInput>): Promise<ToolResult> {
+    async execute(input: z.infer<typeof getInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
         const store = await requireStore();
         const plan = getPlan(store.db, input.id);
         if (!plan) return fail(`plano não encontrado: ${input.id}`);
+        if (input.scope !== "project" && plan.session_id !== String(toolCtx.sessionID)) {
+          return fail("plano pertence a outra sessão; use scope='project' para leitura ou mova o plano no painel");
+        }
         return {
           content: renderPlanFull(plan),
           metadata: { planID: plan.id, status: plan.status, steps: plan.steps.length },
@@ -208,9 +229,15 @@ export function updateTool(ctx: Ctx) {
     description:
       "Update a persisted plan: mark a step done/todo (stepID or position) and/or change the plan status. Use it as you complete the plan's steps so the user's panel reflects real progress.",
     input: updateInput,
-    async execute(input: z.infer<typeof updateInput>): Promise<ToolResult> {
+    async execute(input: z.infer<typeof updateInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
         const store = await requireStore();
+        const plan = getPlan(store.db, input.id);
+        if (!plan) return fail(`plano não encontrado: ${input.id}`);
+        if (plan.session_id !== String(toolCtx.sessionID)) {
+          return fail("plano pertence a outra sessão; peça ao usuário para mover o plano no painel");
+        }
+
         const hasStep = input.stepID !== undefined || input.position !== undefined;
         const hasPlanChange =
           input.status !== undefined || input.title !== undefined || input.body !== undefined;
@@ -280,9 +307,14 @@ export function deleteTool(ctx: Ctx) {
     name: "delete",
     description: "Permanently delete a persisted plan and its steps. Prefer plans.update with status='archived' unless the user asked to delete it.",
     input: z.object({ id: z.string().min(1) }),
-    async execute(input: { id: string }): Promise<ToolResult> {
+    async execute(input: { id: string }, toolCtx: ToolContext): Promise<ToolResult> {
       try {
         const store = await requireStore();
+        const plan = getPlan(store.db, input.id);
+        if (!plan) return fail(`plano não encontrado: ${input.id}`);
+        if (plan.session_id !== String(toolCtx.sessionID)) {
+          return fail("plano pertence a outra sessão; peça ao usuário para mover o plano no painel");
+        }
         const result = deletePlan(store.db, input.id);
         if (!result.ok) return fail(result.error);
         return {

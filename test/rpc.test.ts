@@ -41,13 +41,13 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const makePlan = async (body = "# Plan\n\n- [ ] One\n- [ ] Two\n") => {
+const makePlan = async (body = "# Plan\n\n- [ ] One\n- [ ] Two\n", sessionID = "s1") => {
   const store = await requireStore();
   const saved = savePlan(store.db, {
     body,
     projectID: "p1",
     projectDirectory: "/tmp/p1",
-    sessionID: "s1",
+    sessionID,
   });
   if (!saved.ok) throw new Error(saved.error);
   return saved.plan;
@@ -56,11 +56,24 @@ const makePlan = async (body = "# Plan\n\n- [ ] One\n- [ ] Two\n") => {
 describe("plans RPC handlers", () => {
   test("list and get return the panel shape for the current project", async () => {
     const plan = await makePlan();
-    const list = await handlers.list({ status: "all" });
+    const list = await handlers.list({ status: "all", scope: "session", sessionID: "s1" });
     expect(list.some((item) => item.id === plan.id)).toBe(true);
     const found = await handlers.get(plan.id);
     expect(found?.id).toBe(plan.id);
     expect(found?.steps).toHaveLength(2);
+  });
+
+  test("list scopes session and project", async () => {
+    const mine = await makePlan(undefined, "s1");
+    const other = await makePlan("# Other\n\n- [ ] X\n", "s2");
+
+    const session = await handlers.list({ status: "all", scope: "session", sessionID: "s1" });
+    expect(session.some((item) => item.id === mine.id)).toBe(true);
+    expect(session.some((item) => item.id === other.id)).toBe(false);
+
+    const project = await handlers.list({ status: "all", scope: "project" });
+    expect(project.some((item) => item.id === mine.id)).toBe(true);
+    expect(project.some((item) => item.id === other.id)).toBe(true);
   });
 
   test("setStep updates progress and notifies the session", async () => {
@@ -108,5 +121,22 @@ describe("plans RPC handlers", () => {
     expect(notifications[0]?.text).toContain("removeu");
     expect(notifications[0]?.description).toContain("Removeu");
     expect(await handlers.get(plan.id)).toBeNull();
+  });
+
+  test("move changes the session and notifies the destination", async () => {
+    const plan = await makePlan(undefined, "s1");
+    notifications.length = 0;
+
+    const moved = await handlers.move({ id: plan.id, sessionID: "s2" });
+    expect(moved.ok).toBe(true);
+    expect(moved.ok && moved.plan?.sessionID).toBe("s2");
+    expect(notifications[0]?.sessionID).toBe("s2");
+    expect(notifications[0]?.description).toContain("Moveu");
+
+    const session1 = await handlers.list({ status: "all", scope: "session", sessionID: "s1" });
+    expect(session1.some((item) => item.id === plan.id)).toBe(false);
+
+    const session2 = await handlers.list({ status: "all", scope: "session", sessionID: "s2" });
+    expect(session2.some((item) => item.id === plan.id)).toBe(true);
   });
 });

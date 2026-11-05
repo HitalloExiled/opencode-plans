@@ -459,6 +459,7 @@ function stepsForPlans(db: Db, ids: readonly string[]): Map<string, StepRow[]> {
 
 export type ListOptions = {
   projectID?: string | undefined;
+  sessionID?: string | undefined;
   status?: PlanStatus | "all" | undefined;
   limit?: number | undefined;
 };
@@ -469,6 +470,10 @@ export function listPlans(db: Db, opts: ListOptions = {}): Plan[] {
   if (opts.projectID) {
     where.push("project_id = ?");
     params.push(opts.projectID);
+  }
+  if (opts.sessionID) {
+    where.push("session_id = ?");
+    params.push(opts.sessionID);
   }
   if (opts.status && opts.status !== "all") {
     where.push("status = ?");
@@ -619,6 +624,25 @@ export type SetStepInput = {
   position?: number | undefined;
   done: boolean;
 };
+
+/** Moves a plan to another session of the same project. Steps/status are untouched. */
+export function movePlan(db: Db, id: string, sessionID: string): SaveOk | WriteError {
+  const plan = getPlan(db, id);
+  if (!plan) return { ok: false, error: `plano não encontrado: ${id}` };
+  if (!sessionID) return { ok: false, error: "sessionID é obrigatório" };
+  if (plan.session_id === sessionID) return { ok: true, plan };
+
+  const now = nowTimestamp();
+  try {
+    db.prepare("UPDATE plans SET session_id = ?, updated_at = ? WHERE id = ?").run(sessionID, now, id);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+
+  const updated = getPlan(db, id);
+  if (!updated) return { ok: false, error: "plano movido, mas não pôde ser lido de volta" };
+  return { ok: true, plan: updated };
+}
 
 export function setStep(db: Db, input: SetStepInput): SaveOk | WriteError {
   const plan = getPlan(db, input.id);

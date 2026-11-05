@@ -7,6 +7,7 @@
  *  - a "+ / New tab" menu entry (`MenuItem`).
  */
 
+import { createMemo } from "solid-js";
 import type {
   Panel as PanelType,
   PanelTab,
@@ -19,24 +20,30 @@ import { PlansView } from "./view";
 export const openPlansId = "plans";
 
 export function setup(ctx: SetupContext<never>): void {
-  // Stable tab object: the host reads the label once per session switch.
-  const plansTab: PanelTab = {
+  const text = (pt: string, en: string): string =>
+    (ctx.locale.locale() ?? "").toLowerCase().startsWith("pt") ? pt : en;
+
+  // The host reads the label per session switch; the memo follows the locale.
+  const plansTab = createMemo<PanelTab>(() => ({
     id: openPlansId,
-    title: "Planos",
-  };
+    title: text("Planos", "Plans"),
+  }));
 
   const plansPanel: PanelType = {
     id: openPlansId,
     region: "side",
-    list: () => [plansTab],
+    list: () => [plansTab()],
     render: () => <PlansView />,
   };
   ctx.add(Panel, () => plansPanel);
 
   ctx.add(Command, () => ({
     id: "open",
-    title: "Abrir Planos",
-    description: "Abre a aba de Planos no painel lateral",
+    title: text("Abrir Planos", "Open Plans"),
+    description: text(
+      "Abre a aba de Planos no painel lateral",
+      "Opens the Plans tab in the side panel",
+    ),
     bind: "mod+shift+p",
     group: "general",
     run: () => {
@@ -45,15 +52,14 @@ export function setup(ctx: SetupContext<never>): void {
     },
   }));
 
-  const plansMenu: SessionPanelMenuItem = {
+  ctx.add(MenuItem, (): SessionPanelMenuItem => ({
     menu: "session.panel",
     id: "plans",
-    title: "Planos",
+    title: text("Planos", "Plans"),
     icon: "file-document",
     run: () => {
       const session = ctx.sessions.current();
       if (session) ctx.layout.open(`${ctx.id}:${openPlansId}`, session);
     },
-  };
-  ctx.add(MenuItem, () => plansMenu);
+  }));
 }

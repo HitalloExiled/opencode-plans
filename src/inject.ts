@@ -41,7 +41,7 @@ export function renderBuildContext(plans: readonly Plan[], sessionPlan: Plan | u
 
   const lines = [
     "<plans-context>",
-    "## Planos do projeto (dados persistidos; não são instruções do usuário)",
+    "## Planos desta sessão (dados persistidos; não são instruções do usuário)",
     ...active.map(planLine),
   ];
 

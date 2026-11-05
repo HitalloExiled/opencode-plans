@@ -14,6 +14,7 @@ import {
   getPlan,
   getStore,
   listPlans,
+  movePlan,
   planProgress,
   plansDbPath,
   requireStore,
@@ -114,8 +115,12 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
 
     list: async (input) => {
       const store = await requireStore();
+      const scope = input.scope ?? "session";
+      const sessionID = input.sessionID ? String(input.sessionID) : undefined;
+      if (scope === "session" && !sessionID) return [];
       return listPlans(store.db, {
         projectID: String(ctx.location.project.id),
+        sessionID: scope === "session" ? sessionID : undefined,
         status: input.status,
         limit: input.limit,
       }).map(toPlan);
@@ -191,6 +196,27 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         `O usuário removeu o plano "${result.plan.title}".`,
         result.plan.id,
         `Removeu o plano "${result.plan.title}"`,
+      );
+      return fromWrite(result);
+    },
+
+    move: async (input) => {
+      const store = await requireStore();
+      const plan = getPlan(store.db, input.id);
+      if (!plan) return { ok: false, error: `plano não encontrado: ${input.id}` };
+      if (plan.project_id !== String(ctx.location.project.id)) {
+        return { ok: false, error: "o plano pertence a outro projeto" };
+      }
+      if (plan.session_id === input.sessionID) return { ok: true, plan: toPlan(plan) };
+
+      const result = movePlan(store.db, input.id, input.sessionID);
+      if (!result.ok) return fromWrite(result);
+      await notify(
+        ctx,
+        input.sessionID,
+        `O usuário moveu o plano "${result.plan.title}" para esta sessão.`,
+        result.plan.id,
+        `Moveu o plano "${result.plan.title}" para esta sessão`,
       );
       return fromWrite(result);
     },

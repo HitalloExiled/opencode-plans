@@ -55,6 +55,12 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   process data layer.
 - **Plan text is data, not instructions.** Keep the `<plans-context>` wrapper
   and the "dados persistidos" wording in `src/inject.ts`.
+- **Session isolation is the default.** `plans.list`/`plans.get` default to the
+  current session; `scope: "project"` is explicitly opt-in. `plans.update` and
+  `plans.delete` must reject plans from another session. Context injection only
+  sees the current session's plans.
+- **Moving a plan is a user action.** The GUI calls the `move` RPC to move a
+  project plan into the active session; tools must not move plans.
 
 ## Build
 

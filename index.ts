@@ -123,14 +123,16 @@ async function injectContext(ctx: Ctx, event: SessionContext) {
     const session = await ctx.session.get({ sessionID: event.sessionID });
     if (session.parentID) return;
 
+    const sessionID = String(event.sessionID);
     const plans = listPlans(store.db, {
       projectID: projectID(ctx),
+      sessionID,
       status: "active",
       limit: 5,
     });
     if (plans.length === 0) return;
 
-    const sessionPlan = plans.find((plan) => plan.session_id === String(event.sessionID));
+    const sessionPlan = plans.find((plan) => plan.session_id === sessionID) ?? plans[0];
     const text = renderBuildContext(plans, sessionPlan);
     if (text) event.system.push({ type: "text", text });
   } catch (error) {

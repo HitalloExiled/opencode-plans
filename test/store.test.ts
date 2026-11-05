@@ -17,6 +17,7 @@ import {
   getPlan,
   initSchema,
   listPlans,
+  movePlan,
   parseSteps,
   planProgress,
   renderPlanFull,
@@ -248,6 +249,44 @@ describe("plan lifecycle", () => {
 
     const global = listPlans(db, { status: "all" });
     expect(global.length).toBe(3);
+  });
+
+  test("list filters by session", () => {
+    const db = open();
+    const mine = savePlan(db, { ...base, body: "# Mine\n\n- [ ] A\n" });
+    const other = savePlan(db, {
+      ...base,
+      sessionID: "session-2",
+      body: "# Other session\n\n- [ ] B\n",
+    });
+    if (!mine.ok || !other.ok) throw new Error("save failed");
+
+    const session = listPlans(db, {
+      projectID: "project-1",
+      sessionID: "session-1",
+      status: "all",
+    });
+    expect(session.map((plan) => plan.title)).toEqual(["Mine"]);
+
+    const project = listPlans(db, { projectID: "project-1", status: "all" });
+    expect(project.length).toBe(2);
+  });
+
+  test("movePlan changes the session and keeps status/steps", () => {
+    const db = open();
+    const created = savePlan(db, { ...base, body: "# Plan\n\n- [x] One\n- [ ] Two\n" });
+    if (!created.ok) throw new Error(created.error);
+    const before = getPlan(db, created.plan.id);
+    if (!before) throw new Error("missing plan");
+
+    const moved = movePlan(db, created.plan.id, "session-2");
+    if (!moved.ok) throw new Error(moved.error);
+    expect(moved.plan.session_id).toBe("session-2");
+    expect(moved.plan.status).toBe(before.status);
+    expect(moved.plan.steps.map((step) => step.status)).toEqual(["done", "todo"]);
+
+    expect(listPlans(db, { sessionID: "session-1", status: "all" })).toHaveLength(0);
+    expect(listPlans(db, { sessionID: "session-2", status: "all" })).toHaveLength(1);
   });
 
   test("getPlan and deletePlan", () => {

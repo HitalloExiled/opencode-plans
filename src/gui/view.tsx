@@ -76,6 +76,7 @@ const CSS = `
 .plan-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .plan-updated { font-size: 10.5px; color: var(--v2-text-text-faint); }
 .plan-card-title { font-weight: 600; font-size: 13px; line-height: 1.3; overflow-wrap: anywhere; }
+.plan-card-session { font-size: 10.5px; color: var(--v2-text-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plan-status {
   display: inline-flex;
   align-items: center;
@@ -138,6 +139,7 @@ export function PlansView() {
   const [selectedID, setSelectedID] = createSignal<string | null>(null);
   const [detail, setDetail] = createSignal<Plan | null>(null);
   const [statusFilter, setStatusFilter] = createSignal<"active" | "done" | "all">("active");
+  const [scopeFilter, setScopeFilter] = createSignal<"session" | "project">("session");
   const [loading, setLoading] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
@@ -156,6 +158,13 @@ export function PlansView() {
   const currentSession = () => ctx.sessions.current();
 
   const basename = (path: string): string => path.split("/").pop() || path;
+
+  const shortSession = (id: string): string => (id.length > 14 ? `${id.slice(0, 14)}…` : id);
+
+  const canMove = (plan: Plan): boolean => {
+    const id = currentSession()?.id;
+    return !!id && id !== plan.sessionID;
+  };
 
   /** The app lists plans for the routed session's project only. */
   const activeProjectID = (): string | undefined => currentSession()?.project?.id;
@@ -209,7 +218,15 @@ export function PlansView() {
     try {
       const rpc = session.server.client.rpc(PlansRpc);
       const options = { location: { directory: session.directory }, signal: controller.signal };
-      const list = await rpc.list({ status: statusFilter(), limit: 200 }, options);
+      const list = await rpc.list(
+        {
+          scope: scopeFilter(),
+          sessionID: session.id,
+          status: statusFilter(),
+          limit: 200,
+        },
+        options,
+      );
       if (gen !== loadGen) return;
       if (!sameJSON(plans(), list)) setPlans([...list]);
 
@@ -235,7 +252,7 @@ export function PlansView() {
   // expanded plan.
   let filterKey = "";
   createEffect(() => {
-    const key = `${activeProjectID() ?? ""}\u0000${statusFilter()}`;
+    const key = `${activeProjectID() ?? ""}\u0000${scopeFilter()}\u0000${statusFilter()}`;
     if (key === filterKey) return;
     filterKey = key;
     setSelectedID(null);
@@ -343,6 +360,28 @@ export function PlansView() {
     }
   };
 
+  const moveCurrent = async () => {
+    const id = selectedID();
+    const session = currentSession();
+    if (!id || !session) return;
+    setSaving(true);
+    try {
+      const rpc = session.server.client.rpc(PlansRpc);
+      const result = await rpc.move(
+        { id, sessionID: session.id },
+        { location: { directory: session.directory } },
+      );
+      if (!result.ok) throw new Error(result.error ?? "erro ao mover o plano");
+      if (result.plan) setDetail(result.plan);
+      await load(true);
+      ctx.toast.show({ title: t("toast.moved"), variant: "success" });
+    } catch (cause) {
+      showError(t("toast.moveError"), cause);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const saveLast = async () => {
     const session = currentSession();
     if (!session) {
@@ -397,6 +436,24 @@ export function PlansView() {
           value={query()}
           onInput={setQuery}
         />
+        <div class="plans-toggles" role="group" aria-label={t("filters.scope")}>
+          <button
+            type="button"
+            class="plans-toggle"
+            classList={{ "is-active": scopeFilter() === "session" }}
+            onClick={() => setScopeFilter("session")}
+          >
+            {t("scope.session")}
+          </button>
+          <button
+            type="button"
+            class="plans-toggle"
+            classList={{ "is-active": scopeFilter() === "project" }}
+            onClick={() => setScopeFilter("project")}
+          >
+            {t("scope.project")}
+          </button>
+        </div>
         <div class="plans-toggles" role="group" aria-label={t("filters.label")}>
           <button
             type="button"
@@ -456,6 +513,11 @@ export function PlansView() {
                   <span class="plan-updated">{formatDate(plan.updatedAt)}</span>
                 </div>
                 <div class="plan-card-title">{plan.title}</div>
+                <Show when={scopeFilter() === "project"}>
+                  <div class="plan-card-session">
+                    {t("session")}: {shortSession(plan.sessionID)}
+                  </div>
+                </Show>
                 <div class="plan-progress-row">
                   <div class="plan-progress">
                     <div class="plan-progress-bar" style={{ width: `${percent(plan)}%` }} />
@@ -541,6 +603,16 @@ export function PlansView() {
                   onClick={() => void changeStatus("active")}
                 >
                   {t("reopen")}
+                </ctx.ui.Button>
+              </Show>
+              <Show when={canMove(plan())}>
+                <ctx.ui.Button
+                  size="small"
+                  variant="ghost"
+                  disabled={saving()}
+                  onClick={() => void moveCurrent()}
+                >
+                  {t("moveToSession")}
                 </ctx.ui.Button>
               </Show>
               <ctx.ui.Button
