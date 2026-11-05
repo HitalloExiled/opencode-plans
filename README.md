@@ -49,17 +49,21 @@ e o `npm run gui:build`).
    **sessão atual**; `scope: "project"` é opt-in para ver/ler planos de outras
    sessões do mesmo projeto. O `get`/`update`/`delete` das tools recusam plano
    de outra sessão.
-3. **Marca progresso** (`plans.update`): passos `todo`/`done` e status do
-   plano (`active`, `done`, `archived`, `superseded`). Quando todos os passos
-   ficam `done`, o plano vira `done`.
+3. **Marca progresso** (`plans.update`): passos `todo`/`doing`/`done`
+   (`stepStatus`) e status do plano (`active`, `done`, `archived`,
+   `superseded`). No máximo um passo por plano fica `doing`; marcar outro
+   volta o anterior para `todo`. Quando todos os passos ficam `done`, o plano
+   vira `done`. O agente marca `doing` antes de começar um passo e `done` ao
+   concluir.
 4. **Injeta contexto**: agentes fora do Plan recebem um bloco curto com os
-   planos ativos **da sessão atual** e os passos pendentes do plano da sessão.
+   planos ativos **da sessão atual** e os passos pendentes do plano da sessão,
+   com o passo `doing` primeiro.
 5. **Painel lateral**: por padrão lista só a **sessão ativa**; o toggle
    **Projeto** traz todos os planos do projeto, com a sessão de origem em cada
    card. Planos de outra sessão têm o botão **Mover para esta sessão**.
 6. **Salvar o último plano**: `/save-plan` (servidor) e o botão do painel
    usam a última mensagem do agente `plan` na sessão.
-7. **Notifica o agente**: quando o usuário marca/desmarca um passo, muda o
+7. **Notifica o agente**: quando o usuário marca/altera um passo, muda o
    status, move ou remove um plano no painel, o servidor grava uma mensagem
    sintética na sessão (`resume: false`) com a ação na descrição. O agente vê a
    alteração no próximo request.
@@ -80,11 +84,12 @@ e o `npm run gui:build`).
 $PLANS_DB                                # override (testes/isolamento)
 ```
 
-Schema (v1):
+Schema (v2):
 
 - `plans` — id, project_id, project_directory, session_id, message_id, title,
   body, status, created_at, updated_at, completed_at.
-- `plan_steps` — plan_id, position, step_id, text, status.
+- `plan_steps` — plan_id, position, step_id, text, status
+  (`todo` | `doing` | `done`).
 
 O banco é criado no primeiro uso; as migrações são idempotentes e controladas
 por `PRAGMA user_version`. Nada de `*.db` no repositório.

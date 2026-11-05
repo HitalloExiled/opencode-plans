@@ -167,21 +167,21 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const result = setStep(store.db, {
         id: input.id,
         stepID: input.stepID,
-        done: input.done,
+        status: input.status,
       });
       if (!result.ok) return fromWrite(result);
 
       const step = result.plan.steps.find((item) => item.step_id === input.stepID);
       const { done, total } = planProgress(result.plan);
       const stepText = step?.text ?? input.stepID;
+      const state = input.status === "done" ? "concluído" : input.status === "doing" ? "em andamento" : "pendente";
+      const action = input.status === "done" ? "Concluiu" : input.status === "doing" ? "Iniciou" : "Reabriu";
       await notify(
         ctx,
         input.sessionID,
-        `O usuário marcou o passo "${stepText}" como ${
-          step?.status === "done" ? "concluído" : "pendente"
-        } no plano "${result.plan.title}" (${done}/${total}).`,
+        `O usuário marcou o passo "${stepText}" como ${state} no plano "${result.plan.title}" (${done}/${total}).`,
         result.plan.id,
-        `${step?.status === "done" ? "Concluiu" : "Reabriu"} o passo "${stepText}" (${done}/${total})`,
+        `${action} o passo "${stepText}" (${done}/${total})`,
       );
       return fromWrite(result);
     },

@@ -47,10 +47,11 @@ const base = {
 
 describe("parseSteps", () => {
   test("task-list items anywhere win", () => {
-    const steps = parseSteps("# Plan\n\n- [ ] First\n- [x] Second\n");
+    const steps = parseSteps("# Plan\n\n- [ ] First\n- [x] Second\n- [~] Third\n");
     expect(steps).toEqual([
       { text: "First", status: "todo" },
       { text: "Second", status: "done" },
+      { text: "Third", status: "doing" },
     ]);
   });
 
@@ -104,8 +105,9 @@ describe("deriveStatus", () => {
     expect(deriveStatus([{ status: "done" }, { status: "done" }])).toBe("done");
   });
 
-  test("a pending step -> active", () => {
+  test("a pending or doing step -> active", () => {
     expect(deriveStatus([{ status: "done" }, { status: "todo" }])).toBe("active");
+    expect(deriveStatus([{ status: "done" }, { status: "doing" }])).toBe("active");
   });
 
   test("terminal states are preserved", () => {
@@ -175,7 +177,7 @@ describe("plan lifecycle", () => {
       body: "# Plan\n\n- [ ] One\n- [ ] Two\n",
     });
     if (!created.ok) throw new Error(created.error);
-    const first = setStep(db, { id: created.plan.id, stepID: "s1", done: true });
+    const first = setStep(db, { id: created.plan.id, stepID: "s1", status: "done" });
     if (!first.ok) throw new Error(first.error);
 
     const updated = savePlan(db, {
@@ -199,16 +201,16 @@ describe("plan lifecycle", () => {
     });
     if (!created.ok) throw new Error(created.error);
 
-    const first = setStep(db, { id: created.plan.id, stepID: "s1", done: true });
+    const first = setStep(db, { id: created.plan.id, stepID: "s1", status: "done" });
     if (!first.ok) throw new Error(first.error);
     expect(first.plan.status).toBe("active");
 
-    const second = setStep(db, { id: created.plan.id, stepID: "s2", done: true });
+    const second = setStep(db, { id: created.plan.id, stepID: "s2", status: "done" });
     if (!second.ok) throw new Error(second.error);
     expect(second.plan.status).toBe("done");
     expect(second.plan.completed_at).not.toBeNull();
 
-    const reopened = setStep(db, { id: created.plan.id, stepID: "s1", done: false });
+    const reopened = setStep(db, { id: created.plan.id, stepID: "s1", status: "todo" });
     if (!reopened.ok) throw new Error(reopened.error);
     expect(reopened.plan.status).toBe("active");
     expect(reopened.plan.completed_at).toBeNull();
@@ -307,12 +309,44 @@ describe("plan lifecycle", () => {
     const created = savePlan(db, { ...base, body: "# Plan\n\n- [x] One\n- [ ] Two\n" });
     if (!created.ok) throw new Error(created.error);
 
-    expect(planProgress(created.plan)).toEqual({ done: 1, total: 2 });
+    expect(planProgress(created.plan)).toEqual({ done: 1, doing: 0, total: 2 });
     const rendered = renderPlanFull(created.plan);
     expect(rendered).toContain("# Plan");
     expect(rendered).toContain("- [x] One");
     expect(rendered).toContain("- [ ] Two");
     expect(rendered).toContain("## Plano");
+  });
+
+  test("setStep keeps a single doing step per plan", () => {
+    const db = open();
+    const created = savePlan(db, { ...base, body: "# Plan\n\n- [ ] One\n- [ ] Two\n- [ ] Three\n" });
+    if (!created.ok) throw new Error(created.error);
+
+    const first = setStep(db, { id: created.plan.id, stepID: "s1", status: "doing" });
+    if (!first.ok) throw new Error(first.error);
+    expect(first.plan.steps.map((step) => step.status)).toEqual(["doing", "todo", "todo"]);
+    expect(planProgress(first.plan)).toEqual({ done: 0, doing: 1, total: 3 });
+
+    const second = setStep(db, { id: created.plan.id, stepID: "s2", status: "doing" });
+    if (!second.ok) throw new Error(second.error);
+    expect(second.plan.steps.map((step) => step.status)).toEqual(["todo", "doing", "todo"]);
+    expect(planProgress(second.plan)).toEqual({ done: 0, doing: 1, total: 3 });
+  });
+
+  test("save preserves doing steps", () => {
+    const db = open();
+    const created = savePlan(db, { ...base, body: "# Plan\n\n- [ ] One\n- [ ] Two\n" });
+    if (!created.ok) throw new Error(created.error);
+    const doing = setStep(db, { id: created.plan.id, stepID: "s2", status: "doing" });
+    if (!doing.ok) throw new Error(doing.error);
+
+    const updated = savePlan(db, {
+      ...base,
+      id: created.plan.id,
+      body: "# Plan\n\n- [ ] One\n- [ ] Two\n- [ ] Three\n",
+    });
+    if (!updated.ok) throw new Error(updated.error);
+    expect(updated.plan.steps.map((step) => step.status)).toEqual(["todo", "doing", "todo"]);
   });
 
   test("empty body is rejected", () => {

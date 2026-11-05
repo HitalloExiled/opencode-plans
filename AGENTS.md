@@ -25,7 +25,7 @@ Everything reads/writes a single SQLite DB **directly** via `node:sqlite`
 ```
 index.ts                 registers the plans.* tools, /save-plan and the context hook
 plans.ts                 tool definitions (save/list/get/update/delete/doctor)
-src/store.ts             SHARED data layer: node:sqlite, schema v1, migrations, SQL.
+src/store.ts             SHARED data layer: node:sqlite, schema v2, migrations, SQL.
                          Used by the tools and by the server RPC.
 src/rpc.ts               server RPC handlers (list/read/write + notifications)
 src/capture.ts           last Plan-agent message extraction
@@ -59,6 +59,8 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   current session; `scope: "project"` is explicitly opt-in. `plans.update` and
   `plans.delete` must reject plans from another session. Context injection only
   sees the current session's plans.
+- **One `doing` step per plan.** `setStep` resets any other `doing` step to
+  `todo` in the same transaction; keep that invariant when touching the store.
 - **Moving a plan is a user action.** The GUI calls the `move` RPC to move a
   project plan into the active session; tools must not move plans.
 

@@ -76,6 +76,22 @@ describe("inject", () => {
     expect(text).toContain("plans.update");
   });
 
+  test("the doing step comes first and is marked as doing", () => {
+    const doing = plan({
+      steps: [
+        { plan_id: "plan-1", position: 0, step_id: "s1", text: "Model", status: "todo" },
+        { plan_id: "plan-1", position: 1, step_id: "s2", text: "Store", status: "doing" },
+        { plan_id: "plan-1", position: 2, step_id: "s3", text: "GUI", status: "todo" },
+      ],
+    });
+    const text = renderBuildContext([doing], doing);
+    expect(text).toContain("- [doing] Store");
+    expect(text).toContain("- [todo] Model");
+    expect(text).toContain("1 doing");
+    expect(text).toContain("stepStatus");
+    expect(text.indexOf("- [doing] Store")).toBeLessThan(text.indexOf("- [todo] Model"));
+  });
+
   test("no active plans and no session plan -> empty", () => {
     expect(renderBuildContext([], undefined)).toBe("");
   });

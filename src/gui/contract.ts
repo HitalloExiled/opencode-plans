@@ -15,7 +15,7 @@ import { Schema } from "effect";
 /* ------------------------------------------------------------------ */
 
 export type PlanStatus = "active" | "done" | "archived" | "superseded";
-export type StepStatus = "todo" | "done";
+export type StepStatus = "todo" | "doing" | "done";
 export type PlanScope = "session" | "project";
 
 export type PlanStep = {
@@ -65,7 +65,7 @@ export type UpdateInput = {
 export type StepInput = {
   id: string;
   stepID: string;
-  done: boolean;
+  status: StepStatus;
   /** Session to notify about the user's change. */
   sessionID?: string | undefined;
 };
@@ -105,7 +105,11 @@ export const planStatusSchema = Schema.Union([
 
 export const planScopeSchema = Schema.Union([Schema.Literal("session"), Schema.Literal("project")]);
 
-export const stepStatusSchema = Schema.Union([Schema.Literal("todo"), Schema.Literal("done")]);
+export const stepStatusSchema = Schema.Union([
+  Schema.Literal("todo"),
+  Schema.Literal("doing"),
+  Schema.Literal("done"),
+]);
 
 export const planStepSchema = Schema.Struct({
   id: Schema.String,
@@ -153,7 +157,7 @@ export const updateInputSchema = Schema.Struct({
 export const stepInputSchema = Schema.Struct({
   id: Schema.String,
   stepID: Schema.String,
-  done: Schema.Boolean,
+  status: stepStatusSchema,
   sessionID: optString,
 });
 

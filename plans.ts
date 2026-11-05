@@ -89,14 +89,17 @@ const updateInput = z.object({
   stepID: z
     .string()
     .optional()
-    .describe("Step id (s1, s2, …) to mark. Use with done, or use position instead."),
+    .describe("Step id (s1, s2, …) to mark. Use with stepStatus, or use position instead."),
   position: z
     .number()
     .int()
     .min(0)
     .optional()
     .describe("Zero-based step position to mark when stepID is unknown."),
-  done: z.boolean().optional().describe("New step status. Defaults to true."),
+  stepStatus: z
+    .enum(["todo", "doing", "done"])
+    .optional()
+    .describe("New step status. Mark 'doing' before starting a step and 'done' when finished."),
   status: STATUS.optional().describe("New plan status."),
   title: z.string().optional().describe("New title (rarely needed)."),
   body: z.string().optional().describe("Replacement plan Markdown (rarely needed)."),
@@ -227,7 +230,7 @@ export function updateTool(ctx: Ctx) {
   return {
     name: "update",
     description:
-      "Update a persisted plan: mark a step done/todo (stepID or position) and/or change the plan status. Use it as you complete the plan's steps so the user's panel reflects real progress.",
+      "Update a persisted plan: mark a step todo/doing/done (stepID or position + stepStatus) and/or change the plan status. Mark 'doing' before starting a step and 'done' when finished, so the user's panel shows where you stopped. Only one step per plan can be 'doing'.",
     input: updateInput,
     async execute(input: z.infer<typeof updateInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -241,8 +244,11 @@ export function updateTool(ctx: Ctx) {
         const hasStep = input.stepID !== undefined || input.position !== undefined;
         const hasPlanChange =
           input.status !== undefined || input.title !== undefined || input.body !== undefined;
+        if (hasStep && input.stepStatus === undefined) {
+          return fail("informe stepStatus ('todo' | 'doing' | 'done') junto com stepID/position");
+        }
         if (!hasStep && !hasPlanChange) {
-          return fail("informe stepID/position (com done) ou status/title/body");
+          return fail("informe stepID/position + stepStatus ou status/title/body");
         }
 
         let result = hasStep
@@ -250,7 +256,7 @@ export function updateTool(ctx: Ctx) {
               id: input.id,
               stepID: input.stepID,
               position: input.position,
-              done: input.done ?? true,
+              status: input.stepStatus!,
             })
           : updatePlan(store.db, { id: input.id });
 

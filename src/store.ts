@@ -232,7 +232,7 @@ export async function requireStore(): Promise<Store> {
 /* ------------------------------------------------------------------ */
 
 export type PlanStatus = "active" | "done" | "archived" | "superseded";
-export type StepStatus = "todo" | "done";
+export type StepStatus = "todo" | "doing" | "done";
 
 export type PlanRow = {
   id: string;
@@ -272,7 +272,7 @@ export function nowTimestamp(): string {
   return new Date().toISOString();
 }
 
-const TASK_RE = /^\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
+const TASK_RE = /^\s*[-*+]\s+\[([ xX~>])\]\s+(.+?)\s*$/;
 const NUM_RE = /^\s*\d+[.)]\s+(.+?)\s*$/;
 const BULLET_RE = /^\s*[-*+]\s+(.+?)\s*$/;
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
@@ -355,7 +355,9 @@ export function parseSteps(body: string): ParsedStep[] {
     const task = TASK_RE.exec(line);
     if (task) {
       const text = cleanStep(task[2] ?? "");
-      if (text) tasks.push({ text, status: /x/i.test(task[1] ?? "") ? "done" : "todo" });
+      const marker = task[1] ?? "";
+      const status: StepStatus = /x/i.test(marker) ? "done" : /[~>]/.test(marker) ? "doing" : "todo";
+      if (text) tasks.push({ text, status });
       continue;
     }
 
@@ -422,13 +424,18 @@ export function deriveStatus(steps: readonly { status: StepStatus }[], current: 
   return "active";
 }
 
-/** Preserve `done` when a plan body is saved again. */
+/** Preserve `done`/`doing` when a plan body is saved again. */
 function mergeSteps(existing: readonly StepRow[], parsed: readonly ParsedStep[]): ParsedStep[] {
   const byText = new Map<string, StepRow>();
   for (const step of existing) byText.set(normalizeText(step.text), step);
   return parsed.map((step, index) => {
     const match = byText.get(normalizeText(step.text)) ?? existing[index];
-    const status: StepStatus = step.status === "done" || match?.status === "done" ? "done" : "todo";
+    const status: StepStatus =
+      step.status === "done" || match?.status === "done"
+        ? "done"
+        : step.status === "doing" || match?.status === "doing"
+          ? "doing"
+          : "todo";
     return { text: step.text, status };
   });
 }
@@ -622,7 +629,7 @@ export type SetStepInput = {
   id: string;
   stepID?: string | undefined;
   position?: number | undefined;
-  done: boolean;
+  status: StepStatus;
 };
 
 /** Moves a plan to another session of the same project. Steps/status are untouched. */
@@ -655,13 +662,23 @@ export function setStep(db: Db, input: SetStepInput): SaveOk | WriteError {
   if (!step) return { ok: false, error: "passo não encontrado" };
 
   const now = nowTimestamp();
-  const status: StepStatus = input.done ? "done" : "todo";
-  const steps = plan.steps.map((item) => (item.position === step.position ? { ...item, status } : item));
+  const status = input.status;
+  const steps = plan.steps.map((item) => {
+    if (item.position === step.position) return { ...item, status };
+    // A plan has at most one step in progress.
+    if (status === "doing" && item.status === "doing") return { ...item, status: "todo" as StepStatus };
+    return item;
+  });
   const nextStatus = deriveStatus(steps, plan.status);
   const completedAt = nextStatus === "done" ? (plan.completed_at ?? now) : null;
 
   try {
     transaction(db, () => {
+      if (status === "doing") {
+        db.prepare(
+          "UPDATE plan_steps SET status = 'todo' WHERE plan_id = ? AND status = 'doing' AND position <> ?",
+        ).run(plan.id, step.position);
+      }
       db.prepare("UPDATE plan_steps SET status = ? WHERE plan_id = ? AND position = ?").run(
         status,
         plan.id,
@@ -701,24 +718,26 @@ export function deletePlan(db: Db, id: string): DeleteOk | WriteError {
 /* Rendering / diagnostics                                             */
 /* ------------------------------------------------------------------ */
 
-export function planProgress(plan: Pick<Plan, "steps">): { done: number; total: number } {
+export function planProgress(plan: Pick<Plan, "steps">): { done: number; doing: number; total: number } {
   return {
     done: plan.steps.filter((step) => step.status === "done").length,
+    doing: plan.steps.filter((step) => step.status === "doing").length,
     total: plan.steps.length,
   };
 }
 
 export function renderPlanSummary(plan: Plan): string {
-  const { done, total } = planProgress(plan);
-  return `- [${plan.status}] ${plan.title} (${done}/${total}) id=${plan.id} updated=${plan.updated_at}`;
+  const { done, doing, total } = planProgress(plan);
+  const progress = doing > 0 ? `${done}/${total}, ${doing} doing` : `${done}/${total}`;
+  return `- [${plan.status}] ${plan.title} (${progress}) id=${plan.id} updated=${plan.updated_at}`;
 }
 
 export function renderPlanFull(plan: Plan): string {
-  const { done, total } = planProgress(plan);
+  const { done, doing, total } = planProgress(plan);
   const lines = [
     `# ${plan.title}`,
     `id: ${plan.id}`,
-    `status: ${plan.status} (${done}/${total} passos)`,
+    `status: ${plan.status} (${done}/${total} passos${doing > 0 ? `, ${doing} em andamento` : ""})`,
     `project: ${plan.project_directory}`,
     `session: ${plan.session_id}`,
     `created: ${plan.created_at}`,
@@ -729,8 +748,13 @@ export function renderPlanFull(plan: Plan): string {
     "",
     "## Passos",
     ...(plan.steps.length > 0
-      ? plan.steps.map((step) => `- [${step.status === "done" ? "x" : " "}] ${step.text}`)
+      ? plan.steps.map((step) => {
+          const mark = step.status === "done" ? "x" : step.status === "doing" ? "~" : " ";
+          return `- [${mark}] ${step.text}`;
+        })
       : ["(nenhum passo extraído do texto)"]),
+    "",
+    "Legenda: [x] done · [~] doing · [ ] todo",
     "",
     "## Plano",
     plan.body,

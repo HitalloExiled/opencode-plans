@@ -83,7 +83,7 @@ describe("plans RPC handlers", () => {
     const result = await handlers.setStep({
       id: plan.id,
       stepID: "s1",
-      done: true,
+      status: "done",
       sessionID: "s1",
     });
 
@@ -95,6 +95,41 @@ describe("plans RPC handlers", () => {
     expect(notifications[0]?.text).toContain("1/2");
     expect(notifications[0]?.description).toContain("Concluiu");
     expect(notifications[0]?.resume).toBe(false);
+  });
+
+  test("setStep doing notifies and is reflected in the plan", async () => {
+    const plan = await makePlan();
+    notifications.length = 0;
+
+    const result = await handlers.setStep({
+      id: plan.id,
+      stepID: "s2",
+      status: "doing",
+      sessionID: "s1",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.plan?.steps.find((step) => step.id === "s2")?.status).toBe("doing");
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]?.text).toContain("em andamento");
+    expect(notifications[0]?.description).toContain("Iniciou");
+  });
+
+  test("setStep reopens a doing step as todo", async () => {
+    const plan = await makePlan();
+    await handlers.setStep({ id: plan.id, stepID: "s1", status: "doing", sessionID: "s1" });
+    notifications.length = 0;
+
+    const result = await handlers.setStep({
+      id: plan.id,
+      stepID: "s1",
+      status: "todo",
+      sessionID: "s1",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.plan?.steps.find((step) => step.id === "s1")?.status).toBe("todo");
+    expect(notifications[0]?.description).toContain("Reabriu");
   });
 
   test("update can archive and reopen", async () => {

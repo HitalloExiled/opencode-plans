@@ -10,7 +10,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { usePlugin } from "@opencode/plugin/gui";
 import { PlansRpc } from "./contract";
-import type { Plan, PlanStatus, PlanStep } from "./contract";
+import type { Plan, PlanStatus, PlanStep, StepStatus } from "./contract";
 import { useT } from "./i18n";
 
 const CSS = `
@@ -93,8 +93,9 @@ const CSS = `
 .plan-status.status-archived { color: #e8590c; background: rgba(232,89,12,.12); }
 .plan-status.status-superseded { color: var(--v2-text-text-muted); background: var(--v2-overlay-simple-overlay-pressed); }
 .plan-progress-row { display: flex; align-items: center; gap: 8px; }
-.plan-progress { flex: 1; height: 5px; border-radius: 999px; overflow: hidden; background: var(--v2-overlay-simple-overlay-pressed); }
-.plan-progress-bar { height: 100%; border-radius: 999px; background: #4f8cff; transition: width .2s ease; }
+.plan-progress { display: flex; flex: 1; height: 5px; border-radius: 999px; overflow: hidden; background: var(--v2-overlay-simple-overlay-pressed); }
+.plan-progress-done { height: 100%; background: #2f9e44; transition: width .2s ease; }
+.plan-progress-doing { height: 100%; background: #4f8cff; transition: width .2s ease; }
 .plan-progress-label { font-size: 10.5px; color: var(--v2-text-text-muted); white-space: nowrap; }
 .plans-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 24px 10px; color: var(--v2-text-text-muted); }
 .plans-empty-icon { color: var(--v2-text-text-faint); }
@@ -118,10 +119,27 @@ const CSS = `
 .plan-section-title { font-weight: 600; font-size: 12px; color: var(--v2-text-text-base); margin-top: 4px; }
 .plan-muted { color: var(--v2-text-text-muted); font-size: 11.5px; }
 .plan-steps { display: flex; flex-direction: column; gap: 5px; }
-.plan-step { display: flex; align-items: flex-start; gap: 7px; cursor: pointer; line-height: 1.45; }
-.plan-step input { margin-top: 1px; accent-color: #4f8cff; }
+.plan-step { display: flex; align-items: flex-start; gap: 7px; line-height: 1.45; }
+.plan-step-state {
+  flex: none;
+  appearance: none;
+  width: 76px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  border: 1px solid var(--v2-border-border-muted);
+  background: var(--v2-background-bg-layer-02);
+  color: var(--v2-text-text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.plan-step-state:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
+.plan-step-state.is-doing { color: #4f8cff; border-color: rgba(79,140,255,.45); background: rgba(79,140,255,.10); }
+.plan-step-state.is-done { color: #2f9e44; border-color: rgba(47,158,68,.45); background: rgba(47,158,68,.10); }
+.plan-step-state:disabled { cursor: default; opacity: .6; }
 .plan-step span { overflow-wrap: anywhere; }
 .plan-step-done { text-decoration: line-through; color: var(--v2-text-text-muted); }
+.plan-step-doing { color: #4f8cff; font-weight: 600; }
 .plan-body {
   font-size: 12px;
   line-height: 1.5;
@@ -181,14 +199,23 @@ export function PlansView() {
 
   const projectLabel = (plan: Plan): string => activeProjectName() || basename(plan.projectDirectory);
 
-  const progress = (plan: Plan): { done: number; total: number } => ({
+  const progress = (plan: Plan): { done: number; doing: number; total: number } => ({
     done: plan.steps.filter((step) => step.status === "done").length,
+    doing: plan.steps.filter((step) => step.status === "doing").length,
     total: plan.steps.length,
   });
 
-  const percent = (plan: Plan): number => {
-    const { done, total } = progress(plan);
-    return total === 0 ? 0 : Math.round((done / total) * 100);
+  const percent = (count: number, total: number): number =>
+    total === 0 ? 0 : Math.round((count / total) * 100);
+
+  const donePercent = (plan: Plan): number => percent(progress(plan).done, progress(plan).total);
+  const doingPercent = (plan: Plan): number => percent(progress(plan).doing, progress(plan).total);
+
+  const progressLabel = (plan: Plan): string => {
+    const { done, doing, total } = progress(plan);
+    return doing > 0
+      ? `${t("progress", done, total)} · ${t("progress.doing", doing)}`
+      : t("progress", done, total);
   };
 
   const statusClass = (status: PlanStatus): string => `status-${status}`;
@@ -287,7 +314,7 @@ export function PlansView() {
     ctx.toast.show({ title, description: message, variant: "error" });
   };
 
-  const toggleStep = async (step: PlanStep, done: boolean) => {
+  const setStepStatus = async (step: PlanStep, status: StepStatus) => {
     const id = selectedID();
     const session = currentSession();
     if (!id || !session) return;
@@ -295,12 +322,12 @@ export function PlansView() {
     try {
       const rpc = session.server.client.rpc(PlansRpc);
       const result = await rpc.setStep(
-        { id, stepID: step.id, done, sessionID: session.id },
+        { id, stepID: step.id, status, sessionID: session.id },
         { location: { directory: session.directory } },
       );
       if (!result.ok) throw new Error(result.error ?? "erro ao atualizar o passo");
       if (result.plan) setDetail(result.plan);
-      await load();
+      await load(true);
     } catch (cause) {
       showError(t("toast.updateError"), cause);
     } finally {
@@ -520,11 +547,10 @@ export function PlansView() {
                 </Show>
                 <div class="plan-progress-row">
                   <div class="plan-progress">
-                    <div class="plan-progress-bar" style={{ width: `${percent(plan)}%` }} />
+                    <div class="plan-progress-done" style={{ width: `${donePercent(plan)}%` }} />
+                    <div class="plan-progress-doing" style={{ width: `${doingPercent(plan)}%` }} />
                   </div>
-                  <span class="plan-progress-label">
-                    {t("progress", progress(plan).done, progress(plan).total)}
-                  </span>
+                  <span class="plan-progress-label">{progressLabel(plan)}</span>
                 </div>
               </button>
             )}
@@ -566,11 +592,10 @@ export function PlansView() {
 
             <div class="plan-progress-row">
               <div class="plan-progress">
-                <div class="plan-progress-bar" style={{ width: `${percent(plan())}%` }} />
+                <div class="plan-progress-done" style={{ width: `${donePercent(plan())}%` }} />
+                <div class="plan-progress-doing" style={{ width: `${doingPercent(plan())}%` }} />
               </div>
-              <span class="plan-progress-label">
-                {t("progress", progress(plan()).done, progress(plan()).total)}
-              </span>
+              <span class="plan-progress-label">{progressLabel(plan())}</span>
             </div>
 
             <div class="plan-actions">
@@ -633,15 +658,26 @@ export function PlansView() {
             <div class="plan-steps">
               <For each={plan().steps}>
                 {(step) => (
-                  <label class="plan-step">
-                    <input
-                      type="checkbox"
-                      checked={step.status === "done"}
+                  <div class="plan-step">
+                    <select
+                      class={`plan-step-state is-${step.status}`}
+                      value={step.status}
                       disabled={saving()}
-                      onChange={(event) => void toggleStep(step, event.currentTarget.checked)}
-                    />
-                    <span classList={{ "plan-step-done": step.status === "done" }}>{step.text}</span>
-                  </label>
+                      onChange={(event) => void setStepStatus(step, event.currentTarget.value as StepStatus)}
+                    >
+                      <option value="todo">{t("step.todo")}</option>
+                      <option value="doing">{t("step.doing")}</option>
+                      <option value="done">{t("step.done")}</option>
+                    </select>
+                    <span
+                      classList={{
+                        "plan-step-done": step.status === "done",
+                        "plan-step-doing": step.status === "doing",
+                      }}
+                    >
+                      {step.text}
+                    </span>
+                  </div>
                 )}
               </For>
             </div>
