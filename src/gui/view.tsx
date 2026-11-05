@@ -184,9 +184,11 @@ export function PlansView() {
 
   const statusClass = (status: PlanStatus): string => `status-${status}`;
 
+  const sameJSON = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
   let loadGen = 0;
   let loadController: AbortController | undefined;
-  const load = async () => {
+  const load = async (silent = false) => {
     const gen = ++loadGen;
     setError("");
 
@@ -202,20 +204,21 @@ export function PlansView() {
     loadController?.abort();
     const controller = new AbortController();
     loadController = controller;
-    setLoading(true);
+    if (!silent) setLoading(true);
 
     try {
       const rpc = session.server.client.rpc(PlansRpc);
       const options = { location: { directory: session.directory }, signal: controller.signal };
       const list = await rpc.list({ status: statusFilter(), limit: 200 }, options);
       if (gen !== loadGen) return;
-      setPlans([...list]);
+      if (!sameJSON(plans(), list)) setPlans([...list]);
 
       const id = selectedID();
       if (id) {
         const found = list.find((plan) => plan.id === id) ?? (await rpc.get(id, options));
         if (gen !== loadGen) return;
-        setDetail(found ?? null);
+        const next = found ?? null;
+        if (!sameJSON(detail(), next)) setDetail(next);
         if (!found) setSelectedID(null);
       }
     } catch (cause) {
@@ -227,9 +230,14 @@ export function PlansView() {
 
   onCleanup(() => loadController?.abort());
 
+  // Only reset the detail when the project or the filter actually changes.
+  // Session updates (a step toggle, a notification) must not collapse an
+  // expanded plan.
+  let filterKey = "";
   createEffect(() => {
-    activeProjectID();
-    statusFilter();
+    const key = `${activeProjectID() ?? ""}\u0000${statusFilter()}`;
+    if (key === filterKey) return;
+    filterKey = key;
     setSelectedID(null);
     setDetail(null);
     void load();
@@ -239,10 +247,10 @@ export function PlansView() {
   // session changes, and on a slow poll while the panel stays open.
   createEffect(() => {
     ctx.sessions.list();
-    void load();
+    void load(true);
   });
   const timer = setInterval(() => {
-    if (!loading()) void load();
+    if (!loading()) void load(true);
   }, 3000);
   onCleanup(() => clearInterval(timer));
 
