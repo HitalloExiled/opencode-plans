@@ -119,24 +119,71 @@ const CSS = `
 .plan-section-title { font-weight: 600; font-size: 12px; color: var(--v2-text-text-base); margin-top: 4px; }
 .plan-muted { color: var(--v2-text-text-muted); font-size: 11.5px; }
 .plan-steps { display: flex; flex-direction: column; gap: 5px; }
-.plan-step { display: flex; align-items: flex-start; gap: 7px; line-height: 1.45; }
+.plan-step { display: flex; align-items: flex-start; gap: 6px; line-height: 1.45; }
+.plan-step-control { position: relative; flex: none; }
 .plan-step-state {
-  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   appearance: none;
-  width: 76px;
-  padding: 2px 5px;
-  border-radius: 6px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 5px;
   border: 1px solid var(--v2-border-border-muted);
-  background: var(--v2-background-bg-layer-02);
+  background: transparent;
   color: var(--v2-text-text-muted);
   font-size: 10px;
-  line-height: 1.4;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
 }
+.plan-step-state:hover { background: var(--v2-overlay-simple-overlay-hover); }
 .plan-step-state:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
 .plan-step-state.is-doing { color: #4f8cff; border-color: rgba(79,140,255,.45); background: rgba(79,140,255,.10); }
 .plan-step-state.is-done { color: #2f9e44; border-color: rgba(47,158,68,.45); background: rgba(47,158,68,.10); }
 .plan-step-state:disabled { cursor: default; opacity: .6; }
+.plan-step-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
+.plan-step-caret {
+  width: 0;
+  height: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 4px solid currentColor;
+  opacity: .7;
+}
+.plan-step-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 3px);
+  left: 0;
+  min-width: 92px;
+  padding: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: 6px;
+  border: 1px solid var(--v2-border-border-muted);
+  background: var(--v2-background-bg-layer-01, var(--v2-background-bg-base, #1e1e1e));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .28);
+}
+.plan-step-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-text-base);
+  font-size: 10.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.plan-step-option:hover { background: var(--v2-overlay-simple-overlay-hover); }
+.plan-step-option.is-active { background: var(--v2-overlay-simple-overlay-pressed); font-weight: 600; }
+.plan-step-option.is-doing { color: #4f8cff; }
+.plan-step-option.is-done { color: #2f9e44; }
+.plan-step-option:disabled { opacity: .6; cursor: default; }
 .plan-step span { overflow-wrap: anywhere; }
 .plan-step-done { text-decoration: line-through; color: var(--v2-text-text-muted); }
 .plan-step-doing { color: #4f8cff; font-weight: 600; }
@@ -147,6 +194,8 @@ const CSS = `
   overflow-wrap: anywhere;
 }
 `;
+
+const STEP_STATUSES: readonly StepStatus[] = ["todo", "doing", "done"];
 
 export function PlansView() {
   const ctx = usePlugin();
@@ -161,6 +210,7 @@ export function PlansView() {
   const [loading, setLoading] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
+  const [openStep, setOpenStep] = createSignal<string | null>(null);
 
   const selectedPlan = createMemo(() => (selectedID() ? detail() : null));
 
@@ -299,11 +349,13 @@ export function PlansView() {
   onCleanup(() => clearInterval(timer));
 
   const select = (plan: Plan) => {
+    setOpenStep(null);
     setSelectedID(plan.id);
     setDetail(plan);
   };
 
   const back = () => {
+    setOpenStep(null);
     setSelectedID(null);
     setDetail(null);
   };
@@ -334,6 +386,25 @@ export function PlansView() {
       setSaving(false);
     }
   };
+
+  // The step-state menu closes on an outside click or Escape. The listener is
+  // attached only while a menu is open.
+  createEffect(() => {
+    if (!openStep()) return;
+    const onPointer = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest(".plan-step-control")) setOpenStep(null);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenStep(null);
+    };
+    document.addEventListener("click", onPointer);
+    document.addEventListener("keydown", onKey);
+    onCleanup(() => {
+      document.removeEventListener("click", onPointer);
+      document.removeEventListener("keydown", onKey);
+    });
+  });
 
   const changeStatus = async (status: PlanStatus) => {
     const id = selectedID();
@@ -659,16 +730,43 @@ export function PlansView() {
               <For each={plan().steps}>
                 {(step) => (
                   <div class="plan-step">
-                    <select
-                      class={`plan-step-state is-${step.status}`}
-                      value={step.status}
-                      disabled={saving()}
-                      onChange={(event) => void setStepStatus(step, event.currentTarget.value as StepStatus)}
-                    >
-                      <option value="todo">{t("step.todo")}</option>
-                      <option value="doing">{t("step.doing")}</option>
-                      <option value="done">{t("step.done")}</option>
-                    </select>
+                    <div class="plan-step-control">
+                      <button
+                        type="button"
+                        class={`plan-step-state is-${step.status}`}
+                        aria-haspopup="listbox"
+                        aria-expanded={openStep() === step.id}
+                        disabled={saving()}
+                        onClick={() => setOpenStep(openStep() === step.id ? null : step.id)}
+                      >
+                        <span class="plan-step-dot" />
+                        {t(`step.${step.status}`)}
+                        <span class="plan-step-caret" />
+                      </button>
+                      <Show when={openStep() === step.id}>
+                        <div class="plan-step-menu" role="listbox">
+                          <For each={STEP_STATUSES}>
+                            {(value) => (
+                              <button
+                                type="button"
+                                role="option"
+                                aria-selected={step.status === value}
+                                class={`plan-step-option is-${value}`}
+                                classList={{ "is-active": step.status === value }}
+                                disabled={saving()}
+                                onClick={() => {
+                                  setOpenStep(null);
+                                  if (value !== step.status) void setStepStatus(step, value);
+                                }}
+                              >
+                                <span class="plan-step-dot" />
+                                {t(`step.${value}`)}
+                              </button>
+                            )}
+                          </For>
+                        </div>
+                      </Show>
+                    </div>
                     <span
                       classList={{
                         "plan-step-done": step.status === "done",
