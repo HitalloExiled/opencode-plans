@@ -61,6 +61,8 @@ export function setup(ctx: SetupContext<never>): void {
   ctx.add(MenuItem, (): SessionPanelMenuItem => ({
     menu: "session.panel",
     id: "plans",
+    // Native panel actions use orders 10-30; plugin tabs go after them.
+    order: 41,
     title: text("Planos", "Plans"),
     icon: "file-document",
     run: () => {
