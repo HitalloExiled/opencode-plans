@@ -9,9 +9,13 @@
 
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { usePlugin } from "@opencode/plugin/gui";
+import type { MountedSession } from "@opencode/plugin/gui";
 import { PlansRpc } from "./contract";
 import type { Plan, PlanStatus, PlanStep, StepStatus } from "./contract";
 import { useT } from "./i18n";
+import { bodyWithoutSteps } from "../plan-body";
+import { VIEW_INITIAL, ViewState } from "./state";
+import type { ScopeFilter, StatusFilter } from "./state";
 
 const CSS = `
 .plans {
@@ -74,6 +78,42 @@ const CSS = `
 .plan-card:hover { background: var(--v2-overlay-simple-overlay-hover); border-color: var(--v2-border-border-strong); }
 .plan-card:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
 .plan-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.plan-run-card {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.plan-run-card.is-play { color: #40c057; }
+.plan-run-card.is-play:hover { color: #2f9e44; }
+.plan-run-card.is-pause { color: #f59f00; }
+.plan-run-card.is-pause:hover { color: #e8590c; }
+.plan-run-card:hover { background: var(--v2-overlay-simple-overlay-hover); }
+.plan-run-card:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
+.plan-run-card:disabled { opacity: .6; cursor: default; }
+.plan-run-icon { width: 26px !important; height: 26px !important; }
+.plan-run-card.is-play .plan-run-icon { transform: rotate(-90deg); }
+.plan-pause-icon { display: inline-flex; align-items: center; gap: 4px; }
+.plan-pause-icon-inline { margin-right: 4px; }
+.plan-pause-icon::before, .plan-pause-icon::after {
+  content: "";
+  display: block;
+  width: 5px;
+  height: 18px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.plan-run-play { color: #40c057; }
+.plan-run-play:hover { color: #2f9e44; }
+.plan-run-play svg { transform: rotate(-90deg); }
+.plan-run-pause { color: #f59f00; }
+.plan-run-pause:hover { color: #e8590c; }
 .plan-updated { font-size: 10.5px; color: var(--v2-text-text-faint); }
 .plan-card-title { font-weight: 600; font-size: 13px; line-height: 1.3; overflow-wrap: anywhere; }
 .plan-card-session { font-size: 10.5px; color: var(--v2-text-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -117,6 +157,21 @@ const CSS = `
 .plan-meta { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--v2-text-text-muted); overflow-wrap: anywhere; }
 .plan-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .plan-section-title { font-weight: 600; font-size: 12px; color: var(--v2-text-text-base); margin-top: 4px; }
+.plan-body-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.plan-body-toggle:hover { color: var(--v2-text-text-base); }
+.plan-body-toggle:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
 .plan-muted { color: var(--v2-text-text-muted); font-size: 11.5px; }
 .plan-steps { display: flex; flex-direction: column; gap: 5px; }
 .plan-step { display: flex; align-items: flex-start; gap: 6px; line-height: 1.45; }
@@ -162,7 +217,14 @@ const CSS = `
   border-bottom: 1.6px solid currentColor;
   transform: rotate(45deg);
 }
-.plan-step span { overflow-wrap: anywhere; }
+.plan-step-text {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .plan-step-done { text-decoration: line-through; color: var(--v2-text-text-muted); }
 .plan-step-doing { color: #4f8cff; font-weight: 600; }
 .plan-body {
@@ -175,19 +237,43 @@ const CSS = `
 
 const STEP_STATUSES: readonly StepStatus[] = ["todo", "doing", "done"];
 
-export function PlansView() {
+export function PlansView(props: { session: MountedSession }) {
   const ctx = usePlugin();
   const t = useT();
 
+  // The server context has no locale; keep it in sync so /save-plan messages
+  // follow the interface language (EN-US is the fallback).
+  createEffect(() => {
+    const session = props.session;
+    void session.server.client
+      .rpc(PlansRpc)
+      .setLocale(ctx.locale.locale(), { location: { directory: session.directory } })
+      .catch(() => undefined);
+  });
+
+  const viewStore = createMemo(() => {
+    const session = props.session;
+    return ctx.storage.store(`view:${session.server.id}:${session.id}`, {
+      schema: ViewState,
+      initial: VIEW_INITIAL,
+    });
+  });
+  const saved = viewStore().value;
   const [plans, setPlans] = createSignal<Plan[]>([]);
-  const [query, setQuery] = createSignal("");
-  const [selectedID, setSelectedID] = createSignal<string | null>(null);
+  const [query, setQuery] = createSignal(saved?.query ?? "");
+  const [selectedID, setSelectedID] = createSignal<string | null>(saved?.selectedID ?? null);
   const [detail, setDetail] = createSignal<Plan | null>(null);
-  const [statusFilter, setStatusFilter] = createSignal<"active" | "done" | "all">("active");
-  const [scopeFilter, setScopeFilter] = createSignal<"session" | "project">("session");
+  const [statusFilter, setStatusFilter] = createSignal<StatusFilter>(saved?.status ?? "active");
+  const [scopeFilter, setScopeFilter] = createSignal<ScopeFilter>(saved?.scope ?? "session");
+  const [bodyCollapsed, setBodyCollapsed] = createSignal(saved?.bodyCollapsed ?? false);
+  const [executingPlanID, setExecutingPlanID] = createSignal<string | null>(
+    saved?.executingPlanID ?? null,
+  );
+  const [pendingPlanID, setPendingPlanID] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
+  const [hydrated, setHydrated] = createSignal(saved !== undefined);
 
   const selectedPlan = createMemo(() => (selectedID() ? detail() : null));
 
@@ -200,7 +286,18 @@ export function PlansView() {
     });
   });
 
-  const currentSession = () => ctx.sessions.current();
+  const currentSession = () => props.session;
+
+  const sessionRunning = (): boolean => {
+    const session = currentSession();
+    return session ? session.server.data.session.status(session.id) === "running" : false;
+  };
+
+  const isExecuting = (plan: Plan): boolean =>
+    executingPlanID() === plan.id || pendingPlanID() === plan.id;
+
+  const runDisabled = (plan: Plan): boolean =>
+    saving() || (!isExecuting(plan) && (sessionRunning() || pendingPlanID() !== null));
 
   const basename = (path: string): string => path.split("/").pop() || path;
 
@@ -210,9 +307,6 @@ export function PlansView() {
     const id = currentSession()?.id;
     return !!id && id !== plan.sessionID;
   };
-
-  /** The app lists plans for the routed session's project only. */
-  const activeProjectID = (): string | undefined => currentSession()?.project?.id;
 
   const activeProjectName = (): string => {
     const project = currentSession()?.project;
@@ -301,12 +395,50 @@ export function PlansView() {
 
   onCleanup(() => loadController?.abort());
 
-  // Only reset the detail when the project or the filter actually changes.
-  // Session updates (a step toggle, a notification) must not collapse an
-  // expanded plan.
-  let filterKey = "";
+  // Restore the panel state (open plan, search and filters) from the session
+  // store. The store loads before the panel's regions render, but fall back to
+  // hydrating once it arrives.
+  let filterKey: string | undefined;
   createEffect(() => {
-    const key = `${activeProjectID() ?? ""}\u0000${scopeFilter()}\u0000${statusFilter()}`;
+    if (hydrated()) return;
+    const value = viewStore().value;
+    if (!value) return;
+    setHydrated(true);
+    filterKey = `${value.scope}\u0000${value.status}`;
+    setQuery(value.query);
+    setStatusFilter(value.status);
+    setScopeFilter(value.scope);
+    setSelectedID(value.selectedID);
+    setBodyCollapsed(value.bodyCollapsed ?? false);
+    setExecutingPlanID(value.executingPlanID ?? null);
+    setPendingPlanID(null);
+    void load();
+  });
+
+  // Mirror every UI change into the session store. Writes wait for the store
+  // to load, so skip them until the value above is hydrated.
+  createEffect(() => {
+    if (!hydrated()) return;
+    viewStore().set({
+      selectedID: selectedID(),
+      query: query(),
+      status: statusFilter(),
+      scope: scopeFilter(),
+      bodyCollapsed: bodyCollapsed(),
+      executingPlanID: executingPlanID(),
+    });
+  });
+
+  // Only reset the detail when the filter actually changes. Session updates (a
+  // step toggle, a notification) must not collapse an expanded plan, and the
+  // first run must keep the restored selection.
+  createEffect(() => {
+    const key = `${scopeFilter()}\u0000${statusFilter()}`;
+    if (filterKey === undefined) {
+      filterKey = key;
+      void load();
+      return;
+    }
     if (key === filterKey) return;
     filterKey = key;
     setSelectedID(null);
@@ -320,6 +452,25 @@ export function PlansView() {
     ctx.sessions.list();
     void load(true);
   });
+
+  // Track the execution lifecycle from the session's busy state. `pending`
+  // covers the gap between sending the prompt and the session turning
+  // "running"; once it goes idle again, the Execute button comes back.
+  createEffect(() => {
+    const session = currentSession();
+    if (!session) return;
+    const running = session.server.data.session.status(session.id) === "running";
+    const pending = pendingPlanID();
+    if (running) {
+      if (pending) {
+        setExecutingPlanID(pending);
+        setPendingPlanID(null);
+      }
+      return;
+    }
+    if (!pending && executingPlanID()) setExecutingPlanID(null);
+  });
+
   const timer = setInterval(() => {
     if (!loading()) void load(true);
   }, 3000);
@@ -349,7 +500,7 @@ export function PlansView() {
     try {
       const rpc = session.server.client.rpc(PlansRpc);
       const result = await rpc.setStep(
-        { id, stepID: step.id, status, sessionID: session.id },
+        { id, stepID: step.id, status, sessionID: session.id, locale: ctx.locale.locale() },
         { location: { directory: session.directory } },
       );
       if (!result.ok) throw new Error(result.error ?? "erro ao atualizar o passo");
@@ -362,6 +513,95 @@ export function PlansView() {
     }
   };
 
+  const executePlan = async (plan: Plan) => {
+    const session = currentSession();
+    if (!session) return;
+    setSaving(true);
+    try {
+      let target = plan;
+      if (plan.sessionID !== session.id) {
+        const rpc = session.server.client.rpc(PlansRpc);
+        const moved = await rpc.move(
+          { id: plan.id, sessionID: session.id, locale: ctx.locale.locale() },
+          { location: { directory: session.directory } },
+        );
+        if (!moved.ok) throw new Error(moved.error ?? t("toast.moveError"));
+        if (moved.plan) {
+          target = moved.plan;
+          setDetail(moved.plan);
+        }
+        await load(true);
+      }
+
+      await session.server.client.session.switchAgent({
+        sessionID: session.id,
+        agent: "build",
+      });
+      // No `delivery`: the default is steer, so this is a normal user message
+      // and starts the turn immediately. `delivery: "queue"` would park it
+      // until the current turn ends, leaving the panel stuck in "executing".
+      await session.server.client.session.prompt({
+        sessionID: session.id,
+        text: `Execute ou retome o plano "${target.title}" (id: ${target.id}) a partir do estado atual. Leia o plano com plans.get, siga os passos restantes e atualize o estado com plans.update (stepStatus: "doing" ao começar e "done" ao concluir). Não replaneje.`,
+      });
+      setExecutingPlanID(target.id);
+      setPendingPlanID(target.id);
+      ctx.toast.show({ title: t("toast.executing"), variant: "success" });
+    } catch (cause) {
+      setExecutingPlanID(null);
+      setPendingPlanID(null);
+      showError(t("toast.executeError"), cause);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const pausePlan = async (plan: Plan) => {
+    const session = currentSession();
+    if (!session) return;
+    setSaving(true);
+    try {
+      const result = await session.server.client.session.interrupt({ sessionID: session.id });
+      // Tell the next turn why the run paused, not just that the mode changed.
+      try {
+        await session.server.client.session.synthetic({
+          sessionID: session.id,
+          text: t("pause.synthetic", plan.title, plan.id),
+          description: t("pause.action", plan.title),
+          resume: false,
+          metadata: { source: "plans", planID: plan.id, kind: "paused" },
+        });
+      } catch (error) {
+        console.warn("[plans] could not record the pause message", error);
+      }
+      await session.server.client.session.switchAgent({
+        sessionID: session.id,
+        agent: "plan",
+      });
+      if (!result.interrupted) {
+        setExecutingPlanID(null);
+        setPendingPlanID(null);
+      }
+      ctx.toast.show({ title: t("toast.pausing"), variant: "success" });
+    } catch (cause) {
+      showError(t("toast.pauseError"), cause);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleRun = async (plan: Plan) => {
+    if (isExecuting(plan)) {
+      await pausePlan(plan);
+      return;
+    }
+    if (sessionRunning() || pendingPlanID() !== null) {
+      ctx.toast.show({ title: t("toast.busy"), variant: "error" });
+      return;
+    }
+    await executePlan(plan);
+  };
+
   const changeStatus = async (status: PlanStatus) => {
     const id = selectedID();
     const session = currentSession();
@@ -370,7 +610,7 @@ export function PlansView() {
     try {
       const rpc = session.server.client.rpc(PlansRpc);
       const result = await rpc.update(
-        { id, status, sessionID: session.id },
+        { id, status, sessionID: session.id, locale: ctx.locale.locale() },
         { location: { directory: session.directory } },
       );
       if (!result.ok) throw new Error(result.error ?? "erro ao atualizar o plano");
@@ -399,7 +639,7 @@ export function PlansView() {
     try {
       const rpc = session.server.client.rpc(PlansRpc);
       const result = await rpc.remove(
-        { id, sessionID: session.id },
+        { id, sessionID: session.id, locale: ctx.locale.locale() },
         { location: { directory: session.directory } },
       );
       if (!result.ok) throw new Error(result.error ?? "erro ao remover o plano");
@@ -422,7 +662,7 @@ export function PlansView() {
     try {
       const rpc = session.server.client.rpc(PlansRpc);
       const result = await rpc.move(
-        { id, sessionID: session.id },
+        { id, sessionID: session.id, locale: ctx.locale.locale() },
         { location: { directory: session.directory } },
       );
       if (!result.ok) throw new Error(result.error ?? "erro ao mover o plano");
@@ -444,6 +684,10 @@ export function PlansView() {
     }
     setSaving(true);
     try {
+      const rpc = session.server.client.rpc(PlansRpc);
+      await rpc.setLocale(ctx.locale.locale(), {
+        location: { directory: session.directory },
+      });
       await session.server.client.session.command({
         sessionID: session.id,
         name: "save-plan",
@@ -464,89 +708,93 @@ export function PlansView() {
     <div class="plans">
       <style>{CSS}</style>
 
-      <div class="plans-head">
-        <div class="plans-title">
-          <ctx.ui.Icon name="file-document" size="small" />
-          <span>{t("title")}</span>
-          <span class="plans-count">{filteredPlans().length}</span>
+      <Show when={!selectedID()}>
+        <div class="plans-head">
+          <div class="plans-title">
+            <ctx.ui.Icon name="file-document" size="small" />
+            <span>{t("title")}</span>
+            <span class="plans-count">{filteredPlans().length}</span>
+          </div>
+          <div class="plans-actions">
+            <ctx.ui.Button size="small" variant="contrast" icon="plus" busy={saving()} onClick={() => void saveLast()}>
+              {t("saveLast")}
+            </ctx.ui.Button>
+            <ctx.ui.IconButton
+              icon="outline-rotate-clockwise"
+              label={t("refresh")}
+              onClick={() => void load()}
+            />
+          </div>
         </div>
-        <div class="plans-actions">
-          <ctx.ui.Button size="small" variant="contrast" icon="plus" busy={saving()} onClick={() => void saveLast()}>
-            {t("saveLast")}
-          </ctx.ui.Button>
-          <ctx.ui.IconButton
-            icon="outline-rotate-clockwise"
-            label={t("refresh")}
-            onClick={() => void load()}
-          />
-        </div>
-      </div>
+      </Show>
 
-      <div class="plans-filters">
-        <ctx.ui.TextInput
-          type="search"
-          label={t("search.label")}
-          placeholder={t("search.placeholder")}
-          value={query()}
-          onInput={setQuery}
-        />
-        <div class="plans-toggles" role="group" aria-label={t("filters.scope")}>
-          <button
-            type="button"
-            class="plans-toggle"
-            classList={{ "is-active": scopeFilter() === "session" }}
-            onClick={() => setScopeFilter("session")}
-          >
-            {t("scope.session")}
-          </button>
-          <button
-            type="button"
-            class="plans-toggle"
-            classList={{ "is-active": scopeFilter() === "project" }}
-            onClick={() => setScopeFilter("project")}
-          >
-            {t("scope.project")}
-          </button>
+      <Show when={!selectedID()}>
+        <div class="plans-filters">
+          <ctx.ui.TextInput
+            type="search"
+            label={t("search.label")}
+            placeholder={t("search.placeholder")}
+            value={query()}
+            onInput={setQuery}
+          />
+          <div class="plans-toggles" role="group" aria-label={t("filters.scope")}>
+            <button
+              type="button"
+              class="plans-toggle"
+              classList={{ "is-active": scopeFilter() === "session" }}
+              onClick={() => setScopeFilter("session")}
+            >
+              {t("scope.session")}
+            </button>
+            <button
+              type="button"
+              class="plans-toggle"
+              classList={{ "is-active": scopeFilter() === "project" }}
+              onClick={() => setScopeFilter("project")}
+            >
+              {t("scope.project")}
+            </button>
+          </div>
+          <div class="plans-toggles" role="group" aria-label={t("filters.label")}>
+            <button
+              type="button"
+              class="plans-toggle"
+              classList={{ "is-active": statusFilter() === "active" }}
+              onClick={() => setStatusFilter("active")}
+            >
+              {t("filter.active")}
+            </button>
+            <button
+              type="button"
+              class="plans-toggle"
+              classList={{ "is-active": statusFilter() === "done" }}
+              onClick={() => setStatusFilter("done")}
+            >
+              {t("filter.done")}
+            </button>
+            <button
+              type="button"
+              class="plans-toggle"
+              classList={{ "is-active": statusFilter() === "all" }}
+              onClick={() => setStatusFilter("all")}
+            >
+              {t("filter.all")}
+            </button>
+          </div>
         </div>
-        <div class="plans-toggles" role="group" aria-label={t("filters.label")}>
-          <button
-            type="button"
-            class="plans-toggle"
-            classList={{ "is-active": statusFilter() === "active" }}
-            onClick={() => setStatusFilter("active")}
-          >
-            {t("filter.active")}
-          </button>
-          <button
-            type="button"
-            class="plans-toggle"
-            classList={{ "is-active": statusFilter() === "done" }}
-            onClick={() => setStatusFilter("done")}
-          >
-            {t("filter.done")}
-          </button>
-          <button
-            type="button"
-            class="plans-toggle"
-            classList={{ "is-active": statusFilter() === "all" }}
-            onClick={() => setStatusFilter("all")}
-          >
-            {t("filter.all")}
-          </button>
-        </div>
-      </div>
+      </Show>
 
       <Show when={error()}>
         <div class="plans-error">{error()}</div>
       </Show>
 
-      <Show when={loading() && filteredPlans().length === 0}>
+      <Show when={!selectedID() && loading() && filteredPlans().length === 0}>
         <div class="plans-loading">
           <ctx.ui.Loader size="small" /> {t("loading")}
         </div>
       </Show>
 
-      <Show when={!selectedPlan()}>
+      <Show when={!selectedID()}>
         <div class="plans-list">
           <Show when={!loading() && filteredPlans().length === 0}>
             <div class="plans-empty">
@@ -561,7 +809,19 @@ export function PlansView() {
           </Show>
           <For each={filteredPlans()}>
             {(plan) => (
-              <button type="button" class="plan-card" onClick={() => select(plan)}>
+              <div
+                class="plan-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => select(plan)}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    select(plan);
+                  }
+                }}
+              >
                 <div class="plan-card-top">
                   <span class={`plan-status ${statusClass(plan.status)}`}>{t(`status.${plan.status}`)}</span>
                   <span class="plan-updated">{formatDate(plan.updatedAt)}</span>
@@ -573,21 +833,57 @@ export function PlansView() {
                   </div>
                 </Show>
                 <div class="plan-progress-row">
+                  <Show when={plan.status === "active"}>
+                    <ctx.ui.Tooltip value={isExecuting(plan) ? t("pause") : t("execute")}>
+                      <button
+                        type="button"
+                        class={isExecuting(plan) ? "plan-run-card is-pause" : "plan-run-card is-play"}
+                        aria-label={isExecuting(plan) ? t("pause") : t("execute")}
+                        aria-pressed={isExecuting(plan)}
+                        disabled={runDisabled(plan)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void toggleRun(plan);
+                        }}
+                      >
+                        <Show
+                          when={isExecuting(plan)}
+                          fallback={
+                            <ctx.ui.Icon
+                              name="fill-triangle-down"
+                              size="large"
+                              class="plan-run-icon"
+                            />
+                          }
+                        >
+                          <span class="plan-pause-icon" />
+                        </Show>
+                      </button>
+                    </ctx.ui.Tooltip>
+                  </Show>
                   <div class="plan-progress">
                     <div class="plan-progress-done" style={{ width: `${donePercent(plan)}%` }} />
                     <div class="plan-progress-doing" style={{ width: `${doingPercent(plan)}%` }} />
                   </div>
                   <span class="plan-progress-label">{progressLabel(plan)}</span>
                 </div>
-              </button>
+              </div>
             )}
           </For>
         </div>
       </Show>
 
-      <Show when={selectedPlan()}>
-        {(plan) => (
-          <div class="plan-detail">
+      <Show when={selectedID()}>
+        <Show
+          when={selectedPlan()}
+          fallback={
+            <div class="plans-loading">
+              <ctx.ui.Loader size="small" /> {t("loading")}
+            </div>
+          }
+        >
+          {(plan) => (
+            <div class="plan-detail">
             <button type="button" class="plan-back" onClick={back}>
               ← {t("back")}
             </button>
@@ -626,6 +922,21 @@ export function PlansView() {
             </div>
 
             <div class="plan-actions">
+              <Show when={plan().status === "active"}>
+                <ctx.ui.Button
+                  size="small"
+                  variant="ghost"
+                  class={isExecuting(plan()) ? "plan-run-pause" : "plan-run-play"}
+                  icon={isExecuting(plan()) ? undefined : "fill-triangle-down"}
+                  disabled={runDisabled(plan())}
+                  onClick={() => void toggleRun(plan())}
+                >
+                  <Show when={isExecuting(plan())}>
+                    <span class="plan-pause-icon plan-pause-icon-inline" />
+                  </Show>
+                  {isExecuting(plan()) ? t("pause") : t("execute")}
+                </ctx.ui.Button>
+              </Show>
               <Show when={plan().status === "active"}>
                 <ctx.ui.Button
                   size="small"
@@ -707,6 +1018,8 @@ export function PlansView() {
                       </For>
                     </div>
                     <span
+                      class="plan-step-text"
+                      title={step.text}
                       classList={{
                         "plan-step-done": step.status === "done",
                         "plan-step-doing": step.status === "doing",
@@ -719,10 +1032,30 @@ export function PlansView() {
               </For>
             </div>
 
-            <div class="plan-section-title">{t("plan")}</div>
-            <ctx.ui.Markdown text={plan().body} class="plan-body" />
+            <Show when={bodyWithoutSteps(plan().body)}>
+              {(body) => (
+                <>
+                  <button
+                    type="button"
+                    class="plan-section-title plan-body-toggle"
+                    aria-expanded={!bodyCollapsed()}
+                    onClick={() => setBodyCollapsed(!bodyCollapsed())}
+                  >
+                    <ctx.ui.Icon
+                      name={bodyCollapsed() ? "chevron-right" : "chevron-down"}
+                      size="small"
+                    />
+                    <span>{t("plan")}</span>
+                  </button>
+                  <Show when={!bodyCollapsed()}>
+                    <ctx.ui.Markdown text={body()} class="plan-body" />
+                  </Show>
+                </>
+              )}
+            </Show>
           </div>
         )}
+        </Show>
       </Show>
     </div>
   );

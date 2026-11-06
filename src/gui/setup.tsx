@@ -7,7 +7,7 @@
  *  - a "+ / New tab" menu entry (`MenuItem`).
  */
 
-import { createMemo } from "solid-js";
+import { createMemo, Show } from "solid-js";
 import type {
   Panel as PanelType,
   PanelTab,
@@ -33,7 +33,13 @@ export function setup(ctx: SetupContext<never>): void {
     id: openPlansId,
     region: "side",
     list: () => [plansTab()],
-    render: () => <PlansView />,
+    // The host keeps a panel render mounted across session switches. Key it by
+    // the session so each session gets its own restored panel state.
+    render: (props) => (
+      <Show when={props.session.key} keyed>
+        {(_key) => <PlansView session={props.session} />}
+      </Show>
+    ),
   };
   ctx.add(Panel, () => plansPanel);
 

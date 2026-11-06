@@ -15,6 +15,7 @@ process.env.PLANS_DB = join(dir, "plans.db");
 
 const { createRpcHandlers } = await import("../src/rpc");
 const { requireStore, savePlan } = await import("../src/store");
+const { updateTool, getTool } = await import("../plans");
 
 type SyntheticInput = {
   sessionID: string;
@@ -37,6 +38,11 @@ const ctx = {
 
 const handlers = createRpcHandlers(ctx as never);
 
+// The RPC type expects a per-call context as the second argument; these tests
+// bind the fake context once in `createRpcHandlers`, so erase that parameter.
+type Unary<F> = F extends (input: infer I, ...rest: any[]) => infer R ? (input: I) => R : never;
+const h = handlers as unknown as { [K in keyof typeof handlers]: Unary<(typeof handlers)[K]> };
+
 afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
@@ -56,9 +62,9 @@ const makePlan = async (body = "# Plan\n\n- [ ] One\n- [ ] Two\n", sessionID = "
 describe("plans RPC handlers", () => {
   test("list and get return the panel shape for the current project", async () => {
     const plan = await makePlan();
-    const list = await handlers.list({ status: "all", scope: "session", sessionID: "s1" });
+    const list = await h.list({ status: "all", scope: "session", sessionID: "s1" });
     expect(list.some((item) => item.id === plan.id)).toBe(true);
-    const found = await handlers.get(plan.id);
+    const found = await h.get(plan.id);
     expect(found?.id).toBe(plan.id);
     expect(found?.steps).toHaveLength(2);
   });
@@ -67,11 +73,11 @@ describe("plans RPC handlers", () => {
     const mine = await makePlan(undefined, "s1");
     const other = await makePlan("# Other\n\n- [ ] X\n", "s2");
 
-    const session = await handlers.list({ status: "all", scope: "session", sessionID: "s1" });
+    const session = await h.list({ status: "all", scope: "session", sessionID: "s1" });
     expect(session.some((item) => item.id === mine.id)).toBe(true);
     expect(session.some((item) => item.id === other.id)).toBe(false);
 
-    const project = await handlers.list({ status: "all", scope: "project" });
+    const project = await h.list({ status: "all", scope: "project" });
     expect(project.some((item) => item.id === mine.id)).toBe(true);
     expect(project.some((item) => item.id === other.id)).toBe(true);
   });
@@ -80,11 +86,12 @@ describe("plans RPC handlers", () => {
     const plan = await makePlan();
     notifications.length = 0;
 
-    const result = await handlers.setStep({
+    const result = await h.setStep({
       id: plan.id,
       stepID: "s1",
       status: "done",
       sessionID: "s1",
+      locale: "pt-br",
     });
 
     expect(result.ok).toBe(true);
@@ -101,11 +108,12 @@ describe("plans RPC handlers", () => {
     const plan = await makePlan();
     notifications.length = 0;
 
-    const result = await handlers.setStep({
+    const result = await h.setStep({
       id: plan.id,
       stepID: "s2",
       status: "doing",
       sessionID: "s1",
+      locale: "pt-br",
     });
 
     expect(result.ok).toBe(true);
@@ -115,16 +123,33 @@ describe("plans RPC handlers", () => {
     expect(notifications[0]?.description).toContain("Iniciou");
   });
 
-  test("setStep reopens a doing step as todo", async () => {
-    const plan = await makePlan();
-    await handlers.setStep({ id: plan.id, stepID: "s1", status: "doing", sessionID: "s1" });
+  test("setStep notifies the plan's own session", async () => {
+    const plan = await makePlan(undefined, "s2");
     notifications.length = 0;
 
-    const result = await handlers.setStep({
+    const result = await h.setStep({
+      id: plan.id,
+      stepID: "s1",
+      status: "done",
+      sessionID: "s1",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]?.sessionID).toBe("s2");
+  });
+
+  test("setStep reopens a doing step as todo", async () => {
+    const plan = await makePlan();
+    await h.setStep({ id: plan.id, stepID: "s1", status: "doing", sessionID: "s1" });
+    notifications.length = 0;
+
+    const result = await h.setStep({
       id: plan.id,
       stepID: "s1",
       status: "todo",
       sessionID: "s1",
+      locale: "pt-br",
     });
 
     expect(result.ok).toBe(true);
@@ -136,13 +161,23 @@ describe("plans RPC handlers", () => {
     const plan = await makePlan();
     notifications.length = 0;
 
-    const archived = await handlers.update({ id: plan.id, status: "archived", sessionID: "s1" });
+    const archived = await h.update({
+      id: plan.id,
+      status: "archived",
+      sessionID: "s1",
+      locale: "pt-br",
+    });
     expect(archived.ok).toBe(true);
     expect(archived.ok && archived.plan?.status).toBe("archived");
     expect(notifications[0]?.text).toContain("arquivado");
     expect(notifications[0]?.description).toContain("Arquivou");
 
-    const reopened = await handlers.update({ id: plan.id, status: "active", sessionID: "s1" });
+    const reopened = await h.update({
+      id: plan.id,
+      status: "active",
+      sessionID: "s1",
+      locale: "pt-br",
+    });
     expect(reopened.ok).toBe(true);
     expect(reopened.ok && reopened.plan?.status).toBe("active");
   });
@@ -151,27 +186,94 @@ describe("plans RPC handlers", () => {
     const plan = await makePlan();
     notifications.length = 0;
 
-    const removed = await handlers.remove({ id: plan.id, sessionID: "s1" });
+    const removed = await h.remove({ id: plan.id, sessionID: "s1", locale: "pt-br" });
     expect(removed.ok).toBe(true);
     expect(notifications[0]?.text).toContain("removeu");
     expect(notifications[0]?.description).toContain("Removeu");
-    expect(await handlers.get(plan.id)).toBeNull();
+    expect(await h.get(plan.id)).toBeNull();
   });
 
   test("move changes the session and notifies the destination", async () => {
     const plan = await makePlan(undefined, "s1");
     notifications.length = 0;
 
-    const moved = await handlers.move({ id: plan.id, sessionID: "s2" });
+    const moved = await h.move({ id: plan.id, sessionID: "s2", locale: "pt-br" });
     expect(moved.ok).toBe(true);
     expect(moved.ok && moved.plan?.sessionID).toBe("s2");
     expect(notifications[0]?.sessionID).toBe("s2");
     expect(notifications[0]?.description).toContain("Moveu");
 
-    const session1 = await handlers.list({ status: "all", scope: "session", sessionID: "s1" });
+    const session1 = await h.list({ status: "all", scope: "session", sessionID: "s1" });
     expect(session1.some((item) => item.id === plan.id)).toBe(false);
 
-    const session2 = await handlers.list({ status: "all", scope: "session", sessionID: "s2" });
+    const session2 = await h.list({ status: "all", scope: "session", sessionID: "s2" });
     expect(session2.some((item) => item.id === plan.id)).toBe(true);
+  });
+
+  test("notifications fall back to en-us when the locale is missing or unknown", async () => {
+    const plan = await makePlan();
+    notifications.length = 0;
+
+    await h.setStep({ id: plan.id, stepID: "s1", status: "done", sessionID: "s1" });
+    expect(notifications[0]?.text).toContain("done");
+    expect(notifications[0]?.description).toContain("Completed");
+
+    notifications.length = 0;
+    await h.setStep({
+      id: plan.id,
+      stepID: "s2",
+      status: "todo",
+      sessionID: "s1",
+      locale: "fr-fr",
+    });
+    expect(notifications[0]?.text).toContain("pending");
+    expect(notifications[0]?.description).toContain("Reopened");
+  });
+});
+
+describe("plans.update tool guards", () => {
+  const toolCtx = { sessionID: "s1", messageID: "m1" } as never;
+  const run = (input: Record<string, unknown>) =>
+    updateTool(ctx as never).execute(input as never, toolCtx);
+
+  test("marks a step by stepID and plans.get exposes its id", async () => {
+    const plan = await makePlan();
+    const result = await run({ id: plan.id, stepID: "s1", stepStatus: "doing" });
+    expect(result.content).not.toContain("❌");
+    expect(result.content).toContain("Plano atualizado");
+
+    const detail = await getTool(ctx as never).execute({ id: plan.id } as never, toolCtx);
+    expect(detail.content).toContain("- [~] (s1) One");
+    expect(detail.content).toContain("- [ ] (s2) Two");
+  });
+
+  test("rejects body combined with a step status", async () => {
+    const plan = await makePlan();
+    const result = await run({
+      id: plan.id,
+      body: "# Plan\n\n- [x] One\n- [ ] Two\n",
+      stepStatus: "done",
+    });
+    expect(result.content).toContain("❌");
+    expect(result.content).toContain("não combine body");
+  });
+
+  test("rejects a body that only toggles checkboxes", async () => {
+    const plan = await makePlan();
+    const result = await run({
+      id: plan.id,
+      body: "# Plan\n\n- [x] One\n- [ ] Two\n",
+    });
+    expect(result.content).toContain("❌");
+    expect(result.content).toContain("só troca os checkboxes");
+  });
+
+  test("allows a body that changes the step text", async () => {
+    const plan = await makePlan();
+    const result = await run({
+      id: plan.id,
+      body: "# Plan\n\n- [x] Uno\n- [ ] Two\n",
+    });
+    expect(result.content).not.toContain("❌");
   });
 });

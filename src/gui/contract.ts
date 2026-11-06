@@ -152,6 +152,7 @@ export const updateInputSchema = Schema.Struct({
   title: optString,
   body: optString,
   sessionID: optString,
+  locale: optString,
 });
 
 export const stepInputSchema = Schema.Struct({
@@ -159,16 +160,19 @@ export const stepInputSchema = Schema.Struct({
   stepID: Schema.String,
   status: stepStatusSchema,
   sessionID: optString,
+  locale: optString,
 });
 
 export const removeInputSchema = Schema.Struct({
   id: Schema.String,
   sessionID: optString,
+  locale: optString,
 });
 
 export const moveInputSchema = Schema.Struct({
   id: Schema.String,
   sessionID: Schema.String,
+  locale: optString,
 });
 
 export const statusSchema = Schema.Struct({
@@ -212,6 +216,10 @@ export const PlansRpc = Rpc.define({
     move: {
       input: Schema.toStandardSchemaV1(moveInputSchema),
       output: Schema.toStandardSchemaV1(planResultSchema),
+    },
+    setLocale: {
+      input: Schema.toStandardSchemaV1(Schema.String),
+      output: Schema.toStandardSchemaV1(Schema.Null),
     },
   },
   events: {},

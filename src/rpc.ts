@@ -8,7 +8,8 @@
 
 import type { Plugin } from "@opencode/plugin";
 import type { RpcHandlers } from "@opencode/plugin/promise/rpc";
-import { PlansRpc, type Plan, type PlanResult, type PlanStatus, type Status } from "./gui/contract.js";
+import { PlansRpc, type Plan, type PlanResult, type Status } from "./gui/contract.js";
+import { notificationLocale, tn } from "./notifications.js";
 import {
   deletePlan,
   getPlan,
@@ -51,19 +52,6 @@ const toPlan = (plan: StorePlan): Plan => ({
 const fromWrite = (result: SaveOk | WriteError): PlanResult =>
   result.ok ? { ok: true, plan: toPlan(result.plan) } : { ok: false, error: result.error };
 
-function statusLabel(status: PlanStatus): string {
-  switch (status) {
-    case "done":
-      return "concluído";
-    case "archived":
-      return "arquivado";
-    case "superseded":
-      return "substituído";
-    default:
-      return "reaberto";
-  }
-}
-
 /** Tell the session that the user changed a plan from the panel. */
 async function notify(
   ctx: Ctx,
@@ -85,19 +73,6 @@ async function notify(
     console.error(
       `[plans] could not notify session ${sessionID}: ${error instanceof Error ? error.message : String(error)}`,
     );
-  }
-}
-
-function statusAction(status: PlanStatus): string {
-  switch (status) {
-    case "done":
-      return "Concluiu";
-    case "archived":
-      return "Arquivou";
-    case "superseded":
-      return "Substituiu";
-    default:
-      return "Reabriu";
   }
 }
 
@@ -142,21 +117,27 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       });
       if (!result.ok) return fromWrite(result);
 
+      const locale = notificationLocale(input.locale);
       if (input.status) {
         await notify(
           ctx,
-          input.sessionID,
-          `O usuário marcou o plano "${result.plan.title}" como ${statusLabel(input.status)}.`,
+          result.plan.session_id,
+          tn(locale, "plan.status", result.plan.title, tn(locale, `status.${input.status}`)),
           result.plan.id,
-          `${statusAction(input.status)} o plano "${result.plan.title}"`,
+          tn(
+            locale,
+            "plan.status.action",
+            tn(locale, `status.${input.status}.action`),
+            result.plan.title,
+          ),
         );
       } else {
         await notify(
           ctx,
-          input.sessionID,
-          `O usuário atualizou o plano "${result.plan.title}".`,
+          result.plan.session_id,
+          tn(locale, "plan.updated", result.plan.title),
           result.plan.id,
-          `Atualizou o plano "${result.plan.title}"`,
+          tn(locale, "plan.updated.action", result.plan.title),
         );
       }
       return fromWrite(result);
@@ -174,14 +155,28 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const step = result.plan.steps.find((item) => item.step_id === input.stepID);
       const { done, total } = planProgress(result.plan);
       const stepText = step?.text ?? input.stepID;
-      const state = input.status === "done" ? "concluído" : input.status === "doing" ? "em andamento" : "pendente";
-      const action = input.status === "done" ? "Concluiu" : input.status === "doing" ? "Iniciou" : "Reabriu";
+      const locale = notificationLocale(input.locale);
       await notify(
         ctx,
-        input.sessionID,
-        `O usuário marcou o passo "${stepText}" como ${state} no plano "${result.plan.title}" (${done}/${total}).`,
+        result.plan.session_id,
+        tn(
+          locale,
+          "step.status",
+          stepText,
+          tn(locale, `step.${input.status}`),
+          result.plan.title,
+          done,
+          total,
+        ),
         result.plan.id,
-        `${action} o passo "${stepText}" (${done}/${total})`,
+        tn(
+          locale,
+          "step.status.action",
+          tn(locale, `step.${input.status}.action`),
+          stepText,
+          done,
+          total,
+        ),
       );
       return fromWrite(result);
     },
@@ -190,12 +185,13 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const store = await requireStore();
       const result = deletePlan(store.db, input.id);
       if (!result.ok) return fromWrite(result);
+      const locale = notificationLocale(input.locale);
       await notify(
         ctx,
-        input.sessionID,
-        `O usuário removeu o plano "${result.plan.title}".`,
+        result.plan.session_id,
+        tn(locale, "plan.removed", result.plan.title),
         result.plan.id,
-        `Removeu o plano "${result.plan.title}"`,
+        tn(locale, "plan.removed.action", result.plan.title),
       );
       return fromWrite(result);
     },
@@ -211,14 +207,24 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
 
       const result = movePlan(store.db, input.id, input.sessionID);
       if (!result.ok) return fromWrite(result);
+      const locale = notificationLocale(input.locale);
       await notify(
         ctx,
-        input.sessionID,
-        `O usuário moveu o plano "${result.plan.title}" para esta sessão.`,
+        result.plan.session_id,
+        tn(locale, "plan.moved", result.plan.title),
         result.plan.id,
-        `Moveu o plano "${result.plan.title}" para esta sessão`,
+        tn(locale, "plan.moved.action", result.plan.title),
       );
       return fromWrite(result);
+    },
+
+    /**
+     * Remember the interface locale for server-side messages (the /save-plan
+     * command). The server context has no locale; EN-US is the fallback.
+     */
+    setLocale: async (locale) => {
+      await ctx.storage.set("locale", locale);
+      return null;
     },
   };
 }

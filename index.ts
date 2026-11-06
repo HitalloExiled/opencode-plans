@@ -17,6 +17,7 @@ import { findLastPlanMessage, type SessionMessageLike } from "./src/capture.js";
 import { PLAN_SAVE_INSTRUCTION, renderBuildContext } from "./src/inject.js";
 import { deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
 import { PlansRpc } from "./src/gui/contract.js";
+import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
 import { createRpcHandlers } from "./src/rpc.js";
 import { listPlans, planProgress, requireStore, savePlan } from "./src/store.js";
 
@@ -32,6 +33,18 @@ function projectDirectory(ctx: Ctx): string {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The server context has no locale of its own; the GUI writes the current
+ * interface locale to storage, and anything unknown falls back to EN-US.
+ */
+async function commandLocale(ctx: Ctx): Promise<NotificationLocale> {
+  try {
+    return notificationLocale((await ctx.storage.get("locale")) as string | null | undefined);
+  } catch {
+    return "en-us";
+  }
 }
 
 async function registerTools(ctx: Ctx) {
@@ -60,13 +73,14 @@ async function registerCommand(ctx: Ctx) {
       name: "save-plan",
       description: "Salva o último plano apresentado pelo agente Plan nesta sessão",
       async execute({ sessionID, prompt }) {
+        const locale = await commandLocale(ctx);
         try {
           const messages = await ctx.session.context({ sessionID });
           const captured = findLastPlanMessage(messages as unknown as SessionMessageLike[]);
           if (!captured) {
             await ctx.session.synthetic({
               sessionID,
-              text: "Nenhum plano do agente Plan foi encontrado nesta sessão. Gere um plano no modo Plan e tente novamente.",
+              text: tn(locale, "save.none"),
             });
             return;
           }
@@ -84,7 +98,7 @@ async function registerCommand(ctx: Ctx) {
           if (!result.ok) {
             await ctx.session.synthetic({
               sessionID,
-              text: `Falha ao salvar o plano: ${result.error}`,
+              text: tn(locale, "save.failed", result.error),
             });
             return;
           }
@@ -93,15 +107,15 @@ async function registerCommand(ctx: Ctx) {
           await ctx.session.synthetic({
             sessionID,
             text: [
-              `Plano salvo: ${result.plan.title}`,
-              `id: ${result.plan.id}`,
-              `${progress.done}/${progress.total} passos concluídos`,
+              tn(locale, "save.saved", result.plan.title),
+              tn(locale, "save.id", result.plan.id),
+              tn(locale, "save.progress", progress.done, progress.total),
             ].join("\n"),
           });
         } catch (error) {
           await ctx.session.synthetic({
             sessionID,
-            text: `Falha ao salvar o plano: ${errorText(error)}`,
+            text: tn(locale, "save.failed", errorText(error)),
           }).catch(() => undefined);
         }
       },

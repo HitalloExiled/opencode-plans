@@ -66,9 +66,9 @@ describe("parseSteps", () => {
     expect(steps.map((step) => step.text)).toEqual(["Run this:", "Then test"]);
   });
 
-  test("light Markdown is cleaned", () => {
+  test("keeps the exact item text", () => {
     const steps = parseSteps("- [ ] **Bold** and `code` and [link](https://example.com)\n");
-    expect(steps[0]?.text).toBe("Bold and code and link");
+    expect(steps[0]?.text).toBe("**Bold** and `code` and [link](https://example.com)");
   });
 
   test("deduplicates and caps", () => {
@@ -310,11 +310,16 @@ describe("plan lifecycle", () => {
     if (!created.ok) throw new Error(created.error);
 
     expect(planProgress(created.plan)).toEqual({ done: 1, doing: 0, total: 2 });
+    expect(created.plan.body).toContain("<!-- plans:steps -->");
+    expect(created.plan.body).not.toContain("- [ ] One");
+
     const rendered = renderPlanFull(created.plan);
     expect(rendered).toContain("# Plan");
-    expect(rendered).toContain("- [x] One");
-    expect(rendered).toContain("- [ ] Two");
-    expect(rendered).toContain("## Plano");
+    expect(rendered).toContain("- [x] (s1) One");
+    expect(rendered).toContain("- [ ] (s2) Two");
+    expect(rendered).toContain("## Passos");
+    expect(rendered).not.toContain("<!-- plans:steps -->");
+    expect(rendered.match(/## Passos/g)).toHaveLength(1);
   });
 
   test("setStep keeps a single doing step per plan", () => {
@@ -347,6 +352,57 @@ describe("plan lifecycle", () => {
     });
     if (!updated.ok) throw new Error(updated.error);
     expect(updated.plan.steps.map((step) => step.status)).toEqual(["todo", "doing", "todo"]);
+  });
+
+  test("status-only update preserves steps and the template", () => {
+    const db = open();
+    const created = savePlan(db, {
+      ...base,
+      body: "# Plan\n\n## Passos\n- [ ] One\n- [ ] Two\n\n## Objetivo\nX\n",
+    });
+    if (!created.ok) throw new Error(created.error);
+
+    const updated = updatePlan(db, { id: created.plan.id, status: "archived" });
+    if (!updated.ok) throw new Error(updated.error);
+    expect(updated.plan.steps.map((step) => step.text)).toEqual(["One", "Two"]);
+    expect(updated.plan.body).toContain("<!-- plans:steps -->");
+    expect(updated.plan.body).not.toContain("- [ ] One");
+  });
+
+  test("explicit steps with no body checklist get a template section", () => {
+    const db = open();
+    const created = savePlan(db, {
+      ...base,
+      body: "# Plan\n\n## Objetivo\nX\n",
+      steps: [{ text: "One" }, { text: "Two" }],
+    });
+    if (!created.ok) throw new Error(created.error);
+    expect(created.plan.steps.map((step) => step.text)).toEqual(["One", "Two"]);
+    expect(created.plan.body).toContain("## Passos");
+    expect(created.plan.body).toContain("<!-- plans:steps -->");
+  });
+
+  test("a body update without a step section keeps the tracked steps", () => {
+    const db = open();
+    const created = savePlan(db, {
+      ...base,
+      body: "# Plan\n\n## Passos\n- [ ] One\n- [ ] Two\n",
+    });
+    if (!created.ok) throw new Error(created.error);
+    const done = setStep(db, { id: created.plan.id, stepID: "s1", status: "done" });
+    if (!done.ok) throw new Error(done.error);
+
+    const updated = updatePlan(db, {
+      id: created.plan.id,
+      body: "# Plan\n\n## Objetivo\nX\n",
+    });
+    if (!updated.ok) throw new Error(updated.error);
+    expect(updated.plan.steps.map((step) => [step.text, step.status])).toEqual([
+      ["One", "done"],
+      ["Two", "todo"],
+    ]);
+    expect(updated.plan.body).toContain("## Passos");
+    expect(updated.plan.body).toContain("<!-- plans:steps -->");
   });
 
   test("empty body is rejected", () => {

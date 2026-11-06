@@ -17,6 +17,15 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import {
+  buildTemplate,
+  cleanStepText,
+  extractSteps,
+  normalizeStepText,
+  renderPlanBody,
+  STEPS_PLACEHOLDER,
+} from "./plan-body.js";
+
 /* ------------------------------------------------------------------ */
 /* DB path                                                             */
 /* ------------------------------------------------------------------ */
@@ -272,30 +281,15 @@ export function nowTimestamp(): string {
   return new Date().toISOString();
 }
 
-const TASK_RE = /^\s*[-*+]\s+\[([ xX~>])\]\s+(.+?)\s*$/;
-const NUM_RE = /^\s*\d+[.)]\s+(.+?)\s*$/;
-const BULLET_RE = /^\s*[-*+]\s+(.+?)\s*$/;
-const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
-const PLAN_SECTION_RE =
-  /\b(plano|plan|passos|steps|implementa|implementation|tarefas|tasks|mudan[cç]as|changes|checklist|aceite|acceptance)\b/i;
+const TITLE_HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
 
-function isFence(line: string): boolean {
+function isFenceLine(line: string): boolean {
   return /^\s*```/.test(line);
 }
 
 /** Strip the light Markdown the model puts around a checklist item. */
 export function cleanStep(text: string): string {
-  return text
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/\*\*(.*?)\*\*/g, "$1")
-    .replace(/__(.*?)__/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function normalizeText(text: string): string {
-  return cleanStep(text).toLowerCase();
+  return cleanStepText(text);
 }
 
 function truncate(text: string, max: number): string {
@@ -303,96 +297,9 @@ function truncate(text: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
-function dedupe(steps: readonly ParsedStep[]): ParsedStep[] {
-  const seen = new Set<string>();
-  const out: ParsedStep[] = [];
-  for (const step of steps) {
-    const key = normalizeText(step.text);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push(step);
-  }
-  return out;
-}
-
-/**
- * Extract a checklist from a plan body.
- *
- * Priority:
- *  1. task-list items (`- [ ]` / `- [x]`) anywhere;
- *  2. numbered/bulleted items under a plan/step/implementation heading;
- *  3. numbered items anywhere (at least two);
- *  4. bulleted items anywhere (at least two).
- *
- * Fenced code blocks are ignored so shell snippets never become steps.
- */
+/** Extract the plan's checklist (exact text) from a body. */
 export function parseSteps(body: string): ParsedStep[] {
-  const lines = body.split(/\r?\n/);
-  const tasks: ParsedStep[] = [];
-  const sectionItems: ParsedStep[] = [];
-  const numbered: ParsedStep[] = [];
-  const bullets: ParsedStep[] = [];
-  let inFence = false;
-  let sectionLevel = 0;
-
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    if (isFence(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence || !line.trim()) continue;
-
-    const heading = HEADING_RE.exec(line);
-    if (heading) {
-      const level = heading[1]?.length ?? 0;
-      const text = heading[2] ?? "";
-      if (PLAN_SECTION_RE.test(text)) sectionLevel = level;
-      else if (sectionLevel && level <= sectionLevel) sectionLevel = 0;
-      continue;
-    }
-
-    const task = TASK_RE.exec(line);
-    if (task) {
-      const text = cleanStep(task[2] ?? "");
-      const marker = task[1] ?? "";
-      const status: StepStatus = /x/i.test(marker) ? "done" : /[~>]/.test(marker) ? "doing" : "todo";
-      if (text) tasks.push({ text, status });
-      continue;
-    }
-
-    const num = NUM_RE.exec(line);
-    if (num) {
-      const text = cleanStep(num[1] ?? "");
-      if (text) {
-        numbered.push({ text, status: "todo" });
-        if (sectionLevel) sectionItems.push({ text, status: "todo" });
-      }
-      continue;
-    }
-
-    const bullet = BULLET_RE.exec(line);
-    if (bullet) {
-      const text = cleanStep(bullet[1] ?? "");
-      if (text) {
-        bullets.push({ text, status: "todo" });
-        if (sectionLevel) sectionItems.push({ text, status: "todo" });
-      }
-    }
-  }
-
-  const picked =
-    tasks.length > 0
-      ? tasks
-      : sectionItems.length > 0
-        ? sectionItems
-        : numbered.length > 1
-          ? numbered
-          : bullets.length > 1
-            ? bullets
-            : [];
-
-  return dedupe(picked).slice(0, 100);
+  return extractSteps(body).map((step) => ({ text: step.text, status: step.status }));
 }
 
 /** First heading, else first non-empty line; never empty. */
@@ -401,12 +308,12 @@ export function extractTitle(body: string, fallback = "Plan"): string {
   let inFence = false;
   for (const raw of lines) {
     const line = raw.trim();
-    if (isFence(line)) {
+    if (isFenceLine(line)) {
       inFence = !inFence;
       continue;
     }
     if (inFence || !line) continue;
-    const heading = HEADING_RE.exec(line);
+    const heading = TITLE_HEADING_RE.exec(line);
     if (heading) return truncate(cleanStep(heading[2] ?? "") || fallback, 160);
     return truncate(cleanStep(line) || fallback, 160);
   }
@@ -427,9 +334,9 @@ export function deriveStatus(steps: readonly { status: StepStatus }[], current: 
 /** Preserve `done`/`doing` when a plan body is saved again. */
 function mergeSteps(existing: readonly StepRow[], parsed: readonly ParsedStep[]): ParsedStep[] {
   const byText = new Map<string, StepRow>();
-  for (const step of existing) byText.set(normalizeText(step.text), step);
+  for (const step of existing) byText.set(normalizeStepText(step.text), step);
   return parsed.map((step, index) => {
-    const match = byText.get(normalizeText(step.text)) ?? existing[index];
+    const match = byText.get(normalizeStepText(step.text)) ?? existing[index];
     const status: StepStatus =
       step.status === "done" || match?.status === "done"
         ? "done"
@@ -545,13 +452,27 @@ export function savePlan(db: Db, input: SavePlanInput): SaveOk | WriteError {
   const existing = input.id ? getPlan(db, input.id) : undefined;
   if (input.id && !existing) return { ok: false, error: `plano não encontrado: ${input.id}` };
 
+  const isTemplate = body.split(/\r?\n/).some((line) => line.trim() === STEPS_PLACEHOLDER);
   const parsed =
     input.steps && input.steps.length > 0
       ? input.steps
-          .map((step) => ({ text: cleanStep(step.text), status: step.status ?? ("todo" as StepStatus) }))
+          .map((step) => ({
+            text: step.text.trim(),
+            status: step.status ?? ("todo" as StepStatus),
+          }))
           .filter((step) => step.text.length > 0)
-      : parseSteps(body);
-  const steps = existing ? mergeSteps(existing.steps, parsed) : parsed;
+      : isTemplate && existing
+        ? existing.steps.map((step) => ({ text: step.text, status: step.status }))
+        : parseSteps(body);
+  // A body update without a step section must not erase the tracked steps.
+  const effective =
+    parsed.length === 0 && existing && !(input.steps && input.steps.length > 0)
+      ? existing.steps.map((step) => ({ text: step.text, status: step.status }))
+      : parsed;
+  const steps = existing ? mergeSteps(existing.steps, effective) : effective;
+  // The stored body keeps a placeholder where the checklist was; `plans.get`
+  // and the GUI reassemble it from plan_steps.
+  const storedBody = buildTemplate(body, steps.length > 0 || isTemplate);
   const title = truncate(cleanStep(input.title?.trim() || existing?.title || extractTitle(body, "Plan")), 160);
   const status = input.status ?? deriveStatus(steps, existing?.status ?? "active");
   const now = nowTimestamp();
@@ -565,7 +486,7 @@ export function savePlan(db: Db, input: SavePlanInput): SaveOk | WriteError {
           `UPDATE plans
            SET title = ?, body = ?, status = ?, updated_at = ?, completed_at = ?, message_id = ?
            WHERE id = ?`,
-        ).run(title, body, status, now, completedAt, input.messageID ?? existing.message_id, id);
+        ).run(title, storedBody, status, now, completedAt, input.messageID ?? existing.message_id, id);
         db.prepare("DELETE FROM plan_steps WHERE plan_id = ?").run(id);
       } else {
         db.prepare(
@@ -580,7 +501,7 @@ export function savePlan(db: Db, input: SavePlanInput): SaveOk | WriteError {
           input.sessionID,
           input.messageID ?? null,
           title,
-          body,
+          storedBody,
           status,
           now,
           now,
@@ -622,6 +543,11 @@ export function updatePlan(db: Db, input: UpdatePlanInput): SaveOk | WriteError 
     sessionID: existing.session_id,
     messageID: existing.message_id ?? undefined,
     status: input.status,
+    // A status/title-only update must not lose steps when the stored body is
+    // already a template (or has no checklist of its own).
+    ...(input.body === undefined
+      ? { steps: existing.steps.map((step) => ({ text: step.text, status: step.status })) }
+      : {}),
   });
 }
 
@@ -734,6 +660,10 @@ export function renderPlanSummary(plan: Plan): string {
 
 export function renderPlanFull(plan: Plan): string {
   const { done, doing, total } = planProgress(plan);
+  const body = renderPlanBody(
+    plan.body,
+    plan.steps.map((step) => ({ id: step.step_id, text: step.text, status: step.status })),
+  );
   const lines = [
     `# ${plan.title}`,
     `id: ${plan.id}`,
@@ -744,21 +674,10 @@ export function renderPlanFull(plan: Plan): string {
     `updated: ${plan.updated_at}`,
   ];
   if (plan.completed_at) lines.push(`completed: ${plan.completed_at}`);
-  lines.push(
-    "",
-    "## Passos",
-    ...(plan.steps.length > 0
-      ? plan.steps.map((step) => {
-          const mark = step.status === "done" ? "x" : step.status === "doing" ? "~" : " ";
-          return `- [${mark}] ${step.text}`;
-        })
-      : ["(nenhum passo extraído do texto)"]),
-    "",
-    "Legenda: [x] done · [~] doing · [ ] todo",
-    "",
-    "## Plano",
-    plan.body,
-  );
+  lines.push("", body);
+  if (plan.steps.length > 0) {
+    lines.push("", "Legenda: [x] done · [~] doing · [ ] todo");
+  }
   return lines.join("\n");
 }
 

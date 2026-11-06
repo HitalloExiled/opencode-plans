@@ -18,6 +18,7 @@ import {
   doctorInfo,
   getPlan,
   listPlans,
+  parseSteps,
   renderDoctor,
   renderPlanFull,
   renderPlanSummary,
@@ -27,6 +28,7 @@ import {
   updatePlan,
   type PlanStatus,
 } from "./src/store.js";
+import { normalizeStepText } from "./src/plan-body.js";
 
 type ToolResult = { content: string; metadata?: Record<string, unknown> };
 type Ctx = Plugin.Context;
@@ -49,7 +51,9 @@ const saveInput = z.object({
   body: z
     .string()
     .min(1)
-    .describe("Full plan Markdown, exactly as presented to the user. The body is persisted verbatim."),
+    .describe(
+      "Full plan Markdown, exactly as presented to the user. Put the actionable steps in one flat '## Passos' checklist; the plugin extracts it and stores the rest of the body without that section.",
+    ),
   title: z
     .string()
     .optional()
@@ -61,13 +65,13 @@ const saveInput = z.object({
   steps: z
     .array(z.string())
     .optional()
-    .describe("Optional explicit step list. Derived from the body's checklist when omitted."),
+    .describe("Optional explicit step list. Derived from the body's '## Passos' checklist when omitted."),
 });
 
 const listInput = z.object({
   scope: z
     .enum(["session", "project"])
-    .optional()
+    .default("session")
     .describe("'session' (default) lists only this session's plans; 'project' lists every session in this project."),
   status: z
     .union([STATUS, z.literal("all")])
@@ -76,33 +80,52 @@ const listInput = z.object({
   limit: z.number().int().min(1).max(200).optional().describe("Maximum plans. Defaults to 50."),
 });
 
-const getInput = z.object({
-  id: z.string().min(1).describe("Plan id, as returned by plans.list or plans.save."),
-  scope: z
-    .enum(["session", "project"])
-    .optional()
-    .describe("'session' (default) only reads a plan of this session; 'project' allows another session's plan."),
-});
+// Accept both the documented object (`{ id, scope? }`) and a bare plan id.
+// Agents often pass the id directly for read-only lookups; the JSON schema
+// stays an object, so the model still sees the canonical call shape.
+const getInput = z.preprocess(
+  (value) => (typeof value === "string" ? { id: value } : value),
+  z.object({
+    id: z.string().min(1).describe("Plan id, as returned by plans.list or plans.save."),
+    scope: z
+      .enum(["session", "project"])
+      .default("session")
+      .describe(
+        "'session' (default) only reads a plan of this session; 'project' allows another session's plan.",
+      ),
+  }),
+);
 
 const updateInput = z.object({
   id: z.string().min(1).describe("Plan id."),
   stepID: z
     .string()
     .optional()
-    .describe("Step id (s1, s2, …) to mark. Use with stepStatus, or use position instead."),
+    .describe(
+      "Exact step id from plans.get (s1, s2, …). Use with stepStatus. Preferred over position.",
+    ),
   position: z
     .number()
     .int()
     .min(0)
     .optional()
-    .describe("Zero-based step position to mark when stepID is unknown."),
+    .describe(
+      "Zero-based step position, only as a fallback when the step id is unknown. Prefer stepID.",
+    ),
   stepStatus: z
     .enum(["todo", "doing", "done"])
     .optional()
-    .describe("New step status. Mark 'doing' before starting a step and 'done' when finished."),
+    .describe(
+      "New step status; always pair with stepID/position. Mark 'doing' before starting and 'done' when finished. Never send body to change status.",
+    ),
   status: STATUS.optional().describe("New plan status."),
   title: z.string().optional().describe("New title (rarely needed)."),
-  body: z.string().optional().describe("Replacement plan Markdown (rarely needed)."),
+  body: z
+    .string()
+    .optional()
+    .describe(
+      "Advanced: replaces the whole plan text/structure and re-creates steps (ids and statuses reset). Never send it to change a step's status; use stepID + stepStatus.",
+    ),
 });
 
 const doctorInput = z.object({});
@@ -111,7 +134,7 @@ export function saveTool(ctx: Ctx) {
   return {
     name: "save",
     description:
-      "Persist a plan for future sessions. Call this with the final plan markdown when you present an actionable plan. It creates a new plan by default; pass id to update an existing one. This only writes the plans database, never the repository.",
+      "Persist a plan for future sessions. Call this with the final plan markdown when you present an actionable plan. It creates a new plan by default. Pass id only to replace the plan's text/structure: that re-creates the steps and resets their ids/statuses. To mark a step's status, use plans.update, never plans.save. This only writes the plans database, never the repository.",
     input: saveInput,
     async execute(input: z.infer<typeof saveInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -205,7 +228,7 @@ export function getTool(ctx: Ctx) {
   return {
     name: "get",
     description:
-      "Read one persisted plan in full: metadata, checklist and original Markdown. Defaults to plans of this session; pass scope='project' to read another session's plan.",
+      "Read one persisted plan in full: metadata, checklist and original Markdown. The step checklist is reassembled with the live statuses and the internal placeholder is never returned. Call it as plans.get({ id }); a bare id is also accepted. scope defaults to 'session'; pass scope='project' to read another session's plan.",
     input: getInput,
     async execute(input: z.infer<typeof getInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -230,7 +253,7 @@ export function updateTool(ctx: Ctx) {
   return {
     name: "update",
     description:
-      "Update a persisted plan: mark a step todo/doing/done (stepID or position + stepStatus) and/or change the plan status. Mark 'doing' before starting a step and 'done' when finished, so the user's panel shows where you stopped. Only one step per plan can be 'doing'.",
+      "Change the status of a step or of the plan. This tool does NOT edit the plan's text or structure: for that, use plans.save with the same id. To mark a step, pass stepID (shown as s1, s2, … by plans.get) and stepStatus; use position only as a fallback. Mark 'doing' before starting a step and 'done' when finished; only one step per plan can be 'doing'. Never send body to change a step's status.",
     input: updateInput,
     async execute(input: z.infer<typeof updateInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -244,6 +267,32 @@ export function updateTool(ctx: Ctx) {
         const hasStep = input.stepID !== undefined || input.position !== undefined;
         const hasPlanChange =
           input.status !== undefined || input.title !== undefined || input.body !== undefined;
+
+        if (input.body !== undefined && (hasStep || input.stepStatus !== undefined)) {
+          return fail(
+            "não combine body com stepID/position/stepStatus. Para marcar passos use plans.update com stepID + stepStatus (os IDs aparecem em plans.get); para reescrever o texto/estrutura use plans.save com id",
+          );
+        }
+
+        if (input.body !== undefined) {
+          const next = parseSteps(input.body);
+          const current = plan.steps;
+          const sameTexts =
+            next.length === current.length &&
+            next.every(
+              (step, index) =>
+                normalizeStepText(step.text) === normalizeStepText(current[index]!.text),
+            );
+          const sameStatuses =
+            next.length === current.length &&
+            next.every((step, index) => step.status === current[index]!.status);
+          if (sameTexts && !sameStatuses) {
+            return fail(
+              "esse body só troca os checkboxes: os textos dos passos não mudaram. Use plans.update com stepID + stepStatus; os IDs aparecem em plans.get",
+            );
+          }
+        }
+
         if (hasStep && input.stepStatus === undefined) {
           return fail("informe stepStatus ('todo' | 'doing' | 'done') junto com stepID/position");
         }
