@@ -99,13 +99,13 @@ const CSS = `
 .plan-run-card:disabled { opacity: .6; cursor: default; }
 .plan-run-icon { width: 26px !important; height: 26px !important; }
 .plan-run-card.is-play .plan-run-icon { transform: rotate(-90deg); }
-.plan-pause-icon { display: inline-flex; align-items: center; gap: 4px; }
-.plan-pause-icon-inline { margin-right: 4px; }
+.plan-pause-icon { display: inline-flex; align-items: center; gap: 3px; }
+.plan-pause-icon-inline { margin-right: 5px; }
 .plan-pause-icon::before, .plan-pause-icon::after {
   content: "";
   display: block;
-  width: 5px;
-  height: 18px;
+  width: 4px;
+  height: 12px;
   border-radius: 1px;
   background: currentColor;
 }
