@@ -14,7 +14,7 @@
 import { Plugin } from "@opencode/plugin";
 import type { SessionContext } from "@opencode/plugin/promise/session";
 import { findLastPlanMessage, type SessionMessageLike } from "./src/capture.js";
-import { PLAN_SAVE_INSTRUCTION, renderBuildContext } from "./src/inject.js";
+import { insertPlanExemption, PLAN_SAVE_INSTRUCTION, renderBuildContext } from "./src/inject.js";
 import { deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
@@ -47,7 +47,7 @@ async function commandLocale(ctx: Ctx): Promise<NotificationLocale> {
   }
 }
 
-async function registerTools(ctx: Ctx) {
+export async function registerTools(ctx: Ctx) {
   return ctx.tool.transform((editor) => {
     // editor.namespace() only labels the catalog group; the per-tool
     // options.namespace is what actually prefixes the qualified name
@@ -58,10 +58,12 @@ async function registerTools(ctx: Ctx) {
         "Persisted plans from Plan mode: save a plan for future sessions, list/read active plans, and mark steps done as work completes. Backed by a dedicated SQLite plans.db. Use plans.list/get before resuming long-running work, and plans.update as you finish each step.",
     });
     // Add each tool separately so TypeScript keeps its input schema.
-    editor.add({ ...saveTool(ctx), options: { namespace: "plans" } });
-    editor.add({ ...listTool(ctx), options: { namespace: "plans" } });
-    editor.add({ ...getTool(ctx), options: { namespace: "plans" } });
-    editor.add({ ...updateTool(ctx), options: { namespace: "plans" } });
+    // `pinned` keeps the essential tools visible in the Code Mode catalog even
+    // when the per-namespace budget would otherwise drop their signatures.
+    editor.add({ ...saveTool(ctx), options: { namespace: "plans", pinned: true } });
+    editor.add({ ...listTool(ctx), options: { namespace: "plans", pinned: true } });
+    editor.add({ ...getTool(ctx), options: { namespace: "plans", pinned: true } });
+    editor.add({ ...updateTool(ctx), options: { namespace: "plans", pinned: true } });
     editor.add({ ...deleteTool(ctx), options: { namespace: "plans" } });
     editor.add({ ...doctorTool(ctx), options: { namespace: "plans" } });
   });
@@ -130,6 +132,7 @@ async function injectContext(ctx: Ctx, event: SessionContext) {
 
     if (isPlan) {
       event.system.push({ type: "text", text: PLAN_SAVE_INSTRUCTION });
+      insertPlanExemption(event.messages);
       return;
     }
 

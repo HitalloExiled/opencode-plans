@@ -53,9 +53,16 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   (projects, sessions) from the official `ctx.client.*` APIs only.
 - **Do not write data inside the repo.** All DB writes go to `plans.db` (see
   "Live paths").
-- **Capture is explicit only.** Do not add a hook that saves every Plan
-  response; `plans.save`, `/save-plan` and the panel button are the only entry
-  points.
+- **Capture is explicit only, but saving a final plan is mandatory.** Do not add
+  a hook that saves every Plan response; `plans.save` and `/save-plan` are the
+  explicit entry points. The panel button only sends a hint asking the agent to
+  call `plans.save` — it never captures the last message itself. The Plan agent
+  must call `plans.save`
+  in the same turn it presents a final plan with no blocking pending user
+  questions. A purely optional/recommended choice does not block the save:
+  include it as an "(optional, recommended)" step. Saving/editing a plan is
+  allowed in Plan mode because it writes only `plans.db`, not repository files;
+  only repository edits require Build.
 - **The GUI never opens the DB in the renderer.** It calls the server plugin's
   RPC (`PlansRpc`) with the routed session's location; there is no GUI main
   process data layer.
@@ -97,7 +104,9 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   first, switches the session agent to `build` and sends a prompt. The prompt
   is a normal user message (default `steer`): never send it with
   `delivery: "queue"`, which parks it until the current turn ends and leaves
-  the panel stuck in "executing". While the session is busy, the button becomes
+  the panel stuck in "executing". The prompt does not force `plans.get`: the
+  injected `<plans-context>` already lists pending steps with their ids; only
+  the full text or steps outside the context need a read. While the session is busy, the button becomes
   **Pausar/Pause**: `session.interrupt` cuts the turn, a synthetic message
   tells the next turn that the user paused the plan, and the agent switches
   back to `plan`; a new Execute resumes from the current steps. It is not a

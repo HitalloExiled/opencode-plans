@@ -155,6 +155,14 @@ const CSS = `
 .plan-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .plan-detail-title { font-weight: 600; font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
 .plan-meta { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--v2-text-text-muted); overflow-wrap: anywhere; }
+.plan-meta-id { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.plan-id {
+  font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10.5px;
+  color: var(--v2-text-text-base);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
 .plan-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .plan-section-title { font-weight: 600; font-size: 12px; color: var(--v2-text-text-base); margin-top: 4px; }
 .plan-body-toggle {
@@ -492,6 +500,15 @@ export function PlansView(props: { session: MountedSession }) {
     ctx.toast.show({ title, description: message, variant: "error" });
   };
 
+  const copyID = async (id: string) => {
+    try {
+      await ctx.system.copy(id);
+      ctx.toast.show({ title: t("toast.idCopied"), variant: "success" });
+    } catch (cause) {
+      showError(t("toast.copyError"), cause);
+    }
+  };
+
   const setStepStatus = async (step: PlanStep, status: StepStatus) => {
     const id = selectedID();
     const session = currentSession();
@@ -542,7 +559,7 @@ export function PlansView(props: { session: MountedSession }) {
       // until the current turn ends, leaving the panel stuck in "executing".
       await session.server.client.session.prompt({
         sessionID: session.id,
-        text: `Execute ou retome o plano "${target.title}" (id: ${target.id}) a partir do estado atual. Leia o plano com plans.get, siga os passos restantes e atualize o estado com plans.update (stepStatus: "doing" ao começar e "done" ao concluir). Não replaneje.`,
+        text: t("execute.prompt", target.title, target.id),
       });
       setExecutingPlanID(target.id);
       setPendingPlanID(target.id);
@@ -684,19 +701,13 @@ export function PlansView(props: { session: MountedSession }) {
     }
     setSaving(true);
     try {
-      const rpc = session.server.client.rpc(PlansRpc);
-      await rpc.setLocale(ctx.locale.locale(), {
-        location: { directory: session.directory },
-      });
-      await session.server.client.session.command({
+      // This is a nudge, not a capture: the agent must call plans.save with
+      // its own context, so a regular message is never persisted as a plan.
+      await session.server.client.session.prompt({
         sessionID: session.id,
-        name: "save-plan",
-        text: "",
+        text: t("saveLast.prompt"),
       });
-      ctx.toast.show({ title: t("toast.saveRequested"), variant: "success" });
-      // The command writes a synthetic message; refresh after it settles.
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      await load();
+      ctx.toast.show({ title: t("toast.saveHint"), variant: "success" });
     } catch (cause) {
       showError(t("toast.saveError"), cause);
     } finally {
@@ -716,9 +727,11 @@ export function PlansView(props: { session: MountedSession }) {
             <span class="plans-count">{filteredPlans().length}</span>
           </div>
           <div class="plans-actions">
-            <ctx.ui.Button size="small" variant="contrast" icon="plus" busy={saving()} onClick={() => void saveLast()}>
-              {t("saveLast")}
-            </ctx.ui.Button>
+            <ctx.ui.Tooltip value={t("saveLast.tooltip")}>
+              <ctx.ui.Button size="small" variant="contrast" icon="plus" busy={saving()} onClick={() => void saveLast()}>
+                {t("saveLast")}
+              </ctx.ui.Button>
+            </ctx.ui.Tooltip>
             <ctx.ui.IconButton
               icon="outline-rotate-clockwise"
               label={t("refresh")}
@@ -894,6 +907,15 @@ export function PlansView(props: { session: MountedSession }) {
             </div>
 
             <div class="plan-meta">
+              <div class="plan-meta-id">
+                <span>{t("id")}:</span>
+                <code class="plan-id">{plan().id}</code>
+                <ctx.ui.IconButton
+                  icon="copy"
+                  label={t("copyID")}
+                  onClick={() => void copyID(plan().id)}
+                />
+              </div>
               <div>
                 {t("project")}: {projectLabel(plan())}
               </div>

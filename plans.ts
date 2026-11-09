@@ -134,7 +134,7 @@ export function saveTool(ctx: Ctx) {
   return {
     name: "save",
     description:
-      "Persist a plan for future sessions. Call this with the final plan markdown when you present an actionable plan. It creates a new plan by default. Pass id only to replace the plan's text/structure: that re-creates the steps and resets their ids/statuses. To mark a step's status, use plans.update, never plans.save. This only writes the plans database, never the repository.",
+      "Persist the plan you just presented. Call this in the same turn the plan becomes final and there are no blocking pending user questions or choices; do not ask for permission or wait for the user to request it. A purely optional or recommended choice does not block the save: include it as an '(optional, recommended)' step. In Code Mode call it as tools.plans.save through the execute tool; in a regular session the tool is plans_save. Allowed in Plan mode: it writes only the plans database, not files or the repository, so the Plan-mode file restriction does not apply. Creates a new plan by default. Pass id only to replace the plan's text/structure (re-creates steps and resets ids/statuses) or to save a revision. To mark a step's status use plans.update, never plans.save.",
     input: saveInput,
     async execute(input: z.infer<typeof saveInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {

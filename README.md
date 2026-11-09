@@ -8,9 +8,16 @@ Plan** em um SQLite dedicado e os expõe de duas formas:
 - **Painel lateral “Planos”** no app desktop, com lista, progresso, checklist
   e o Markdown original.
 
-A gravação é sempre explícita: o agente Plan chama `plans.save` ao apresentar
-um plano final, ou o usuário usa `/save-plan` / o botão **Salvar último plano**.
-Não há captura heurística de toda resposta do Plan.
+A gravação é sempre explícita: o agente Plan chama `plans.save` no mesmo turno
+em que apresenta o plano final, assim que não houver mais perguntas ou escolhas
+**bloqueantes** pendentes do usuário — sem pedir permissão. Uma escolha
+**opcional/recomendada** não bloqueia o save: o passo entra no plano marcado
+como “(Opcional, recomendado)”. Salvar/editar o plano
+(`plans.save`/`plans.update`) é permitido no **Plan mode** porque grava apenas o
+`plans.db`, não arquivos do repositório; só editar arquivos exige Build. O
+usuário também pode usar `/save-plan` (captura direta) ou o botão **Salvar
+plano**, que apenas envia um hint para o agente chamar `plans.save`. Não há
+captura heurística de toda resposta do Plan.
 
 O plugin é autocontido: nenhum import de fora do diretório (só
 `@opencode/plugin`, `effect`, `zod` e `node:sqlite` do runtime), e nenhum dado
@@ -68,8 +75,10 @@ e o `npm run gui:build`).
    painel guarda por sessão o plano aberto, a busca, os filtros e o estado
    colapsado do corpo, então fechar e reabrir a aba restaura a mesma tela; com
    um plano aberto, os filtros ficam ocultos.
-6. **Salvar o último plano**: `/save-plan` (servidor) e o botão do painel
-   usam a última mensagem do agente `plan` na sessão.
+6. **Salvar o último plano**: `/save-plan` (servidor) captura a última mensagem
+   do agente `plan` na sessão. O botão **Salvar plano** do painel não salva
+   direto: ele envia um hint pedindo ao agente que chame `plans.save` com o
+   plano apresentado.
 7. **Notifica o agente**: quando o usuário marca/altera um passo, muda o
    status, move ou remove um plano no painel, o servidor grava uma mensagem
    sintética na **sessão dona do plano** (`resume: false`) com a ação na
@@ -80,7 +89,10 @@ e o `npm run gui:build`).
    agente da sessão para **Build** e envia um prompt para o agente ler o plano
    com `plans.get`, seguir os passos e atualizar o estado com `plans.update`.
    O prompt é uma mensagem de usuário normal (sem `delivery: "queue"`), então
-   inicia o turno imediatamente; o botão só habilita com a sessão ociosa.
+   inicia o turno imediatamente; o botão só habilita com a sessão ociosa. O
+   prompt não obriga `plans.get`: o bloco `<plans-context>` já traz os passos
+   pendentes com IDs (`s1`, `s2`, …); `plans.get` fica para o texto completo ou
+   para passos fora do contexto.
    Enquanto executa, o botão
    vira **Pausar**: ele interrompe o turno (`session.interrupt`), grava uma
    mensagem sintética avisando que o usuário pausou o plano e volta o agente
