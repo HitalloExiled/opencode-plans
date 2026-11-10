@@ -33,7 +33,7 @@ const CSS = `
 }
 .plans.is-detail { overflow: hidden; }
 .plans-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.plans-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
+.plans-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
 .plans-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .plans-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
 .plans-title-text { margin: 0; font-size: 13px; font-weight: 600; }
@@ -64,7 +64,6 @@ const CSS = `
   border: 1px solid var(--v2-state-border-danger);
   white-space: pre-wrap;
 }
-.plans-list { display: flex; flex-direction: column; gap: 8px; }
 .plan-card {
   display: flex;
   flex-direction: column;
@@ -1080,7 +1079,7 @@ export function PlansView(props: { session: MountedSession }) {
       <Show when={!selectedID()}>
         <div class="plans-body">
           <div
-            class="plans-scroll os-scroll"
+            class="plans-scroll os-scroll os-list"
             ref={nav.ref}
             onKeyDown={nav.onKeyDown}
             tabIndex={nav.scrollable() ? 0 : undefined}
@@ -1090,7 +1089,6 @@ export function PlansView(props: { session: MountedSession }) {
             <Show when={loading() && filteredPlans().length === 0}>
               <LoadingRow label={t("loading")} />
             </Show>
-            <div class="plans-list">
           <Show when={!loading() && filteredPlans().length === 0}>
             <EmptyState
               icon="file-document"
@@ -1161,7 +1159,6 @@ export function PlansView(props: { session: MountedSession }) {
               </div>
             )}
           </For>
-            </div>
           </div>
           <ScrollNav nav={nav} topLabel={t("scroll.top")} bottomLabel={t("scroll.bottom")} />
         </div>
