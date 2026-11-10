@@ -8,8 +8,9 @@
  */
 
 import { createEffect, createMemo, createSignal, For, Index, onCleanup, Show } from "solid-js";
-import { usePlugin } from "@opencode/plugin/gui";
+import { usePanel, usePlugin } from "@opencode/plugin/gui";
 import type { MountedSession } from "@opencode/plugin/gui";
+import { SHARED_CSS, ScrollNav, createScrollNav, EmptyState, ErrorBanner, LoadingRow, StatusChip, type ChipTone } from "@hitalloexiled/opencode-shared/gui";
 import { PlansRpc } from "./contract";
 import type { Plan, PlanStatus, PlanStep, StepStatus } from "./contract";
 import { useT } from "./i18n";
@@ -25,14 +26,17 @@ const CSS = `
   height: 100%;
   min-height: 0;
   padding: 12px;
-  overflow-y: auto;
+  overflow: hidden;
   font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   color: var(--v2-text-text-base);
   font-size: 12.5px;
 }
 .plans.is-detail { overflow: hidden; }
+.plans-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.plans-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
 .plans-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .plans-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+.plans-title-text { margin: 0; font-size: 13px; font-weight: 600; }
 .plans-count { font-size: 11px; color: var(--v2-text-text-muted); }
 .plans-actions { display: flex; align-items: center; gap: 6px; }
 .plans-filters { display: flex; flex-direction: column; gap: 8px; }
@@ -53,18 +57,14 @@ const CSS = `
   font-weight: 600;
 }
 .plans-toggle:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
-.plans-error {
   padding: 8px 10px;
   border-radius: 6px;
-  color: var(--v2-text-text-danger, #e03131);
-  background: var(--v2-background-bg-danger, rgba(224,49,49,.08));
-  border: 1px solid var(--v2-border-border-danger, rgba(224,49,49,.25));
+  color: var(--v2-state-fg-danger);
+  background: var(--v2-state-bg-danger);
+  border: 1px solid var(--v2-state-border-danger);
   white-space: pre-wrap;
 }
-.plans-loading { display: flex; align-items: center; gap: 8px; color: var(--v2-text-text-muted); padding: 8px 2px; }
 .plans-list { display: flex; flex-direction: column; gap: 8px; }
-.plans-pagination { display: flex; align-items: center; justify-content: center; gap: 8px; padding-top: 2px; }
-.plans-page-info { font-size: 11px; color: var(--v2-text-text-muted); }
 .plan-card {
   display: flex;
   flex-direction: column;
@@ -93,10 +93,10 @@ const CSS = `
   background: transparent;
   cursor: pointer;
 }
-.plan-run-card.is-play { color: #40c057; }
-.plan-run-card.is-play:hover { color: #2f9e44; }
-.plan-run-card.is-pause { color: #f59f00; }
-.plan-run-card.is-pause:hover { color: #e8590c; }
+.plan-run-card.is-play { color: var(--v2-state-fg-success); }
+.plan-run-card.is-play:hover { color: var(--v2-state-fg-success); }
+.plan-run-card.is-pause { color: var(--v2-state-fg-warning); }
+.plan-run-card.is-pause:hover { color: var(--v2-state-fg-warning); }
 .plan-run-card:hover { background: var(--v2-overlay-simple-overlay-hover); }
 .plan-run-card:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
 .plan-run-card:disabled { opacity: .6; cursor: default; }
@@ -112,15 +112,14 @@ const CSS = `
   border-radius: 1px;
   background: currentColor;
 }
-.plan-run-play { color: #40c057; }
-.plan-run-play:hover { color: #2f9e44; }
+.plan-run-play { color: var(--v2-state-fg-success); }
+.plan-run-play:hover { color: var(--v2-state-fg-success); }
 .plan-run-play svg { transform: rotate(-90deg); }
-.plan-run-pause { color: #f59f00; }
-.plan-run-pause:hover { color: #e8590c; }
+.plan-run-pause { color: var(--v2-state-fg-warning); }
+.plan-run-pause:hover { color: var(--v2-state-fg-warning); }
 .plan-updated { font-size: 10.5px; color: var(--v2-text-text-faint); }
 .plan-card-title { font-weight: 600; font-size: 13px; line-height: 1.3; overflow-wrap: anywhere; }
 .plan-card-session { font-size: 10.5px; color: var(--v2-text-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plan-status {
   display: inline-flex;
   align-items: center;
   padding: 1px 6px;
@@ -131,19 +130,11 @@ const CSS = `
   background: var(--v2-overlay-simple-overlay-hover);
   color: var(--v2-text-text-muted);
 }
-.plan-status.status-active { color: #4f8cff; background: rgba(79,140,255,.12); }
-.plan-status.status-done { color: #2f9e44; background: rgba(47,158,68,.12); }
-.plan-status.status-archived { color: #e8590c; background: rgba(232,89,12,.12); }
-.plan-status.status-superseded { color: var(--v2-text-text-muted); background: var(--v2-overlay-simple-overlay-pressed); }
 .plan-progress-row { display: flex; align-items: center; gap: 8px; }
 .plan-progress { display: flex; flex: 1; height: 5px; border-radius: 999px; overflow: hidden; background: var(--v2-overlay-simple-overlay-pressed); }
-.plan-progress-done { height: 100%; background: #40c057; transition: width .2s ease; }
-.plan-progress-doing { height: 100%; background: #4f8cff; transition: width .2s ease; }
+.plan-progress-done { height: 100%; background: var(--v2-state-fg-success); transition: width .2s ease; }
+.plan-progress-doing { height: 100%; background: var(--v2-state-fg-info); transition: width .2s ease; }
 .plan-progress-label { font-size: 10.5px; color: var(--v2-text-text-muted); white-space: nowrap; }
-.plans-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 24px 10px; color: var(--v2-text-text-muted); }
-.plans-empty-icon { color: var(--v2-text-text-faint); }
-.plans-empty-title { font-weight: 600; color: var(--v2-text-text-base); }
-.plans-empty-hint { font-size: 11.5px; line-height: 1.45; }
 .plan-detail { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
 .plan-detail > .plan-back,
 .plan-detail > .plan-detail-head,
@@ -199,8 +190,8 @@ const CSS = `
   border-color: var(--v2-overlay-simple-overlay-pressed);
   background: transparent;
 }
-.plan-step-btn.is-active.is-doing { color: #4f8cff; border-color: #4f8cff; background: rgba(79,140,255,.10); }
-.plan-step-btn.is-active.is-done { color: #40c057; border-color: #40c057; background: rgba(64,192,87,.16); }
+.plan-step-btn.is-active.is-doing { color: var(--v2-state-fg-info); border-color: var(--v2-state-border-info); background: var(--v2-state-bg-info); }
+.plan-step-btn.is-active.is-done { color: var(--v2-state-fg-success); border-color: var(--v2-state-border-success); background: var(--v2-state-bg-success); }
 .plan-step-glyph { display: block; }
 .plan-step-glyph.glyph-todo { width: 7px; height: 7px; border-radius: 1.5px; background: currentColor; }
 .plan-step-glyph.glyph-doing {
@@ -228,7 +219,7 @@ const CSS = `
   text-overflow: ellipsis;
 }
 .plan-step-done { text-decoration: line-through; color: var(--v2-text-text-muted); }
-.plan-step-doing { color: #4f8cff; font-weight: 600; }
+.plan-step-doing { color: var(--v2-state-fg-info); font-weight: 600; }
 .plan-body {
   font-size: 12px;
   line-height: 1.5;
@@ -283,7 +274,7 @@ const CSS = `
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(0, 0, 0, .45);
+  background: var(--v2-overlay-simple-overlay-scrim);
 }
 .plan-editor {
   width: min(560px, 100%);
@@ -293,11 +284,11 @@ const CSS = `
   flex-direction: column;
   gap: 10px;
   padding: 14px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid var(--v2-border-border-strong);
   background: var(--v2-background-bg-layer-02);
   color: var(--v2-text-text-base);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, .35);
+  box-shadow: var(--v2-elevation-floating);
 }
 .plan-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .plan-editor-heading { font-weight: 600; font-size: 13px; }
@@ -335,16 +326,17 @@ const CSS = `
 .plan-editor-step { display: flex; align-items: center; gap: 3px; }
 .plan-editor-step input { flex: 1; }
 .plan-editor-step .plan-step-btn { width: 24px; height: 24px; font-size: 12px; }
-.plan-editor-error { color: var(--v2-text-text-danger, #e03131); font-size: 11.5px; white-space: pre-wrap; }
+.plan-editor-error { color: var(--v2-state-fg-danger); font-size: 11.5px; white-space: pre-wrap; }
 .plan-editor-hint { color: var(--v2-text-text-faint, var(--v2-text-text-muted)); font-size: 10.5px; line-height: 1.35; }
 .plan-editor-actions { display: flex; justify-content: flex-end; gap: 6px; }
 `;
 
 const STEP_STATUSES: readonly StepStatus[] = ["todo", "doing", "done"];
-const PAGE_SIZE = 10;
+const CHUNK_SIZE = 20;
 
 export function PlansView(props: { session: MountedSession }) {
   const ctx = usePlugin();
+  const panel = usePanel();
   const t = useT();
 
   // The server context has no locale; keep it in sync so /save-plan messages
@@ -376,7 +368,7 @@ export function PlansView(props: { session: MountedSession }) {
   );
   const [pendingPlanID, setPendingPlanID] = createSignal<string | null>(null);
   const [stepsHeight, setStepsHeight] = createSignal(saved?.stepsHeight ?? 240);
-  const [page, setPage] = createSignal(saved?.page ?? 0);
+  const [visible, setVisible] = createSignal(CHUNK_SIZE);
   const [loading, setLoading] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
@@ -399,20 +391,33 @@ export function PlansView(props: { session: MountedSession }) {
     });
   });
 
-  const totalPages = createMemo(() =>
-    Math.max(1, Math.ceil(filteredPlans().length / PAGE_SIZE)),
-  );
-  const pagedPlans = createMemo(() =>
-    filteredPlans().slice(page() * PAGE_SIZE, (page() + 1) * PAGE_SIZE),
-  );
-
+  const visiblePlans = createMemo(() => filteredPlans().slice(0, visible()));
+  const nav = createScrollNav({
+    hasMore: () => visible() < filteredPlans().length,
+    loadingMore: () => false,
+    loadMore: () => setVisible((value) => value + CHUNK_SIZE),
+    visible: () => panel.visible(),
+    items: () => filteredPlans().length,
+  });
+  // A new query or filter starts from the top of the list.
   createEffect(() => {
-    if (!hydrated()) return;
-    const max = totalPages() - 1;
-    if (page() > max) setPage(max);
+    query();
+    statusFilter();
+    scopeFilter();
+    setVisible(CHUNK_SIZE);
+    nav.toTop();
   });
 
   const currentSession = () => props.session;
+
+  const statusTone = (status: PlanStatus): ChipTone =>
+    status === "active"
+      ? "info"
+      : status === "done"
+        ? "success"
+        : status === "archived"
+          ? "warning"
+          : "neutral";
 
   const sessionRunning = (): boolean => {
     const session = currentSession();
@@ -566,7 +571,6 @@ export function PlansView(props: { session: MountedSession }) {
     setScopeFilter(value.scope);
     setSelectedID(value.selectedID);
     setStepsHeight(value.stepsHeight ?? 240);
-    setPage(value.page ?? 0);
     setExecutingPlanID(value.executingPlanID ?? null);
     setPendingPlanID(null);
     void load();
@@ -582,7 +586,6 @@ export function PlansView(props: { session: MountedSession }) {
       status: statusFilter(),
       scope: scopeFilter(),
       stepsHeight: stepsHeight(),
-      page: page(),
       executingPlanID: executingPlanID(),
     });
   });
@@ -599,7 +602,7 @@ export function PlansView(props: { session: MountedSession }) {
     }
     if (key === filterKey) return;
     filterKey = key;
-    setPage(0);
+    setVisible(CHUNK_SIZE);
     setSelectedID(null);
     setDetail(null);
     void load();
@@ -779,7 +782,7 @@ export function PlansView(props: { session: MountedSession }) {
         { id, stepID: step.id, status, sessionID: session.id, locale: ctx.locale.locale() },
         { location: { directory: session.directory } },
       );
-      if (!result.ok) throw new Error(result.error ?? "erro ao atualizar o passo");
+      if (!result.ok) throw new Error(result.error ?? t("toast.updateError"));
       if (result.plan) setDetail(result.plan);
       await load(true);
     } catch (cause) {
@@ -889,7 +892,7 @@ export function PlansView(props: { session: MountedSession }) {
         { id, status, sessionID: session.id, locale: ctx.locale.locale() },
         { location: { directory: session.directory } },
       );
-      if (!result.ok) throw new Error(result.error ?? "erro ao atualizar o plano");
+      if (!result.ok) throw new Error(result.error ?? t("toast.updateError"));
       if (result.plan) setDetail(result.plan);
       await load();
       ctx.toast.show({ title: t("toast.updated"), variant: "success" });
@@ -918,7 +921,7 @@ export function PlansView(props: { session: MountedSession }) {
         { id, sessionID: session.id, locale: ctx.locale.locale() },
         { location: { directory: session.directory } },
       );
-      if (!result.ok) throw new Error(result.error ?? "erro ao remover o plano");
+      if (!result.ok) throw new Error(result.error ?? t("toast.removeError"));
       setSelectedID(null);
       setDetail(null);
       await load();
@@ -941,7 +944,7 @@ export function PlansView(props: { session: MountedSession }) {
         { id, sessionID: session.id, locale: ctx.locale.locale() },
         { location: { directory: session.directory } },
       );
-      if (!result.ok) throw new Error(result.error ?? "erro ao mover o plano");
+      if (!result.ok) throw new Error(result.error ?? t("toast.moveError"));
       if (result.plan) setDetail(result.plan);
       await load(true);
       ctx.toast.show({ title: t("toast.moved"), variant: "success" });
@@ -977,12 +980,13 @@ export function PlansView(props: { session: MountedSession }) {
   return (
     <div class="plans" classList={{ "is-detail": Boolean(selectedID()) }}>
       <style>{CSS}</style>
+      <style>{SHARED_CSS}</style>
 
       <Show when={!selectedID()}>
         <div class="plans-head">
           <div class="plans-title">
-            <ctx.ui.Icon name="file-document" size="small" />
-            <span>{t("title")}</span>
+            <ctx.ui.Icon name="checklist" size="small" />
+            <h2 class="plans-title-text">{t("title")}</h2>
             <span class="plans-count">{filteredPlans().length}</span>
           </div>
           <div class="plans-actions">
@@ -1019,7 +1023,7 @@ export function PlansView(props: { session: MountedSession }) {
             value={query()}
             onInput={(value) => {
               setQuery(value);
-              setPage(0);
+              setVisible(CHUNK_SIZE);
             }}
           />
           <div class="plans-toggles" role="group" aria-label={t("filters.scope")}>
@@ -1070,29 +1074,31 @@ export function PlansView(props: { session: MountedSession }) {
       </Show>
 
       <Show when={error()}>
-        <div class="plans-error">{error()}</div>
-      </Show>
-
-      <Show when={!selectedID() && loading() && filteredPlans().length === 0}>
-        <div class="plans-loading">
-          <ctx.ui.Loader size="small" /> {t("loading")}
-        </div>
+        <ErrorBanner message={error()} />
       </Show>
 
       <Show when={!selectedID()}>
-        <div class="plans-list">
+        <div class="plans-body">
+          <div
+            class="plans-scroll os-scroll"
+            ref={nav.ref}
+            onKeyDown={nav.onKeyDown}
+            tabIndex={nav.scrollable() ? 0 : undefined}
+            role="region"
+            aria-label={t("scroll.region")}
+          >
+            <Show when={loading() && filteredPlans().length === 0}>
+              <LoadingRow label={t("loading")} />
+            </Show>
+            <div class="plans-list">
           <Show when={!loading() && filteredPlans().length === 0}>
-            <div class="plans-empty">
-              <ctx.ui.Icon name="file-document" size="large" class="plans-empty-icon" />
-              <div class="plans-empty-title">
-                {query().trim() ? t("empty.search") : t("empty.title")}
-              </div>
-              <div class="plans-empty-hint">
-                {query().trim() ? t("empty.searchHint") : t("empty.hint")}
-              </div>
-            </div>
+            <EmptyState
+              icon="file-document"
+              title={query().trim() ? t("empty.search") : t("empty.title")}
+              hint={query().trim() ? t("empty.searchHint") : t("empty.hint")}
+            />
           </Show>
-          <For each={pagedPlans()}>
+          <For each={visiblePlans()}>
             {(plan) => (
               <div
                 class="plan-card"
@@ -1108,7 +1114,7 @@ export function PlansView(props: { session: MountedSession }) {
                 }}
               >
                 <div class="plan-card-top">
-                  <span class={`plan-status ${statusClass(plan.status)}`}>{t(`status.${plan.status}`)}</span>
+                  <StatusChip tone={statusTone(plan.status)} label={t(`status.${plan.status}`)} />
                   <span class="plan-updated">{formatDate(plan.updatedAt)}</span>
                 </div>
                 <div class="plan-card-title">{plan.title}</div>
@@ -1155,39 +1161,16 @@ export function PlansView(props: { session: MountedSession }) {
               </div>
             )}
           </For>
-        </div>
-
-        <Show when={totalPages() > 1}>
-          <div class="plans-pagination">
-            <ctx.ui.Button
-              size="small"
-              variant="ghost"
-              disabled={page() === 0}
-              onClick={() => setPage(Math.max(0, page() - 1))}
-            >
-              {t("previousPage")}
-            </ctx.ui.Button>
-            <span class="plans-page-info">{t("pageInfo", page() + 1, totalPages())}</span>
-            <ctx.ui.Button
-              size="small"
-              variant="ghost"
-              disabled={page() >= totalPages() - 1}
-              onClick={() => setPage(Math.min(totalPages() - 1, page() + 1))}
-            >
-              {t("nextPage")}
-            </ctx.ui.Button>
+            </div>
           </div>
-        </Show>
+          <ScrollNav nav={nav} topLabel={t("scroll.top")} bottomLabel={t("scroll.bottom")} />
+        </div>
       </Show>
 
       <Show when={selectedID()}>
         <Show
           when={selectedPlan()}
-          fallback={
-            <div class="plans-loading">
-              <ctx.ui.Loader size="small" /> {t("loading")}
-            </div>
-          }
+          fallback={<LoadingRow label={t("loading")} />}
         >
           {(plan) => (
             <div class="plan-detail">
@@ -1197,7 +1180,7 @@ export function PlansView(props: { session: MountedSession }) {
 
             <div class="plan-detail-head">
               <div class="plan-detail-title">{plan().title}</div>
-              <span class={`plan-status ${statusClass(plan().status)}`}>{t(`status.${plan().status}`)}</span>
+              <StatusChip tone={statusTone(plan().status)} label={t(`status.${plan().status}`)} />
             </div>
 
             <div class="plan-meta">

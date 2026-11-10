@@ -15,6 +15,9 @@ type Table = Record<string, string>;
 
 const EN: Table = {
   title: "Plans",
+  "scroll.top": "Scroll to top",
+  "scroll.bottom": "Scroll to bottom",
+  "scroll.region": "Plans list",
   saveLast: "Save from agent",
   "saveLast.prompt":
     "Save the plan you just presented with plans.save, keeping the steps in the ## Passos section. If it is already saved, do not create another one; just confirm. Do not ask; save it now.",
@@ -112,6 +115,9 @@ const EN: Table = {
 
 const PT: Table = {
   title: "Planos",
+  "scroll.top": "Ir para o topo",
+  "scroll.bottom": "Ir para o fim",
+  "scroll.region": "Lista de planos",
   saveLast: "Salvar do agente",
   "saveLast.prompt":
     "Salve o plano que você acabou de apresentar usando plans.save, com os passos na seção ## Passos. Se ele já estiver salvo, não crie outro; apenas confirme. Não pergunte; salve agora.",
