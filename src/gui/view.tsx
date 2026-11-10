@@ -69,6 +69,7 @@ const CSS = `
   flex-direction: column;
   gap: 5px;
   width: 100%;
+  box-sizing: border-box;
   text-align: left;
   padding: 9px 10px;
   border-radius: 8px;
@@ -1079,7 +1080,7 @@ export function PlansView(props: { session: MountedSession }) {
       <Show when={!selectedID()}>
         <div class="plans-body">
           <div
-            class="plans-scroll os-scroll os-list"
+            class="plans-scroll os-scroll"
             ref={nav.ref}
             onKeyDown={nav.onKeyDown}
             tabIndex={nav.scrollable() ? 0 : undefined}
@@ -1089,6 +1090,7 @@ export function PlansView(props: { session: MountedSession }) {
             <Show when={loading() && filteredPlans().length === 0}>
               <LoadingRow label={t("loading")} />
             </Show>
+            <div class="plans-list os-list">
           <Show when={!loading() && filteredPlans().length === 0}>
             <EmptyState
               icon="file-document"
@@ -1159,6 +1161,7 @@ export function PlansView(props: { session: MountedSession }) {
               </div>
             )}
           </For>
+            </div>
           </div>
           <ScrollNav nav={nav} topLabel={t("scroll.top")} bottomLabel={t("scroll.bottom")} />
         </div>
