@@ -10,7 +10,7 @@
 import { createEffect, createMemo, createSignal, For, Index, onCleanup, Show } from "solid-js";
 import { usePanel, usePlugin } from "@opencode/plugin/gui";
 import type { MountedSession } from "@opencode/plugin/gui";
-import { SHARED_CSS, ScrollNav, createScrollNav, EmptyState, ErrorBanner, LoadingRow, StatusChip, type ChipTone } from "@hitalloexiled/opencode-shared/gui";
+import { SHARED_CSS, ScrollNav, createScrollNav, EmptyState, ErrorBanner, LoadingRow, StatusChip, type ChipTone } from "opencode-shared/gui";
 import { PlansRpc } from "./contract";
 import type { Plan, PlanStatus, PlanStep, StepStatus } from "./contract";
 import { useT } from "./i18n";
