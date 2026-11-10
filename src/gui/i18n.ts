@@ -9,11 +9,9 @@
  * incomplete translation never loses a string.
  */
 
-import { usePlugin } from "@opencode/plugin/gui";
+import { createI18n } from "opencode-shared/gui";
 
-type Table = Record<string, string>;
-
-const EN: Table = {
+const EN = {
   title: "Plans",
   "scroll.top": "Scroll to top",
   "scroll.bottom": "Scroll to bottom",
@@ -113,7 +111,7 @@ const EN: Table = {
   "confirm.remove.confirm": "Delete",
 };
 
-const PT: Table = {
+const PT: Record<keyof typeof EN, string> = {
   title: "Planos",
   "scroll.top": "Ir para o topo",
   "scroll.bottom": "Ir para o fim",
@@ -213,15 +211,4 @@ const PT: Table = {
   "confirm.remove.confirm": "Remover",
 };
 
-export function useT() {
-  const ctx = usePlugin();
-  return (key: string, ...args: unknown[]): string => {
-    const locale = (ctx.locale.locale() ?? "").toLowerCase();
-    const table = locale.startsWith("pt") ? PT : EN;
-    let value = table[key] ?? EN[key] ?? key;
-    args.forEach((arg, index) => {
-      value = value.replaceAll(`{${index}}`, String(arg));
-    });
-    return value;
-  };
-}
+export const { useLocale, useT } = createI18n(EN, PT);
