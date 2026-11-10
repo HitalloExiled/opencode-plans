@@ -57,13 +57,6 @@ const CSS = `
   font-weight: 600;
 }
 .plans-toggle:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
-  padding: 8px 10px;
-  border-radius: 6px;
-  color: var(--v2-state-fg-danger);
-  background: var(--v2-state-bg-danger);
-  border: 1px solid var(--v2-state-border-danger);
-  white-space: pre-wrap;
-}
 .plan-card {
   display: flex;
   flex-direction: column;
@@ -120,16 +113,6 @@ const CSS = `
 .plan-updated { font-size: 10.5px; color: var(--v2-text-text-faint); }
 .plan-card-title { font-weight: 600; font-size: 13px; line-height: 1.3; overflow-wrap: anywhere; }
 .plan-card-session { font-size: 10.5px; color: var(--v2-text-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 600;
-  white-space: nowrap;
-  background: var(--v2-overlay-simple-overlay-hover);
-  color: var(--v2-text-text-muted);
-}
 .plan-progress-row { display: flex; align-items: center; gap: 8px; }
 .plan-progress { display: flex; flex: 1; height: 5px; border-radius: 999px; overflow: hidden; background: var(--v2-overlay-simple-overlay-pressed); }
 .plan-progress-done { height: 100%; background: var(--v2-state-fg-success); transition: width .2s ease; }
