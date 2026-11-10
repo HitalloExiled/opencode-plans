@@ -45,6 +45,30 @@ describe("capture", () => {
     ];
     expect(findLastPlanMessage(messages)).toBeUndefined();
   });
+
+  test("requireSteps skips a non-plan plan message and finds the previous plan", () => {
+    const messages = [
+      message({
+        id: "m1",
+        agent: "plan",
+        content: [{ type: "text", text: "# Plan\n\n## Passos\n\n- [ ] A" }],
+      }),
+      message({
+        id: "m2",
+        agent: "plan",
+        content: [{ type: "text", text: "Você tem razão; salvando agora." }],
+      }),
+    ];
+    expect(findLastPlanMessage(messages)?.messageID).toBe("m2");
+    expect(findLastPlanMessage(messages, { requireSteps: true })?.messageID).toBe("m1");
+  });
+
+  test("requireSteps returns undefined when no plan message has steps", () => {
+    const messages = [
+      message({ id: "m1", agent: "plan", content: [{ type: "text", text: "Vou pensar." }] }),
+    ];
+    expect(findLastPlanMessage(messages, { requireSteps: true })).toBeUndefined();
+  });
 });
 
 const plan = (overrides: Partial<Plan> = {}): Plan => ({

@@ -15,6 +15,7 @@ process.env.PLANS_DB = join(dir, "plans.db");
 
 const { createRpcHandlers } = await import("../src/rpc");
 const { requireStore, savePlan } = await import("../src/store");
+const { bodyWithoutSteps } = await import("../src/plan-body");
 const { updateTool, getTool } = await import("../plans");
 
 type SyntheticInput = {
@@ -208,6 +209,96 @@ describe("plans RPC handlers", () => {
 
     const session2 = await h.list({ status: "all", scope: "session", sessionID: "s2" });
     expect(session2.some((item) => item.id === plan.id)).toBe(true);
+  });
+
+  test("save creates a plan and preserves step status on edit", async () => {
+    const created = await h.save({
+      title: "Draft",
+      body: "# Draft\n\n## Passos\n\n- [ ] A\n- [ ] B\n",
+      steps: ["A", "B"],
+      sessionID: "s1",
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok || !created.plan) throw new Error("plan not created");
+    const id = created.plan.id;
+
+    const done = await h.setStep({ id, stepID: "s1", status: "done", sessionID: "s1" });
+    expect(done.ok).toBe(true);
+
+    const updated = await h.save({
+      id,
+      title: "Draft v2",
+      body: "# Draft v2\n\n## Passos\n\n- [ ] A\n- [ ] B\n- [ ] C\n",
+      steps: ["A", "B", "C"],
+      sessionID: "s1",
+    });
+    expect(updated.ok).toBe(true);
+    expect(updated.ok && updated.plan?.title).toBe("Draft v2");
+    expect(updated.ok && updated.plan?.steps).toHaveLength(3);
+    expect(updated.ok && updated.plan?.steps.find((step) => step.id === "s1")?.status).toBe("done");
+  });
+
+  test("save rejects a plan from another session", async () => {
+    const plan = await makePlan(undefined, "s2");
+    const result = await h.save({
+      id: plan.id,
+      title: "Hijack",
+      body: "# Hijack\n\n## Passos\n\n- [ ] A\n",
+      steps: ["A"],
+      sessionID: "s1",
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("save preserves arbitrary body sections and hides the step section from the detail", async () => {
+    const body = [
+      "# Sections",
+      "",
+      "## Objetivo",
+      "Manter o corpo editável.",
+      "",
+      "## Critérios",
+      "- funciona",
+      "",
+      "## Limitações",
+      "- nenhuma",
+      "",
+      "## Passos",
+      "",
+      "- [ ] A",
+      "- [ ] B",
+      "",
+    ].join("\n");
+    const created = await h.save({
+      title: "Sections",
+      body,
+      steps: ["A", "B"],
+      sessionID: "s1",
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok || !created.plan) throw new Error("plan not created");
+    const id = created.plan.id;
+
+    const found = await h.get(id);
+    expect(found).not.toBeNull();
+    const without = bodyWithoutSteps(found!.body);
+    expect(without).toContain("## Critérios");
+    expect(without).toContain("## Limitações");
+    expect(without).not.toContain("## Passos");
+    expect(without).not.toContain("- [ ] A");
+
+    const edited = body.replace("## Limitações", "## Riscos\n- baixo\n\n## Limitações");
+    const updated = await h.save({
+      id,
+      title: "Sections v2",
+      body: edited,
+      steps: ["A", "B"],
+      sessionID: "s1",
+    });
+    expect(updated.ok).toBe(true);
+    const after = await h.get(id);
+    expect(after).not.toBeNull();
+    expect(bodyWithoutSteps(after!.body)).toContain("## Riscos");
   });
 
   test("notifications fall back to en-us when the locale is missing or unknown", async () => {

@@ -19,6 +19,7 @@ import {
   planProgress,
   plansDbPath,
   requireStore,
+  savePlan,
   schemaVersion,
   setStep,
   updatePlan,
@@ -105,6 +106,27 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const store = await requireStore();
       const plan = getPlan(store.db, id);
       return plan ? toPlan(plan) : null;
+    },
+
+    save: async (input) => {
+      const store = await requireStore();
+      if (input.id) {
+        const existing = getPlan(store.db, input.id);
+        if (!existing) return { ok: false, error: `plano não encontrado: ${input.id}` };
+        if (existing.session_id !== input.sessionID) {
+          return { ok: false, error: "plano pertence a outra sessão; peça ao usuário para mover o plano no painel" };
+        }
+      }
+      const result = savePlan(store.db, {
+        id: input.id,
+        title: input.title,
+        body: input.body,
+        steps: input.steps?.map((text) => ({ text })),
+        projectID: String(ctx.location.project.id),
+        projectDirectory: String(ctx.location.project.canonical ?? ctx.location.directory),
+        sessionID: input.sessionID,
+      });
+      return fromWrite(result);
     },
 
     update: async (input) => {

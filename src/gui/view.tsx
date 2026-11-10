@@ -7,7 +7,7 @@
  * status/progress, then a detail with the checklist and the original Markdown.
  */
 
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, onCleanup, Show } from "solid-js";
 import { usePlugin } from "@opencode/plugin/gui";
 import type { MountedSession } from "@opencode/plugin/gui";
 import { PlansRpc } from "./contract";
@@ -30,6 +30,7 @@ const CSS = `
   color: var(--v2-text-text-base);
   font-size: 12.5px;
 }
+.plans.is-detail { overflow: hidden; }
 .plans-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .plans-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
 .plans-count { font-size: 11px; color: var(--v2-text-text-muted); }
@@ -62,6 +63,8 @@ const CSS = `
 }
 .plans-loading { display: flex; align-items: center; gap: 8px; color: var(--v2-text-text-muted); padding: 8px 2px; }
 .plans-list { display: flex; flex-direction: column; gap: 8px; }
+.plans-pagination { display: flex; align-items: center; justify-content: center; gap: 8px; padding-top: 2px; }
+.plans-page-info { font-size: 11px; color: var(--v2-text-text-muted); }
 .plan-card {
   display: flex;
   flex-direction: column;
@@ -141,7 +144,12 @@ const CSS = `
 .plans-empty-icon { color: var(--v2-text-text-faint); }
 .plans-empty-title { font-weight: 600; color: var(--v2-text-text-base); }
 .plans-empty-hint { font-size: 11.5px; line-height: 1.45; }
-.plan-detail { display: flex; flex-direction: column; gap: 8px; }
+.plan-detail { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.plan-detail > .plan-back,
+.plan-detail > .plan-detail-head,
+.plan-detail > .plan-meta,
+.plan-detail > .plan-progress-row,
+.plan-detail > .plan-actions { flex: none; }
 .plan-back {
   align-self: flex-start;
   border: 0;
@@ -164,22 +172,8 @@ const CSS = `
   user-select: text;
 }
 .plan-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.plan-actions-end { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .plan-section-title { font-weight: 600; font-size: 12px; color: var(--v2-text-text-base); margin-top: 4px; }
-.plan-body-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.plan-body-toggle:hover { color: var(--v2-text-text-base); }
-.plan-body-toggle:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
 .plan-muted { color: var(--v2-text-text-muted); font-size: 11.5px; }
 .plan-steps { display: flex; flex-direction: column; gap: 5px; }
 .plan-step { display: flex; align-items: flex-start; gap: 6px; line-height: 1.45; }
@@ -241,9 +235,113 @@ const CSS = `
   padding-bottom: 12px;
   overflow-wrap: anywhere;
 }
+.plan-body-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.plan-body-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.plan-steps-pane {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-height: 120px;
+  max-height: min(480px, 60vh);
+  overflow: hidden;
+}
+.plan-steps-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.plan-splitter {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 8px;
+  border-radius: 4px;
+  cursor: row-resize;
+  touch-action: none;
+}
+.plan-splitter:hover { background: var(--v2-overlay-simple-overlay-hover); }
+.plan-splitter:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
+.plan-splitter-grip { width: 42px; height: 3px; border-radius: 2px; background: var(--v2-border-border-strong); }
+.plan-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .45);
+}
+.plan-editor {
+  width: min(560px, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--v2-border-border-strong);
+  background: var(--v2-background-bg-layer-02);
+  color: var(--v2-text-text-base);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .35);
+}
+.plan-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.plan-editor-heading { font-weight: 600; font-size: 13px; }
+.plan-editor-close {
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.plan-editor-close:hover { color: var(--v2-text-text-base); background: var(--v2-overlay-simple-overlay-hover); }
+.plan-editor-field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--v2-text-text-muted); }
+.plan-editor-field input,
+.plan-editor-field textarea,
+.plan-editor-step input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: 6px;
+  background: var(--v2-background-bg-layer-01, transparent);
+  color: var(--v2-text-text-base);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+}
+.plan-editor-field textarea { min-height: 160px; resize: vertical; }
+.plan-editor-field input:focus,
+.plan-editor-field textarea:focus,
+.plan-editor-step input:focus { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
+.plan-editor-steps-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--v2-text-text-muted); }
+.plan-editor-steps { display: flex; flex-direction: column; gap: 5px; }
+.plan-editor-step { display: flex; align-items: center; gap: 3px; }
+.plan-editor-step input { flex: 1; }
+.plan-editor-step .plan-step-btn { width: 24px; height: 24px; font-size: 12px; }
+.plan-editor-error { color: var(--v2-text-text-danger, #e03131); font-size: 11.5px; white-space: pre-wrap; }
+.plan-editor-hint { color: var(--v2-text-text-faint, var(--v2-text-text-muted)); font-size: 10.5px; line-height: 1.35; }
+.plan-editor-actions { display: flex; justify-content: flex-end; gap: 6px; }
 `;
 
 const STEP_STATUSES: readonly StepStatus[] = ["todo", "doing", "done"];
+const PAGE_SIZE = 10;
 
 export function PlansView(props: { session: MountedSession }) {
   const ctx = usePlugin();
@@ -273,15 +371,22 @@ export function PlansView(props: { session: MountedSession }) {
   const [detail, setDetail] = createSignal<Plan | null>(null);
   const [statusFilter, setStatusFilter] = createSignal<StatusFilter>(saved?.status ?? "active");
   const [scopeFilter, setScopeFilter] = createSignal<ScopeFilter>(saved?.scope ?? "session");
-  const [bodyCollapsed, setBodyCollapsed] = createSignal(saved?.bodyCollapsed ?? false);
   const [executingPlanID, setExecutingPlanID] = createSignal<string | null>(
     saved?.executingPlanID ?? null,
   );
   const [pendingPlanID, setPendingPlanID] = createSignal<string | null>(null);
+  const [stepsHeight, setStepsHeight] = createSignal(saved?.stepsHeight ?? 240);
+  const [page, setPage] = createSignal(saved?.page ?? 0);
   const [loading, setLoading] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
   const [hydrated, setHydrated] = createSignal(saved !== undefined);
+  const [editorOpen, setEditorOpen] = createSignal(false);
+  const [editorID, setEditorID] = createSignal<string | null>(null);
+  const [editorTitle, setEditorTitle] = createSignal("");
+  const [editorBody, setEditorBody] = createSignal("");
+  const [editorSteps, setEditorSteps] = createSignal<string[]>([]);
+  const [editorError, setEditorError] = createSignal("");
 
   const selectedPlan = createMemo(() => (selectedID() ? detail() : null));
 
@@ -292,6 +397,19 @@ export function PlansView(props: { session: MountedSession }) {
       const haystack = [plan.title, plan.body, ...plan.steps.map((step) => step.text)].join("\n").toLowerCase();
       return haystack.includes(q);
     });
+  });
+
+  const totalPages = createMemo(() =>
+    Math.max(1, Math.ceil(filteredPlans().length / PAGE_SIZE)),
+  );
+  const pagedPlans = createMemo(() =>
+    filteredPlans().slice(page() * PAGE_SIZE, (page() + 1) * PAGE_SIZE),
+  );
+
+  createEffect(() => {
+    if (!hydrated()) return;
+    const max = totalPages() - 1;
+    if (page() > max) setPage(max);
   });
 
   const currentSession = () => props.session;
@@ -305,7 +423,37 @@ export function PlansView(props: { session: MountedSession }) {
     executingPlanID() === plan.id || pendingPlanID() === plan.id;
 
   const runDisabled = (plan: Plan): boolean =>
-    saving() || (!isExecuting(plan) && (sessionRunning() || pendingPlanID() !== null));
+    saving() ||
+    (!isExecuting(plan) &&
+      (plan.steps.length === 0 || sessionRunning() || pendingPlanID() !== null));
+
+  const stepsMax = (): number => Math.min(480, Math.round(window.innerHeight * 0.6));
+  const clampSteps = (value: number): number => Math.min(stepsMax(), Math.max(120, value));
+
+  const startResize = (event: PointerEvent) => {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = stepsHeight();
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = "none";
+    const onMove = (move: PointerEvent) => {
+      setStepsHeight(clampSteps(startHeight + (startY - move.clientY)));
+    };
+    const onUp = () => {
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const onSplitterKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    event.preventDefault();
+    const delta = event.key === "ArrowUp" ? 16 : -16;
+    setStepsHeight(clampSteps(stepsHeight() + delta));
+  };
 
   const basename = (path: string): string => path.split("/").pop() || path;
 
@@ -417,7 +565,8 @@ export function PlansView(props: { session: MountedSession }) {
     setStatusFilter(value.status);
     setScopeFilter(value.scope);
     setSelectedID(value.selectedID);
-    setBodyCollapsed(value.bodyCollapsed ?? false);
+    setStepsHeight(value.stepsHeight ?? 240);
+    setPage(value.page ?? 0);
     setExecutingPlanID(value.executingPlanID ?? null);
     setPendingPlanID(null);
     void load();
@@ -432,7 +581,8 @@ export function PlansView(props: { session: MountedSession }) {
       query: query(),
       status: statusFilter(),
       scope: scopeFilter(),
-      bodyCollapsed: bodyCollapsed(),
+      stepsHeight: stepsHeight(),
+      page: page(),
       executingPlanID: executingPlanID(),
     });
   });
@@ -449,6 +599,7 @@ export function PlansView(props: { session: MountedSession }) {
     }
     if (key === filterKey) return;
     filterKey = key;
+    setPage(0);
     setSelectedID(null);
     setDetail(null);
     void load();
@@ -506,6 +657,114 @@ export function PlansView(props: { session: MountedSession }) {
       ctx.toast.show({ title: t("toast.idCopied"), variant: "success" });
     } catch (cause) {
       showError(t("toast.copyError"), cause);
+    }
+  };
+
+  const bodyFromPlan = (plan: Plan): string =>
+    bodyWithoutSteps(plan.body)
+      .replace(/^#\s+.*(?:\r?\n)+/, "")
+      .trim();
+
+  const openNewPlan = () => {
+    setEditorID(null);
+    setEditorTitle("");
+    setEditorBody("");
+    setEditorSteps([""]);
+    setEditorError("");
+    setEditorOpen(true);
+  };
+
+  const openEditPlan = (plan: Plan) => {
+    setEditorID(plan.id);
+    setEditorTitle(plan.title);
+    setEditorBody(bodyFromPlan(plan));
+    setEditorSteps(plan.steps.length > 0 ? plan.steps.map((step) => step.text) : [""]);
+    setEditorError("");
+    setEditorOpen(true);
+  };
+
+  const closeEditor = () => {
+    if (saving()) return;
+    setEditorOpen(false);
+    setEditorError("");
+  };
+
+  const updateEditorStep = (index: number, value: string) => {
+    const next = [...editorSteps()];
+    next[index] = value;
+    setEditorSteps(next);
+  };
+
+  const addEditorStep = () => setEditorSteps([...editorSteps(), ""]);
+
+  const removeEditorStep = (index: number) => {
+    const next = editorSteps().filter((_, cursor) => cursor !== index);
+    setEditorSteps(next.length > 0 ? next : [""]);
+  };
+
+  const moveEditorStep = (index: number, delta: number) => {
+    const next = [...editorSteps()];
+    const target = index + delta;
+    if (target < 0 || target >= next.length) return;
+    const [item] = next.splice(index, 1);
+    next.splice(target, 0, item ?? "");
+    setEditorSteps(next);
+  };
+
+  const saveEditor = async () => {
+    const session = currentSession();
+    if (!session) {
+      ctx.toast.show({ title: t("toast.noSession"), variant: "error" });
+      return;
+    }
+    const title = editorTitle().trim();
+    const steps = editorSteps().map((step) => step.trim()).filter(Boolean);
+    if (!title) {
+      setEditorError(t("editor.titleRequired"));
+      return;
+    }
+    if (steps.length === 0) {
+      setEditorError(t("editor.stepsRequired"));
+      return;
+    }
+    const context = editorBody().trim();
+    const parts = [`# ${title}`];
+    if (context) parts.push("", context);
+    parts.push("", "## Passos", "", ...steps.map((step) => `- [ ] ${step}`));
+    const body = parts.join("\n");
+    const editing = Boolean(editorID());
+    setSaving(true);
+    setEditorError("");
+    try {
+      const rpc = session.server.client.rpc(PlansRpc);
+      const result = await rpc.save(
+        {
+          id: editorID() ?? undefined,
+          title,
+          body,
+          steps,
+          sessionID: session.id,
+          locale: ctx.locale.locale(),
+        },
+        { location: { directory: session.directory } },
+      );
+      if (!result.ok) throw new Error(result.error ?? t("toast.createError"));
+      if (result.plan) {
+        setSelectedID(result.plan.id);
+        setDetail(result.plan);
+      }
+      setEditorOpen(false);
+      await load();
+      ctx.toast.show({
+        title: editing ? t("toast.updated") : t("toast.created"),
+        variant: "success",
+      });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setEditorError(message);
+      showError(editing ? t("toast.updateError") : t("toast.createError"), cause);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -716,7 +975,7 @@ export function PlansView(props: { session: MountedSession }) {
   };
 
   return (
-    <div class="plans">
+    <div class="plans" classList={{ "is-detail": Boolean(selectedID()) }}>
       <style>{CSS}</style>
 
       <Show when={!selectedID()}>
@@ -727,10 +986,20 @@ export function PlansView(props: { session: MountedSession }) {
             <span class="plans-count">{filteredPlans().length}</span>
           </div>
           <div class="plans-actions">
+            <ctx.ui.Button
+              size="small"
+              variant="contrast"
+              icon="plus"
+              onClick={openNewPlan}
+            >
+              {t("newPlan")}
+            </ctx.ui.Button>
             <ctx.ui.Tooltip value={t("saveLast.tooltip")}>
-              <ctx.ui.Button size="small" variant="contrast" icon="plus" busy={saving()} onClick={() => void saveLast()}>
-                {t("saveLast")}
-              </ctx.ui.Button>
+              <ctx.ui.IconButton
+                icon="download"
+                label={t("saveLast")}
+                onClick={() => void saveLast()}
+              />
             </ctx.ui.Tooltip>
             <ctx.ui.IconButton
               icon="outline-rotate-clockwise"
@@ -748,7 +1017,10 @@ export function PlansView(props: { session: MountedSession }) {
             label={t("search.label")}
             placeholder={t("search.placeholder")}
             value={query()}
-            onInput={setQuery}
+            onInput={(value) => {
+              setQuery(value);
+              setPage(0);
+            }}
           />
           <div class="plans-toggles" role="group" aria-label={t("filters.scope")}>
             <button
@@ -820,7 +1092,7 @@ export function PlansView(props: { session: MountedSession }) {
               </div>
             </div>
           </Show>
-          <For each={filteredPlans()}>
+          <For each={pagedPlans()}>
             {(plan) => (
               <div
                 class="plan-card"
@@ -884,6 +1156,28 @@ export function PlansView(props: { session: MountedSession }) {
             )}
           </For>
         </div>
+
+        <Show when={totalPages() > 1}>
+          <div class="plans-pagination">
+            <ctx.ui.Button
+              size="small"
+              variant="ghost"
+              disabled={page() === 0}
+              onClick={() => setPage(Math.max(0, page() - 1))}
+            >
+              {t("previousPage")}
+            </ctx.ui.Button>
+            <span class="plans-page-info">{t("pageInfo", page() + 1, totalPages())}</span>
+            <ctx.ui.Button
+              size="small"
+              variant="ghost"
+              disabled={page() >= totalPages() - 1}
+              onClick={() => setPage(Math.min(totalPages() - 1, page() + 1))}
+            >
+              {t("nextPage")}
+            </ctx.ui.Button>
+          </div>
+        </Show>
       </Show>
 
       <Show when={selectedID()}>
@@ -1000,84 +1294,211 @@ export function PlansView(props: { session: MountedSession }) {
                   {t("moveToSession")}
                 </ctx.ui.Button>
               </Show>
-              <ctx.ui.Button
-                size="small"
-                variant="ghost-muted"
-                icon="trash"
-                disabled={saving()}
-                onClick={() => void removeCurrent()}
-              >
-                {t("remove")}
-              </ctx.ui.Button>
+              <div class="plan-actions-end">
+                <ctx.ui.Button
+                  size="small"
+                  variant="ghost"
+                  icon="edit"
+                  onClick={() => openEditPlan(plan())}
+                >
+                  {t("editPlan")}
+                </ctx.ui.Button>
+                <ctx.ui.Button
+                  size="small"
+                  variant="ghost-muted"
+                  icon="trash"
+                  disabled={saving()}
+                  onClick={() => void removeCurrent()}
+                >
+                  {t("remove")}
+                </ctx.ui.Button>
+              </div>
             </div>
 
-            <div class="plan-section-title">{t("steps")}</div>
-            <Show when={plan().steps.length === 0}>
-              <div class="plan-muted">{t("noSteps")}</div>
-            </Show>
-            <div class="plan-steps">
-              <For each={plan().steps}>
-                {(step) => (
-                  <div class="plan-step">
-                    <div class="plan-step-states" role="group" aria-label={t("step.state")}>
-                      <For each={STEP_STATUSES}>
-                        {(value) => (
-                          <button
-                            type="button"
-                            class={`plan-step-btn is-${value}`}
-                            classList={{ "is-active": step.status === value }}
-                            aria-pressed={step.status === value}
-                            aria-label={t(`step.${value}`)}
-                            title={t(`step.${value}`)}
-                            disabled={saving()}
-                            onClick={() => {
-                              if (value !== step.status) void setStepStatus(step, value);
-                            }}
-                          >
-                            <span class={`plan-step-glyph glyph-${value}`} />
-                          </button>
-                        )}
-                      </For>
+            <div class="plan-body-pane">
+              <Show when={bodyWithoutSteps(plan().body)}>
+                {(body) => (
+                  <>
+                    <div class="plan-section-title">{t("plan")}</div>
+                    <div class="plan-body-scroll">
+                      <ctx.ui.Markdown text={body()} class="plan-body" />
                     </div>
-                    <span
-                      class="plan-step-text"
-                      title={step.text}
-                      classList={{
-                        "plan-step-done": step.status === "done",
-                        "plan-step-doing": step.status === "doing",
-                      }}
-                    >
-                      {step.text}
-                    </span>
-                  </div>
+                  </>
                 )}
-              </For>
+              </Show>
             </div>
 
-            <Show when={bodyWithoutSteps(plan().body)}>
-              {(body) => (
-                <>
-                  <button
-                    type="button"
-                    class="plan-section-title plan-body-toggle"
-                    aria-expanded={!bodyCollapsed()}
-                    onClick={() => setBodyCollapsed(!bodyCollapsed())}
-                  >
-                    <ctx.ui.Icon
-                      name={bodyCollapsed() ? "chevron-right" : "chevron-down"}
-                      size="small"
-                    />
-                    <span>{t("plan")}</span>
-                  </button>
-                  <Show when={!bodyCollapsed()}>
-                    <ctx.ui.Markdown text={body()} class="plan-body" />
-                  </Show>
-                </>
-              )}
-            </Show>
+            <div
+              class="plan-splitter"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label={t("resizeSteps")}
+              tabIndex={0}
+              onPointerDown={startResize}
+              onKeyDown={onSplitterKeyDown}
+            >
+              <span class="plan-splitter-grip" />
+            </div>
+
+            <div class="plan-steps-pane" style={{ height: `${stepsHeight()}px` }}>
+              <div class="plan-section-title">{t("steps")}</div>
+              <div class="plan-steps-scroll">
+                <Show when={plan().steps.length === 0}>
+                  <div class="plan-muted">{t("noSteps")}</div>
+                </Show>
+                <div class="plan-steps">
+                  <For each={plan().steps}>
+                    {(step) => (
+                      <div class="plan-step">
+                        <div class="plan-step-states" role="group" aria-label={t("step.state")}>
+                          <For each={STEP_STATUSES}>
+                            {(value) => (
+                              <button
+                                type="button"
+                                class={`plan-step-btn is-${value}`}
+                                classList={{ "is-active": step.status === value }}
+                                aria-pressed={step.status === value}
+                                aria-label={t(`step.${value}`)}
+                                title={t(`step.${value}`)}
+                                disabled={saving()}
+                                onClick={() => {
+                                  if (value !== step.status) void setStepStatus(step, value);
+                                }}
+                              >
+                                <span class={`plan-step-glyph glyph-${value}`} />
+                              </button>
+                            )}
+                          </For>
+                        </div>
+                        <span
+                          class="plan-step-text"
+                          title={step.text}
+                          classList={{
+                            "plan-step-done": step.status === "done",
+                            "plan-step-doing": step.status === "doing",
+                          }}
+                        >
+                          {step.text}
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </div>
+            </div>
           </div>
         )}
         </Show>
+      </Show>
+
+      <Show when={editorOpen()}>
+        <div
+          class="plan-editor-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={editorID() ? t("editPlan") : t("newPlan")}
+          onClick={closeEditor}
+        >
+          <div class="plan-editor" onClick={(event) => event.stopPropagation()}>
+            <div class="plan-editor-head">
+              <div class="plan-editor-heading">{editorID() ? t("editPlan") : t("newPlan")}</div>
+              <button
+                type="button"
+                class="plan-editor-close"
+                aria-label={t("cancel")}
+                title={t("cancel")}
+                onClick={closeEditor}
+              >
+                ×
+              </button>
+            </div>
+
+            <label class="plan-editor-field">
+              <span>{t("titleLabel")}</span>
+              <input
+                value={editorTitle()}
+                onInput={(event) => setEditorTitle(event.currentTarget.value)}
+              />
+            </label>
+
+            <label class="plan-editor-field">
+              <span>{t("bodyLabel")}</span>
+              <textarea
+                value={editorBody()}
+                onInput={(event) => setEditorBody(event.currentTarget.value)}
+              />
+              <small class="plan-editor-hint">{t("bodyHint")}</small>
+            </label>
+
+            <div class="plan-editor-steps-head">
+              <span>{t("stepsLabel")}</span>
+              <ctx.ui.Button size="small" variant="ghost" icon="plus" onClick={addEditorStep}>
+                {t("addStep")}
+              </ctx.ui.Button>
+            </div>
+
+            <div class="plan-editor-steps">
+              <Index each={editorSteps()}>
+                {(step, index) => (
+                  <div class="plan-editor-step">
+                    <input
+                      value={step()}
+                      aria-label={`${t("stepsLabel")} ${index + 1}`}
+                      onInput={(event) => updateEditorStep(index, event.currentTarget.value)}
+                    />
+                    <button
+                      type="button"
+                      class="plan-step-btn"
+                      aria-label={t("moveUp")}
+                      title={t("moveUp")}
+                      disabled={index === 0}
+                      onClick={() => moveEditorStep(index, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      class="plan-step-btn"
+                      aria-label={t("moveDown")}
+                      title={t("moveDown")}
+                      disabled={index === editorSteps().length - 1}
+                      onClick={() => moveEditorStep(index, 1)}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      class="plan-step-btn"
+                      aria-label={t("removeStep")}
+                      title={t("removeStep")}
+                      onClick={() => removeEditorStep(index)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </Index>
+            </div>
+
+            <Show when={editorError()}>
+              <div class="plan-editor-error">{editorError()}</div>
+            </Show>
+
+            <div class="plan-editor-actions">
+              <ctx.ui.Button size="small" variant="ghost" disabled={saving()} onClick={closeEditor}>
+                {t("cancel")}
+              </ctx.ui.Button>
+              <ctx.ui.Button
+                size="small"
+                variant="contrast"
+                busy={saving()}
+                onClick={() => void saveEditor()}
+              >
+                {t("savePlan")}
+              </ctx.ui.Button>
+            </div>
+          </div>
+        </div>
       </Show>
     </div>
   );

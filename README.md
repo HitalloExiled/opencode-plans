@@ -15,8 +15,8 @@ em que apresenta o plano final, assim que não houver mais perguntas ou escolhas
 como “(Opcional, recomendado)”. Salvar/editar o plano
 (`plans.save`/`plans.update`) é permitido no **Plan mode** porque grava apenas o
 `plans.db`, não arquivos do repositório; só editar arquivos exige Build. O
-usuário também pode usar `/save-plan` (captura direta) ou o botão **Salvar
-plano**, que apenas envia um hint para o agente chamar `plans.save`. Não há
+usuário também pode usar `/save-plan` (captura direta) ou o botão **Salvar do
+agente**, que apenas envia um hint para o agente chamar `plans.save`. Não há
 captura heurística de toda resposta do Plan.
 
 O plugin é autocontido: nenhum import de fora do diretório (só
@@ -72,11 +72,13 @@ e o `npm run gui:build`).
 5. **Painel lateral**: por padrão lista só a **sessão ativa**; o toggle
    **Projeto** traz todos os planos do projeto, com a sessão de origem em cada
    card. Planos de outra sessão têm o botão **Mover para esta sessão**. O
-   painel guarda por sessão o plano aberto, a busca, os filtros e o estado
-   colapsado do corpo, então fechar e reabrir a aba restaura a mesma tela; com
-   um plano aberto, os filtros ficam ocultos.
+   painel guarda por sessão o plano aberto, a busca, os filtros, a página e a
+   altura dos passos, então fechar e reabrir a aba restaura a mesma tela; com
+   um plano aberto, os filtros ficam ocultos. A listagem é paginada no cliente
+   (20 por página); no detalhe, corpo e passos rolam independentemente e a
+   altura dos passos é ajustável pelo divisor.
 6. **Salvar o último plano**: `/save-plan` (servidor) captura a última mensagem
-   do agente `plan` na sessão. O botão **Salvar plano** do painel não salva
+   do agente `plan` na sessão. O botão **Salvar do agente** do painel não salva
    direto: ele envia um hint pedindo ao agente que chame `plans.save` com o
    plano apresentado.
 7. **Notifica o agente**: quando o usuário marca/altera um passo, muda o
@@ -98,6 +100,28 @@ e o `npm run gui:build`).
    mensagem sintética avisando que o usuário pausou o plano e volta o agente
    para **Plan**. Clicar em Executar novamente retoma do estado atual. Normal
    completion mantém o agente em Build.
+
+### Criação e edição pela UI
+
+O botão **Novo plano** abre um editor com título, objetivo/contexto e lista de
+passos. O botão **Editar** no detalhe reabre o mesmo editor. Salvar grava direto
+via RPC `save`, sem depender do agente: o body é recomposto com `## Passos` e os
+status existentes são preservados por texto. O botão **Salvar do agente**
+continua como ação secundária (hint) para planos gerados em conversa.
+
+### Guard de save
+
+Depois de um turno do agente `plan`, se a última mensagem com passos não tiver
+um plano salvo correspondente (por `message_id` ou pelos textos dos passos), o
+plugin injeta **um nudge único** pedindo `plans.save` e inicia o turno
+(`resume: true`). Não há auto-save heurístico.
+
+### Agente próprio (opcional)
+
+O plugin não cria agentes em runtime; o editor só atualiza/remove agentes
+existentes. Quem quiser um agente de planejamento dedicado pode defini-lo em
+`opencode.jsonc` (`agents`) e o plugin pode reconhecê-lo/injetar as instruções.
+O fluxo UI → Build não depende disso.
 
 ### Formato dos passos
 

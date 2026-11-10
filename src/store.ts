@@ -411,6 +411,14 @@ export function getPlan(db: Db, id: string): Plan | undefined {
   return { ...row, steps: stepsForPlans(db, [id]).get(id) ?? [] };
 }
 
+export function getPlanByMessageID(db: Db, messageID: string): Plan | undefined {
+  const row = db.prepare("SELECT * FROM plans WHERE message_id = ? LIMIT 1").get(messageID) as
+    | PlanRow
+    | undefined;
+  if (!row) return undefined;
+  return { ...row, steps: stepsForPlans(db, [row.id]).get(row.id) ?? [] };
+}
+
 /* ------------------------------------------------------------------ */
 /* Writes                                                              */
 /* ------------------------------------------------------------------ */

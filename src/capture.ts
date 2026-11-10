@@ -23,6 +23,11 @@ export type CapturedPlan = {
   messageID?: string;
 };
 
+export type FindPlanOptions = {
+  /** Skip messages that do not contain at least one extractable step. */
+  requireSteps?: boolean;
+};
+
 export function messageText(message: SessionMessageLike): string {
   return (message.content ?? [])
     .filter((part) => part.type === "text" && typeof part.text === "string")
@@ -31,17 +36,23 @@ export function messageText(message: SessionMessageLike): string {
     .trim();
 }
 
+import { extractSteps } from "./plan-body.js";
+
 /**
  * The last non-empty assistant message written by the built-in `plan` agent.
  * Messages are in chronological order.
  */
-export function findLastPlanMessage(messages: readonly SessionMessageLike[]): CapturedPlan | undefined {
+export function findLastPlanMessage(
+  messages: readonly SessionMessageLike[],
+  options: FindPlanOptions = {},
+): CapturedPlan | undefined {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
     if (!message || message.type !== "assistant") continue;
     if (String(message.agent ?? "") !== "plan") continue;
     const body = messageText(message);
     if (!body) continue;
+    if (options.requireSteps && extractSteps(body).length === 0) continue;
     return message.id ? { body, messageID: message.id } : { body };
   }
   return undefined;

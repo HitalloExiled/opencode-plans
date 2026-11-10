@@ -54,23 +54,37 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
 - **Do not write data inside the repo.** All DB writes go to `plans.db` (see
   "Live paths").
 - **Capture is explicit only, but saving a final plan is mandatory.** Do not add
-  a hook that saves every Plan response; `plans.save` and `/save-plan` are the
-  explicit entry points. The panel button only sends a hint asking the agent to
-  call `plans.save` — it never captures the last message itself. The Plan agent
+  a hook that saves every Plan response; `plans.save`, `/save-plan` and the
+  panel's `PlansRpc.save` (editor) are the explicit entry points. The hint
+  button only sends a nudge asking the agent to call `plans.save` — it never
+  captures the last message itself. The Plan agent
   must call `plans.save`
   in the same turn it presents a final plan with no blocking pending user
   questions. A purely optional/recommended choice does not block the save:
   include it as an "(optional, recommended)" step. Saving/editing a plan is
   allowed in Plan mode because it writes only `plans.db`, not repository files;
   only repository edits require Build.
+- **The panel owns plan creation and editing.** The editor calls
+  `PlansRpc.save` (create/update) with title, context and steps; the body is
+  recomposed with `## Passos` and existing statuses are preserved by step text.
+  Do not route UI creation through the agent or the `/save-plan` capture.
+- **The save guard is a nudge, not capture.** After a Plan-agent turn, if the
+  last plan message with steps has no saved plan matching its `message_id` or
+  step texts, inject a one-time synthetic nudge with `resume: true` asking for
+  `plans.save`. Never auto-save the message.
+- **Plugins cannot create agents.** The agent editor only updates/removes
+  existing agents; a custom planning agent must be defined in `opencode.jsonc`.
+  The UI → Build flow does not require one.
 - **The GUI never opens the DB in the renderer.** It calls the server plugin's
   RPC (`PlansRpc`) with the routed session's location; there is no GUI main
   process data layer.
 - **Panel UI state is per session and lives in window storage.** The open
-  plan, search, filters and the body-collapsed toggle go through
+  plan, search, filters, page and steps height go through
   `ctx.storage.store("view:<server>:<session>")` (`src/gui/state.ts`), never
   into `plans.db`. Reopening the tab restores the same screen; the filters are
-  hidden while a plan detail is open.
+  hidden while a plan detail is open. The list is paginated client-side (20 per
+  page); body and steps panes scroll independently and the steps height is
+  adjustable.
 - **The stored body is a template, not verbatim plan text.** `savePlan` extracts
   the exact steps from the body's step section and replaces them with
   `<!-- plans:steps -->`. `plans.get` reassembles the list with the live

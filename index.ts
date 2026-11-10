@@ -19,6 +19,7 @@ import { deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from 
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
 import { createRpcHandlers } from "./src/rpc.js";
+import { claimSaveNudge, planAlreadySaved, saveNudgeKey } from "./src/save-guard.js";
 import { listPlans, planProgress, requireStore, savePlan } from "./src/store.js";
 
 type Ctx = Plugin.Context;
@@ -78,7 +79,9 @@ async function registerCommand(ctx: Ctx) {
         const locale = await commandLocale(ctx);
         try {
           const messages = await ctx.session.context({ sessionID });
-          const captured = findLastPlanMessage(messages as unknown as SessionMessageLike[]);
+          const captured = findLastPlanMessage(messages as unknown as SessionMessageLike[], {
+            requireSteps: true,
+          });
           if (!captured) {
             await ctx.session.synthetic({
               sessionID,
@@ -157,9 +160,60 @@ async function injectContext(ctx: Ctx, event: SessionContext) {
   }
 }
 
+/**
+ * After a Plan-agent turn, nudge it once when it presented a plan with steps
+ * but did not persist it. This is a nudge, never an automatic save.
+ */
+async function runSaveGuard(ctx: Ctx, signal: AbortSignal) {
+  try {
+    for await (const event of ctx.event.subscribe({
+      types: ["session.execution.succeeded"],
+      signal,
+    })) {
+      if (event.type !== "session.execution.succeeded") continue;
+      const sessionID = String(event.data.sessionID);
+      try {
+        const session = await ctx.session.get({ sessionID });
+        if (String(session.agent ?? "") !== "plan") continue;
+        const messages = await ctx.session.context({ sessionID });
+        const captured = findLastPlanMessage(messages as unknown as SessionMessageLike[], {
+          requireSteps: true,
+        });
+        if (!captured?.messageID) continue;
+        // Claim synchronously before any further await so concurrent events
+        // (or a new guard instance after a reload) cannot double-nudge.
+        if (!claimSaveNudge(captured.messageID)) continue;
+        const store = await requireStore();
+        if (planAlreadySaved(store, projectID(ctx), sessionID, captured)) continue;
+        const key = saveNudgeKey(captured.messageID);
+        if ((await ctx.storage.get(key)) !== undefined) continue;
+        await ctx.storage.set(key, true);
+        const locale = await commandLocale(ctx);
+        await ctx.session.synthetic({
+          sessionID: sessionID as never,
+          text: tn(locale, "plan.nudge"),
+          description: tn(locale, "plan.nudge.action"),
+          resume: true,
+          metadata: { source: "plans", kind: "save-nudge", messageID: captured.messageID },
+        });
+        console.info("[plans] save nudge injected", {
+          sessionID,
+          messageID: captured.messageID,
+        });
+      } catch (error) {
+        console.error(`[plans] save guard failed: ${errorText(error)}`);
+      }
+    }
+  } catch (error) {
+    if (!signal.aborted) console.error(`[plans] save guard stopped: ${errorText(error)}`);
+  }
+}
+
 export default Plugin.define({
   id: "plans",
   async setup(ctx) {
+    const guardController = new AbortController();
+    const guard = runSaveGuard(ctx, guardController.signal);
     const registrations = await Promise.all([
       registerTools(ctx),
       registerCommand(ctx),
@@ -168,6 +222,8 @@ export default Plugin.define({
     ]);
 
     return async () => {
+      guardController.abort();
+      await guard.catch(() => undefined);
       for (const registration of registrations) {
         await registration.dispose().catch(() => undefined);
       }

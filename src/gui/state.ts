@@ -15,7 +15,8 @@ export type ViewStateValue = {
   query: string;
   status: StatusFilter;
   scope: ScopeFilter;
-  bodyCollapsed?: boolean;
+  stepsHeight?: number;
+  page?: number;
   executingPlanID?: string | null;
 };
 
@@ -28,7 +29,10 @@ export const ViewState = Schema.Struct({
     Schema.Literal("all"),
   ]),
   scope: Schema.Union([Schema.Literal("session"), Schema.Literal("project")]),
+  // Kept optional for states written before the body collapse was removed.
   bodyCollapsed: Schema.optional(Schema.Boolean),
+  stepsHeight: Schema.optional(Schema.Number),
+  page: Schema.optional(Schema.Number),
   executingPlanID: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
@@ -37,6 +41,7 @@ export const VIEW_INITIAL: ViewStateValue = {
   query: "",
   status: "active",
   scope: "session",
-  bodyCollapsed: false,
+  stepsHeight: 240,
+  page: 0,
   executingPlanID: null,
 };

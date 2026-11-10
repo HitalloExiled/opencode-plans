@@ -155,6 +155,15 @@ export const updateInputSchema = Schema.Struct({
   locale: optString,
 });
 
+export const saveInputSchema = Schema.Struct({
+  id: optString,
+  title: Schema.String,
+  body: Schema.String,
+  steps: Schema.optional(Schema.Array(Schema.String)),
+  sessionID: Schema.String,
+  locale: optString,
+});
+
 export const stepInputSchema = Schema.Struct({
   id: Schema.String,
   stepID: Schema.String,
@@ -200,6 +209,10 @@ export const PlansRpc = Rpc.define({
     get: {
       input: Schema.toStandardSchemaV1(Schema.String),
       output: Schema.toStandardSchemaV1(Schema.NullOr(planSchema)),
+    },
+    save: {
+      input: Schema.toStandardSchemaV1(saveInputSchema),
+      output: Schema.toStandardSchemaV1(planResultSchema),
     },
     update: {
       input: Schema.toStandardSchemaV1(updateInputSchema),
