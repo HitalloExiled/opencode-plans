@@ -111,7 +111,7 @@ const CSS = `
 }
 .plan-run-play { color: var(--v2-state-fg-success); }
 .plan-run-play:hover { color: var(--v2-state-fg-success); }
-.plan-run-play svg { transform: rotate(-90deg); }
+.plan-run-play svg { transform: rotate(-90deg); width: 20px; height: 20px; }
 .plan-run-pause { color: var(--v2-state-fg-warning); }
 .plan-run-pause:hover { color: var(--v2-state-fg-warning); }
 .plan-updated { font-size: 10.5px; color: var(--v2-text-text-faint); }
