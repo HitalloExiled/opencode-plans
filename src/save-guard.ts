@@ -26,10 +26,16 @@ export function saveNudgeKey(messageID: string): string {
   return `plans:save-nudge:${messageID}`;
 }
 
-/** Whether the captured plan message already has a matching saved plan. */
+/**
+ * Whether the captured plan message already has a matching saved plan.
+ *
+ * Session-scoped on purpose: session ids are unique and a `move` keeps the
+ * same `session_id`, while the guard instance's `ctx.location` can belong to
+ * another project (the home instance receives events for every project). A
+ * project filter here would miss the plan and nudge a saved message.
+ */
 export function planAlreadySaved(
   store: Store,
-  project: string,
   sessionID: string,
   captured: CapturedPlan,
 ): boolean {
@@ -37,7 +43,6 @@ export function planAlreadySaved(
   const target = extractSteps(captured.body).map((step) => normalizeStepText(step.text));
   if (target.length === 0) return true;
   const plans = listPlans(store.db, {
-    projectID: project,
     sessionID,
     status: "all",
     limit: 50,

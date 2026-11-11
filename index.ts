@@ -185,7 +185,7 @@ async function runSaveGuard(ctx: Ctx, signal: AbortSignal) {
         // (or a new guard instance after a reload) cannot double-nudge.
         if (!claimSaveNudge(captured.messageID)) continue;
         const store = await requireStore();
-        if (planAlreadySaved(store, projectID(ctx), sessionID, captured)) continue;
+        if (planAlreadySaved(store, sessionID, captured)) continue;
         const key = saveNudgeKey(captured.messageID);
         if ((await ctx.storage.get(key)) !== undefined) continue;
         await ctx.storage.set(key, true);
