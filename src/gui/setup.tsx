@@ -11,9 +11,9 @@
  */
 
 import type { SetupContext } from "@opencode/plugin/gui";
-import { ComposerPill } from "@opencode/plugin/gui";
+import { ComposerPill, Style } from "@opencode/plugin/gui";
 import { registerSidePanel } from "opencode-shared/gui";
-import { createPlanPill } from "./pill";
+import { createPlanPill, PLAY_ICON_CSS } from "./pill";
 import { PlansView } from "./view";
 
 export const openPlansId = "plans";
@@ -35,6 +35,7 @@ export function setup(ctx: SetupContext<never>): void {
   });
 
   const pill = createPlanPill(ctx);
+  ctx.add(Style, PLAY_ICON_CSS);
   ctx.add(ComposerPill, () => ({
     id: "execute-plan",
     order: 10,

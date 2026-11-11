@@ -22,6 +22,22 @@ import { pickRunnablePlan } from "../plan-select";
 /** Minimum gap between two listing attempts for one session. */
 const RETRY_MS = 1_000;
 
+/**
+ * The app has no play glyph: the panel's play button is `fill-triangle-down`
+ * rotated by its own CSS. The host draws the pill icon with no rotation prop
+ * or plugin class, so this rule gives the pill the same glyph, scoped to that
+ * icon (the `$=` form also covers the "New icons" experiment symbols).
+ */
+export const PLAY_ICON_CSS = `
+[data-composer-pill] svg[data-slot="icon-svg"]:has(use[href$="fill-triangle-down"]) {
+  width: 20px;
+  height: 20px;
+  transform: rotate(-90deg);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+`;
+
 const sessionKey = (session: MountedSession): string => `${session.server.id}\u0000${session.id}`;
 
 export type PlanPill = {
@@ -116,7 +132,8 @@ export function createPlanPill(ctx: Context): PlanPill {
       const label = total > 0 ? `${translate("execute.pill")} · ${done}/${total}` : translate("execute.pill");
 
       return {
-        icon: "arrow-right",
+        icon: "fill-triangle-down",
+        tone: "success",
         label,
         title: translate("execute.pillTitle", plan.title),
         run: () => void executionFor(ctx, session).execute(plan, translate),
