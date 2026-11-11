@@ -391,7 +391,7 @@ export function PlansView(props: { session: MountedSession }) {
     statusFilter();
     scopeFilter();
     setVisible(CHUNK_SIZE);
-    nav.toTop();
+    nav.reset();
   });
 
   const currentSession = () => props.session;
