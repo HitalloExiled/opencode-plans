@@ -29,6 +29,7 @@ import {
   type PlanStatus,
 } from "./src/store.js";
 import { normalizeStepText } from "./src/plan-body.js";
+import { emitPlanChange } from "./src/plan-events.js";
 
 type ToolResult = { content: string; metadata?: Record<string, unknown> };
 type Ctx = Plugin.Context;
@@ -150,6 +151,7 @@ export function saveTool(ctx: Ctx) {
           steps: input.steps?.map((text) => ({ text })),
         });
         if (!result.ok) return fail(result.error);
+        emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
         return {
           content: [
             `Plano salvo: ${result.plan.title}`,
@@ -315,6 +317,8 @@ export function updateTool(ctx: Ctx) {
           if (!result.ok) return fail(result.error);
         }
 
+        emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
+
         return {
           content: [
             `Plano atualizado: ${result.plan.title}`,
@@ -366,6 +370,7 @@ export function deleteTool(ctx: Ctx) {
         }
         const result = deletePlan(store.db, input.id);
         if (!result.ok) return fail(result.error);
+        emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
         return {
           content: `Plano removido: ${result.plan.title} (${result.plan.id})`,
           metadata: { planID: result.plan.id, deleted: true },

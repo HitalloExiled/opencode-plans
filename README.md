@@ -100,6 +100,13 @@ e o `npm run gui:build`).
    mensagem sintética avisando que o usuário pausou o plano e volta o agente
    para **Plan**. Clicar em Executar novamente retoma do estado atual. Normal
    completion mantém o agente em Build.
+9. **Executar pela pill do composer**: quando a sessão está ociosa e tem um
+   plano **active**, uma pill **Executar plano** aparece na linha acima do
+   composer (com o progresso `done/total`) e executa o mesmo fluxo do botão do
+   painel em um clique. Ela é alimentada pelo evento RPC
+   `opencode.plans/changed`, emitido pelo `plans.save`, pelos tools de escrita
+   e pelos handlers do painel; some enquanto o agente roda e quando o plano
+   termina (todos os passos `done` viram status `done`).
 
 ### Criação e edição pela UI
 

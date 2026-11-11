@@ -16,7 +16,8 @@ process.env.PLANS_DB = join(dir, "plans.db");
 const { createRpcHandlers } = await import("../src/rpc");
 const { requireStore, savePlan } = await import("../src/store");
 const { bodyWithoutSteps } = await import("../src/plan-body");
-const { updateTool, getTool } = await import("../plans");
+const { onPlanChange } = await import("../src/plan-events");
+const { saveTool, updateTool, getTool } = await import("../plans");
 
 type SyntheticInput = {
   sessionID: string;
@@ -366,5 +367,78 @@ describe("plans.update tool guards", () => {
       body: "# Plan\n\n- [x] Uno\n- [ ] Two\n",
     });
     expect(result.content).not.toContain("❌");
+  });
+});
+
+describe("plan change events", () => {
+  type Change = { sessionID: string; planID?: string | undefined };
+
+  const collect = () => {
+    const changes: Change[] = [];
+    const off = onPlanChange((change) => changes.push(change));
+    return { changes, off };
+  };
+
+  test("save, setStep, move and remove publish the affected sessions", async () => {
+    const { changes, off } = collect();
+    try {
+      const created = await h.save({
+        title: "Events",
+        body: "# Events\n\n## Passos\n\n- [ ] A\n- [ ] B\n",
+        steps: ["A", "B"],
+        sessionID: "s1",
+      });
+      if (!created.ok || !created.plan) throw new Error("plan not created");
+      const id = created.plan.id;
+      expect(changes).toEqual([{ sessionID: "s1", planID: id }]);
+
+      changes.length = 0;
+      await h.setStep({ id, stepID: "s1", status: "done", sessionID: "s1" });
+      expect(changes).toEqual([{ sessionID: "s1", planID: id }]);
+
+      changes.length = 0;
+      await h.move({ id, sessionID: "s2" });
+      expect(changes).toEqual([
+        { sessionID: "s1", planID: id },
+        { sessionID: "s2", planID: id },
+      ]);
+
+      changes.length = 0;
+      await h.remove({ id, sessionID: "s2" });
+      expect(changes).toEqual([{ sessionID: "s2", planID: id }]);
+    } finally {
+      off();
+    }
+  });
+
+  test("plans.save from the agent publishes the tool's session", async () => {
+    const { changes, off } = collect();
+    try {
+      const result = await saveTool(ctx as never).execute(
+        {
+          title: "From the agent",
+          body: "# From the agent\n\n## Passos\n\n- [ ] A\n",
+          steps: ["A"],
+        } as never,
+        { sessionID: "s3", messageID: "m1" } as never,
+      );
+      expect(result.content).toContain("Plano salvo");
+      expect(changes).toHaveLength(1);
+      expect(changes[0]?.sessionID).toBe("s3");
+      expect(changes[0]?.planID).toBeTruthy();
+    } finally {
+      off();
+    }
+  });
+
+  test("a failed write publishes nothing", async () => {
+    const { changes, off } = collect();
+    try {
+      const missing = await h.update({ id: "nope", status: "archived" });
+      expect(missing.ok).toBe(false);
+      expect(changes).toEqual([]);
+    } finally {
+      off();
+    }
   });
 });

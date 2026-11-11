@@ -9,7 +9,7 @@
  * incomplete translation never loses a string.
  */
 
-import { createI18n } from "opencode-shared/gui";
+import { createI18n, interpolate, supportedLocale } from "opencode-shared/gui";
 
 const EN = {
   title: "Plans",
@@ -95,6 +95,9 @@ const EN = {
   "toast.executeError": "Could not start the plan",
   "execute.prompt":
     'Execute or resume the plan "{0}" (id: {1}) from where it is. Use the injected <plans-context>: pending steps already carry their sN ids; only call plans.get for text missing there. Do the remaining steps and mark each with plans.update ("doing" then "done"). The plan is the source of truth: do not replan or rewrite the body.',
+  "execute.pill": "Run plan",
+  "execute.pillTitle": 'Run the plan "{0}"',
+  "execute.pillError": "Could not start the plan",
   "toast.pausing": "Pausing plan…",
   "toast.pauseError": "Could not pause the plan",
   "toast.busy": "A plan is already running in this session",
@@ -195,6 +198,9 @@ const PT: Record<keyof typeof EN, string> = {
   "toast.executeError": "Não foi possível iniciar o plano",
   "execute.prompt":
     'Execute ou retome o plano "{0}" (id: {1}) do ponto atual. Use o bloco <plans-context>: os passos pendentes já trazem os IDs sN; chame plans.get só pelo que faltar ali. Faça os passos restantes e marque cada um com plans.update ("doing" e depois "done"). O plano é a fonte da verdade: não replaneje nem reescreva o body.',
+  "execute.pill": "Executar plano",
+  "execute.pillTitle": 'Executar o plano "{0}"',
+  "execute.pillError": "Não foi possível iniciar o plano",
   "toast.pausing": "Pausando plano…",
   "toast.pauseError": "Não foi possível pausar o plano",
   "toast.busy": "Já existe um plano em execução nesta sessão",
@@ -211,4 +217,16 @@ const PT: Record<keyof typeof EN, string> = {
   "confirm.remove.confirm": "Remover",
 };
 
-export const { useLocale, useT } = createI18n(EN, PT);
+const i18n = createI18n(EN, PT);
+
+export const { useLocale, useT } = i18n;
+
+/**
+ * Translation outside a component or contribution, such as the composer pill
+ * registered from `setup()`, where `usePlugin()` has no provider.
+ */
+export function tStatic(rawLocale: string | undefined, key: string, ...args: unknown[]): string {
+  const table = i18n.tables[supportedLocale(rawLocale)];
+  const value = table[key] ?? (typeof args[0] === "string" ? args[0] : key);
+  return interpolate(value, args);
+}

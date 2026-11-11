@@ -18,6 +18,7 @@ import { insertPlanExemption, PLAN_SAVE_INSTRUCTION, renderBuildContext } from "
 import { deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
+import { onPlanChange } from "./src/plan-events.js";
 import { createRpcHandlers } from "./src/rpc.js";
 import { claimSaveNudge, planAlreadySaved, saveNudgeKey } from "./src/save-guard.js";
 import { listPlans, planProgress, requireStore, savePlan } from "./src/store.js";
@@ -214,14 +215,23 @@ export default Plugin.define({
   async setup(ctx) {
     const guardController = new AbortController();
     const guard = runSaveGuard(ctx, guardController.signal);
+    // Registered first: tool and RPC writes publish through its `changed`
+    // event, and the bus listener must exist before anything can write.
+    const rpcRegistration = await ctx.rpc.register(PlansRpc, createRpcHandlers(ctx));
+    const offPlanChange = onPlanChange((change) => {
+      void rpcRegistration.events.emit("changed", change).catch((error: unknown) => {
+        console.error(`[plans] could not emit plan change: ${errorText(error)}`);
+      });
+    });
     const registrations = await Promise.all([
       registerTools(ctx),
       registerCommand(ctx),
-      ctx.rpc.register(PlansRpc, createRpcHandlers(ctx)),
       ctx.session.hook("context", (event) => injectContext(ctx, event)),
     ]);
+    registrations.push(rpcRegistration);
 
     return async () => {
+      offPlanChange();
       guardController.abort();
       await guard.catch(() => undefined);
       for (const registration of registrations) {

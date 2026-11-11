@@ -10,6 +10,7 @@ import type { Plugin } from "@opencode/plugin";
 import type { RpcHandlers } from "@opencode/plugin/promise/rpc";
 import { PlansRpc, type Plan, type PlanResult, type Status } from "./gui/contract.js";
 import { notificationLocale, tn } from "./notifications.js";
+import { emitPlanChange } from "./plan-events.js";
 import {
   deletePlan,
   getPlan,
@@ -126,6 +127,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         projectDirectory: String(ctx.location.project.canonical ?? ctx.location.directory),
         sessionID: input.sessionID,
       });
+      if (result.ok) emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
       return fromWrite(result);
     },
 
@@ -138,6 +140,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         body: input.body,
       });
       if (!result.ok) return fromWrite(result);
+      emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
 
       const locale = notificationLocale(input.locale);
       if (input.status) {
@@ -173,6 +176,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         status: input.status,
       });
       if (!result.ok) return fromWrite(result);
+      emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
 
       const step = result.plan.steps.find((item) => item.step_id === input.stepID);
       const { done, total } = planProgress(result.plan);
@@ -207,6 +211,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const store = await requireStore();
       const result = deletePlan(store.db, input.id);
       if (!result.ok) return fromWrite(result);
+      emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
       const locale = notificationLocale(input.locale);
       await notify(
         ctx,
@@ -227,8 +232,11 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       }
       if (plan.session_id === input.sessionID) return { ok: true, plan: toPlan(plan) };
 
+      const from = plan.session_id;
       const result = movePlan(store.db, input.id, input.sessionID);
       if (!result.ok) return fromWrite(result);
+      emitPlanChange({ sessionID: from, planID: result.plan.id });
+      emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
       const locale = notificationLocale(input.locale);
       await notify(
         ctx,

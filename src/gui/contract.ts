@@ -191,6 +191,21 @@ export const statusSchema = Schema.Struct({
   error: optString,
 });
 
+/**
+ * A write to `plans.db`. `sessionID` is the plan's session after the write
+ * (the destination, for a move); `planID` is omitted when several plans
+ * changed at once.
+ */
+export type PlanChange = {
+  sessionID: string;
+  planID?: string | undefined;
+};
+
+export const planChangeSchema = Schema.Struct({
+  sessionID: Schema.String,
+  planID: optString,
+});
+
 /* ------------------------------------------------------------------ */
 /* The RPC                                                             */
 /* ------------------------------------------------------------------ */
@@ -235,5 +250,7 @@ export const PlansRpc = Rpc.define({
       output: Schema.toStandardSchemaV1(Schema.Null),
     },
   },
-  events: {},
+  events: {
+    changed: { schema: Schema.toStandardSchemaV1(planChangeSchema) },
+  },
 });

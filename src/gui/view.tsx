@@ -12,6 +12,7 @@ import { usePanel, usePlugin } from "@opencode/plugin/gui";
 import type { MountedSession } from "@opencode/plugin/gui";
 import { SHARED_CSS, ScrollNav, createScrollNav, EmptyState, ErrorBanner, LoadingRow, StatusChip, type ChipTone } from "opencode-shared/gui";
 import { PlansRpc } from "./contract";
+import { runPlan } from "./execute";
 import type { Plan, PlanStatus, PlanStep, StepStatus } from "./contract";
 import { useT } from "./i18n";
 import { bodyWithoutSteps } from "../plan-body";
@@ -783,34 +784,13 @@ export function PlansView(props: { session: MountedSession }) {
     if (!session) return;
     setSaving(true);
     try {
-      let target = plan;
-      if (plan.sessionID !== session.id) {
-        const rpc = session.server.client.rpc(PlansRpc);
-        const moved = await rpc.move(
-          { id: plan.id, sessionID: session.id, locale: ctx.locale.locale() },
-          { location: { directory: session.directory } },
-        );
-        if (!moved.ok) throw new Error(moved.error ?? t("toast.moveError"));
-        if (moved.plan) {
-          target = moved.plan;
-          setDetail(moved.plan);
-        }
+      const result = await runPlan({ ctx, session, plan, t });
+      if (result.moved) {
+        setDetail(result.plan);
         await load(true);
       }
-
-      await session.server.client.session.switchAgent({
-        sessionID: session.id,
-        agent: "build",
-      });
-      // No `delivery`: the default is steer, so this is a normal user message
-      // and starts the turn immediately. `delivery: "queue"` would park it
-      // until the current turn ends, leaving the panel stuck in "executing".
-      await session.server.client.session.prompt({
-        sessionID: session.id,
-        text: t("execute.prompt", target.title, target.id),
-      });
-      setExecutingPlanID(target.id);
-      setPendingPlanID(target.id);
+      setExecutingPlanID(result.plan.id);
+      setPendingPlanID(result.plan.id);
       ctx.toast.show({ title: t("toast.executing"), variant: "success" });
     } catch (cause) {
       setExecutingPlanID(null);
