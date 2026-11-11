@@ -56,7 +56,7 @@ export async function registerTools(ctx: Ctx) {
     editor.namespace({
       name: "plans",
       description:
-        "Persisted plans from Plan mode: save a plan for future sessions, list/read active plans, and mark steps done as work completes. Backed by a dedicated SQLite plans.db. Use plans.list/get before resuming long-running work, and plans.update as you finish each step.",
+        "Persisted plans: save a final plan, list or read the active ones, and track steps with plans.update. Backed by a dedicated SQLite plans.db.",
     });
     // Add each tool separately so TypeScript keeps its input schema.
     // `pinned` keeps the essential tools visible in the Code Mode catalog even

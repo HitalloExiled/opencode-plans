@@ -18,7 +18,7 @@ const EN = {
   "scroll.region": "Plans list",
   saveLast: "Save from agent",
   "saveLast.prompt":
-    "Save the plan you just presented with plans.save, keeping the steps in the ## Passos section. If it is already saved, do not create another one; just confirm. Do not ask; save it now.",
+    "Save the plan you just presented with plans.save, steps in the ## Passos section. If it is already saved, confirm instead of creating another. Do not ask; save it now.",
   "saveLast.tooltip": "Ask the agent to save the presented plan",
   newPlan: "New plan",
   editPlan: "Edit plan",
@@ -94,7 +94,7 @@ const EN = {
   "toast.executing": "Executing plan…",
   "toast.executeError": "Could not start the plan",
   "execute.prompt":
-    'Execute or resume the plan "{0}" (id: {1}) from its current state. The plan is already saved: use the injected <plans-context> block; pending steps already include their sN ids. Only call plans.get if you need the full text or steps missing from the context. Follow the remaining steps and update the state with plans.update (stepStatus: "doing" when starting and "done" when finishing). The plan is the source of truth: do not propose another plan or rewrite the body. Do not replan.',
+    'Execute or resume the plan "{0}" (id: {1}) from where it is. Use the injected <plans-context>: pending steps already carry their sN ids; only call plans.get for text missing there. Do the remaining steps and mark each with plans.update ("doing" then "done"). The plan is the source of truth: do not replan or rewrite the body.',
   "toast.pausing": "Pausing plan…",
   "toast.pauseError": "Could not pause the plan",
   "toast.busy": "A plan is already running in this session",
@@ -118,7 +118,7 @@ const PT: Record<keyof typeof EN, string> = {
   "scroll.region": "Lista de planos",
   saveLast: "Salvar do agente",
   "saveLast.prompt":
-    "Salve o plano que você acabou de apresentar usando plans.save, com os passos na seção ## Passos. Se ele já estiver salvo, não crie outro; apenas confirme. Não pergunte; salve agora.",
+    "Salve o plano que você acabou de apresentar com plans.save, passos na seção ## Passos. Se já estiver salvo, confirme em vez de criar outro. Não pergunte; salve agora.",
   "saveLast.tooltip": "Pedir ao agente para salvar o plano apresentado",
   newPlan: "Novo plano",
   editPlan: "Editar plano",
@@ -194,7 +194,7 @@ const PT: Record<keyof typeof EN, string> = {
   "toast.executing": "Executando plano…",
   "toast.executeError": "Não foi possível iniciar o plano",
   "execute.prompt":
-    'Execute ou retome o plano "{0}" (id: {1}) a partir do estado atual. O plano já está salvo: use o bloco <plans-context> desta sessão; os passos pendentes já trazem os IDs sN. Só chame plans.get se precisar do texto completo ou de passos que não estejam no contexto. Siga os passos restantes e atualize o estado com plans.update (stepStatus: "doing" ao começar e "done" ao concluir). O plano é a fonte da verdade: não proponha outro plano nem reescreva o body. Não replaneje.',
+    'Execute ou retome o plano "{0}" (id: {1}) do ponto atual. Use o bloco <plans-context>: os passos pendentes já trazem os IDs sN; chame plans.get só pelo que faltar ali. Faça os passos restantes e marque cada um com plans.update ("doing" e depois "done"). O plano é a fonte da verdade: não replaneje nem reescreva o body.',
   "toast.pausing": "Pausando plano…",
   "toast.pauseError": "Não foi possível pausar o plano",
   "toast.busy": "Já existe um plano em execução nesta sessão",

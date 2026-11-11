@@ -52,32 +52,32 @@ const saveInput = z.object({
     .string()
     .min(1)
     .describe(
-      "Full plan Markdown, exactly as presented to the user. Put the actionable steps in one flat '## Passos' checklist; the plugin extracts it and stores the rest of the body without that section.",
+      "Full plan markdown as presented. Steps go in one flat '## Passos' checklist; the plugin extracts them and stores the rest without that section.",
     ),
   title: z
     .string()
     .optional()
-    .describe("Short title. Derived from the first heading/line when omitted."),
+    .describe("Short title; derived from the first heading when omitted."),
   id: z
     .string()
     .optional()
-    .describe("Existing plan id to update. Omit to create a new plan."),
+    .describe("Existing plan id to update; omit to create a new plan."),
   steps: z
     .array(z.string())
     .optional()
-    .describe("Optional explicit step list. Derived from the body's '## Passos' checklist when omitted."),
+    .describe("Explicit steps; derived from the '## Passos' checklist when omitted."),
 });
 
 const listInput = z.object({
   scope: z
     .enum(["session", "project"])
     .default("session")
-    .describe("'session' (default) lists only this session's plans; 'project' lists every session in this project."),
+    .describe("'session' (default): this session only; 'project': every session in the project."),
   status: z
     .union([STATUS, z.literal("all")])
     .optional()
-    .describe("Filter by status. Defaults to active."),
-  limit: z.number().int().min(1).max(200).optional().describe("Maximum plans. Defaults to 50."),
+    .describe("Filter by status; defaults to active."),
+  limit: z.number().int().min(1).max(200).optional().describe("Max plans; defaults to 50."),
 });
 
 // Accept both the documented object (`{ id, scope? }`) and a bare plan id.
@@ -86,13 +86,11 @@ const listInput = z.object({
 const getInput = z.preprocess(
   (value) => (typeof value === "string" ? { id: value } : value),
   z.object({
-    id: z.string().min(1).describe("Plan id, as returned by plans.list or plans.save."),
+    id: z.string().min(1).describe("Plan id, from plans.list or plans.save."),
     scope: z
       .enum(["session", "project"])
       .default("session")
-      .describe(
-        "'session' (default) only reads a plan of this session; 'project' allows another session's plan.",
-      ),
+      .describe("'session' (default) or 'project' to read another session's plan."),
   }),
 );
 
@@ -101,22 +99,18 @@ const updateInput = z.object({
   stepID: z
     .string()
     .optional()
-    .describe(
-      "Exact step id from plans.get (s1, s2, …). Use with stepStatus. Preferred over position.",
-    ),
+    .describe("Step id from plans.get (s1, s2…); use with stepStatus. Preferred over position."),
   position: z
     .number()
     .int()
     .min(0)
     .optional()
-    .describe(
-      "Zero-based step position, only as a fallback when the step id is unknown. Prefer stepID.",
-    ),
+    .describe("Zero-based step index; fallback when the step id is unknown."),
   stepStatus: z
     .enum(["todo", "doing", "done"])
     .optional()
     .describe(
-      "New step status; always pair with stepID/position. Mark 'doing' before starting and 'done' when finished. Never send body to change status.",
+      "New status; pair with stepID. 'doing' when starting, 'done' when finished. Never send body for status.",
     ),
   status: STATUS.optional().describe("New plan status."),
   title: z.string().optional().describe("New title (rarely needed)."),
@@ -124,7 +118,7 @@ const updateInput = z.object({
     .string()
     .optional()
     .describe(
-      "Advanced: replaces the whole plan text/structure and re-creates steps (ids and statuses reset). Never send it to change a step's status; use stepID + stepStatus.",
+      "Advanced: replaces text/structure and re-creates steps (ids and statuses reset). Never use it for status; use stepID + stepStatus.",
     ),
 });
 
@@ -134,7 +128,7 @@ export function saveTool(ctx: Ctx) {
   return {
     name: "save",
     description:
-      "Persist the plan you just presented. Call this in the same turn the plan becomes final and there are no blocking pending user questions or choices; do not ask for permission or wait for the user to request it. A purely optional or recommended choice does not block the save: include it as an '(optional, recommended)' step. In Code Mode call it as tools.plans.save through the execute tool; in a regular session the tool is plans_save. Allowed in Plan mode: it writes only the plans database, not files or the repository, so the Plan-mode file restriction does not apply. Creates a new plan by default. Pass id only to replace the plan's text/structure (re-creates steps and resets ids/statuses) or to save a revision. To mark a step's status use plans.update, never plans.save.",
+      "Persist the plan you just presented, in the same turn it becomes final, with no pending questions or choices. Don't ask permission or wait for the user; an optional/recommended choice does not block the save — list it as an '(optional, recommended)' step. Allowed in Plan mode: it writes only plans.db, not files. Creates a new plan by default; pass id only to replace its text/structure (steps and ids reset) or to save a revision. Use plans.update for step status.",
     input: saveInput,
     async execute(input: z.infer<typeof saveInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -179,7 +173,7 @@ export function listTool(ctx: Ctx) {
   return {
     name: "list",
     description:
-      "List persisted plans. Defaults to the current session only; use scope='project' to list every session in this project. Shows status and step progress. Use plans.get for the full plan before resuming work.",
+      "List persisted plans with status and step progress. Defaults to the current session; scope='project' includes every session. Use plans.get for the full text.",
     input: listInput,
     async execute(input: z.infer<typeof listInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -228,7 +222,7 @@ export function getTool(ctx: Ctx) {
   return {
     name: "get",
     description:
-      "Read one persisted plan in full: metadata, checklist and original Markdown. The step checklist is reassembled with the live statuses and the internal placeholder is never returned. Call it as plans.get({ id }); a bare id is also accepted. scope defaults to 'session'; pass scope='project' to read another session's plan.",
+      "Read one plan in full: metadata, checklist with live statuses and the original Markdown. Call plans.get({ id }); a bare id is also accepted. scope defaults to 'session'; use 'project' for another session's plan.",
     input: getInput,
     async execute(input: z.infer<typeof getInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -253,7 +247,7 @@ export function updateTool(ctx: Ctx) {
   return {
     name: "update",
     description:
-      "Change the status of a step or of the plan. This tool does NOT edit the plan's text or structure: for that, use plans.save with the same id. To mark a step, pass stepID (shown as s1, s2, … by plans.get) and stepStatus; use position only as a fallback. Mark 'doing' before starting a step and 'done' when finished; only one step per plan can be 'doing'. Never send body to change a step's status.",
+      "Change a step's or the plan's status; it never edits text or structure (use plans.save with the same id for that). Mark a step with stepID (s1, s2… from plans.get) + stepStatus; position is only a fallback. 'doing' before starting, 'done' when finished; one 'doing' per plan. Never send body for status.",
     input: updateInput,
     async execute(input: z.infer<typeof updateInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -343,7 +337,7 @@ export function doctorTool(ctx: Ctx) {
   return {
     name: "doctor",
     description:
-      "Diagnose the plans subsystem: database path, schema version, plan/step counts. Use it when plans seem missing.",
+      "Diagnose the plans subsystem: database path, schema version, plan/step counts.",
     input: doctorInput,
     async execute(): Promise<ToolResult> {
       try {

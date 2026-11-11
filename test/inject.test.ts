@@ -110,6 +110,12 @@ describe("inject", () => {
     expect(PLAN_SAVE_INSTRUCTION).toContain("(optional, recommended)");
   });
 
+  test("the injected blocks stay compact", () => {
+    // The long-form version ran ~1.9k chars and repeated what the tools say.
+    expect(PLAN_SAVE_INSTRUCTION.length).toBeLessThan(1200);
+    expect(PLAN_MODE_EXEMPTION.length).toBeLessThan(300);
+  });
+
   test("the Plan-mode exemption follows the core reminder and is idempotent", () => {
     const textOf = (message: Message): string =>
       message.content
@@ -149,6 +155,8 @@ describe("inject", () => {
     expect(text).toContain("plans.get");
     expect(text).toContain("plans.update");
     expect(text).toContain("Use plans.get só se precisar");
+    expect(text).toContain("dados persistidos");
+    expect(text.length).toBeLessThan(1200);
   });
 
   test("the doing step comes first and is marked as doing", () => {
