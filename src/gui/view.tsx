@@ -71,7 +71,10 @@ const CSS = `
   color: var(--v2-text-text-base);
   cursor: pointer;
 }
-.plan-card:hover { border-color: var(--v2-border-border-strong); }
+.plan-card:hover {
+  border-color: var(--v2-border-border-strong);
+  background-image: linear-gradient(var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover));
+}
 .plan-card:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
 .plan-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .plan-run-card {
