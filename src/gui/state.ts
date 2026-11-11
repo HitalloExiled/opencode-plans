@@ -17,7 +17,6 @@ export type ViewStateValue = {
   scope: ScopeFilter;
   stepsHeight?: number;
   page?: number;
-  executingPlanID?: string | null;
 };
 
 export const ViewState = Schema.Struct({
@@ -33,7 +32,6 @@ export const ViewState = Schema.Struct({
   bodyCollapsed: Schema.optional(Schema.Boolean),
   stepsHeight: Schema.optional(Schema.Number),
   page: Schema.optional(Schema.Number),
-  executingPlanID: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 export const VIEW_INITIAL: ViewStateValue = {
@@ -43,5 +41,4 @@ export const VIEW_INITIAL: ViewStateValue = {
   scope: "session",
   stepsHeight: 240,
   page: 0,
-  executingPlanID: null,
 };

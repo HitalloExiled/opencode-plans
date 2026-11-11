@@ -12,7 +12,7 @@ import { usePanel, usePlugin } from "@opencode/plugin/gui";
 import type { MountedSession } from "@opencode/plugin/gui";
 import { SHARED_CSS, ScrollNav, createScrollNav, EmptyState, ErrorBanner, LoadingRow, StatusChip, type ChipTone } from "opencode-shared/gui";
 import { PlansRpc } from "./contract";
-import { runPlan } from "./execute";
+import { executionFor } from "./execution";
 import type { Plan, PlanStatus, PlanStep, StepStatus } from "./contract";
 import { useT } from "./i18n";
 import { bodyWithoutSteps } from "../plan-body";
@@ -325,6 +325,9 @@ export function PlansView(props: { session: MountedSession }) {
   const ctx = usePlugin();
   const panel = usePanel();
   const t = useT();
+  // One execution handle per session, shared with the composer pill: any entry
+  // point renders the same executing state.
+  const execution = createMemo(() => executionFor(ctx, props.session));
 
   // The server context has no locale; keep it in sync so /save-plan messages
   // follow the interface language (EN-US is the fallback).
@@ -350,10 +353,6 @@ export function PlansView(props: { session: MountedSession }) {
   const [detail, setDetail] = createSignal<Plan | null>(null);
   const [statusFilter, setStatusFilter] = createSignal<StatusFilter>(saved?.status ?? "active");
   const [scopeFilter, setScopeFilter] = createSignal<ScopeFilter>(saved?.scope ?? "session");
-  const [executingPlanID, setExecutingPlanID] = createSignal<string | null>(
-    saved?.executingPlanID ?? null,
-  );
-  const [pendingPlanID, setPendingPlanID] = createSignal<string | null>(null);
   const [stepsHeight, setStepsHeight] = createSignal(saved?.stepsHeight ?? 240);
   const [visible, setVisible] = createSignal(CHUNK_SIZE);
   const [loading, setLoading] = createSignal(false);
@@ -406,18 +405,10 @@ export function PlansView(props: { session: MountedSession }) {
           ? "warning"
           : "neutral";
 
-  const sessionRunning = (): boolean => {
-    const session = currentSession();
-    return session ? session.server.data.session.status(session.id) === "running" : false;
-  };
-
-  const isExecuting = (plan: Plan): boolean =>
-    executingPlanID() === plan.id || pendingPlanID() === plan.id;
+  const isExecuting = (plan: Plan): boolean => execution().isExecuting(plan);
 
   const runDisabled = (plan: Plan): boolean =>
-    saving() ||
-    (!isExecuting(plan) &&
-      (plan.steps.length === 0 || sessionRunning() || pendingPlanID() !== null));
+    saving() || (!isExecuting(plan) && (plan.steps.length === 0 || execution().busy()));
 
   const stepsMax = (): number => Math.min(480, Math.round(window.innerHeight * 0.6));
   const clampSteps = (value: number): number => Math.min(stepsMax(), Math.max(120, value));
@@ -558,8 +549,6 @@ export function PlansView(props: { session: MountedSession }) {
     setScopeFilter(value.scope);
     setSelectedID(value.selectedID);
     setStepsHeight(value.stepsHeight ?? 240);
-    setExecutingPlanID(value.executingPlanID ?? null);
-    setPendingPlanID(null);
     void load();
   });
 
@@ -573,7 +562,6 @@ export function PlansView(props: { session: MountedSession }) {
       status: statusFilter(),
       scope: scopeFilter(),
       stepsHeight: stepsHeight(),
-      executingPlanID: executingPlanID(),
     });
   });
 
@@ -602,23 +590,8 @@ export function PlansView(props: { session: MountedSession }) {
     void load(true);
   });
 
-  // Track the execution lifecycle from the session's busy state. `pending`
-  // covers the gap between sending the prompt and the session turning
-  // "running"; once it goes idle again, the Execute button comes back.
-  createEffect(() => {
-    const session = currentSession();
-    if (!session) return;
-    const running = session.server.data.session.status(session.id) === "running";
-    const pending = pendingPlanID();
-    if (running) {
-      if (pending) {
-        setExecutingPlanID(pending);
-        setPendingPlanID(null);
-      }
-      return;
-    }
-    if (!pending && executingPlanID()) setExecutingPlanID(null);
-  });
+  // The execution handle owns the pending → running → idle lifecycle; the
+  // panel only renders it, whichever entry point started the run.
 
   const timer = setInterval(() => {
     if (!loading()) void load(true);
@@ -780,56 +753,22 @@ export function PlansView(props: { session: MountedSession }) {
   };
 
   const executePlan = async (plan: Plan) => {
-    const session = currentSession();
-    if (!session) return;
     setSaving(true);
     try {
-      const result = await runPlan({ ctx, session, plan, t });
-      if (result.moved) {
+      const result = await execution().execute(plan, t);
+      if (result?.moved) {
         setDetail(result.plan);
         await load(true);
       }
-      setExecutingPlanID(result.plan.id);
-      setPendingPlanID(result.plan.id);
-      ctx.toast.show({ title: t("toast.executing"), variant: "success" });
-    } catch (cause) {
-      setExecutingPlanID(null);
-      setPendingPlanID(null);
-      showError(t("toast.executeError"), cause);
     } finally {
       setSaving(false);
     }
   };
 
   const pausePlan = async (plan: Plan) => {
-    const session = currentSession();
-    if (!session) return;
     setSaving(true);
     try {
-      const result = await session.server.client.session.interrupt({ sessionID: session.id });
-      // Tell the next turn why the run paused, not just that the mode changed.
-      try {
-        await session.server.client.session.synthetic({
-          sessionID: session.id,
-          text: t("pause.synthetic", plan.title, plan.id),
-          description: t("pause.action", plan.title),
-          resume: false,
-          metadata: { source: "plans", planID: plan.id, kind: "paused" },
-        });
-      } catch (error) {
-        console.warn("[plans] could not record the pause message", error);
-      }
-      await session.server.client.session.switchAgent({
-        sessionID: session.id,
-        agent: "plan",
-      });
-      if (!result.interrupted) {
-        setExecutingPlanID(null);
-        setPendingPlanID(null);
-      }
-      ctx.toast.show({ title: t("toast.pausing"), variant: "success" });
-    } catch (cause) {
-      showError(t("toast.pauseError"), cause);
+      await execution().pause(plan, t);
     } finally {
       setSaving(false);
     }
@@ -838,10 +777,6 @@ export function PlansView(props: { session: MountedSession }) {
   const toggleRun = async (plan: Plan) => {
     if (isExecuting(plan)) {
       await pausePlan(plan);
-      return;
-    }
-    if (sessionRunning() || pendingPlanID() !== null) {
-      ctx.toast.show({ title: t("toast.busy"), variant: "error" });
       return;
     }
     await executePlan(plan);

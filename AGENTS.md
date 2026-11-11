@@ -114,11 +114,14 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
 - **Moving a plan is a user action.** The GUI calls the `move` RPC to move a
   project plan into the active session; tools must not move plans.
 - **Executing a plan is a user action.** The card, the detail's
-  **Executar/Pausar** button (for `active` plans) and the composer pill move a
-  cross-session plan first, switch the session agent to `build` and send a prompt. The composer pill
-  (`src/gui/pill.tsx`) shares `src/gui/execute.ts` with the panel, appears only
-  while the session is idle with an active plan, and hides while a run is
-  pending; it never executes on its own. The prompt
+  **Executar/Pausar** button (for `active` plans) and the composer pill all call
+  the same `executionFor(session)` handle (`src/gui/execution.ts`): it owns the
+  per-session `{ planID, pending }` store, runs `runPlan`
+  (`src/gui/execute.ts`) and switches the session agent to `build` before
+  sending the prompt. The pill appears only while the session is idle with an
+  active plan and hides while a run started by either entry point is pending or
+  running; it never executes on its own. Because the state is shared, the panel
+  shows Pausar for a run started from the pill. The prompt
   is a normal user message (default `steer`): never send it with
   `delivery: "queue"`, which parks it until the current turn ends and leaves
   the panel stuck in "executing". The prompt does not force `plans.get`: the

@@ -2,10 +2,11 @@
  * "Run plan" composer pill.
  *
  * The pill above the composer appears when the routed session is idle and has
- * an active plan, and runs that plan exactly as the panel's Execute button
- * does (`runPlan`). Plans live in `plans.db` on the server, so this module
- * keeps a per-session cache refreshed by the `PlansRpc` `changed` event, with
- * an initial fetch and a refetch after the session goes idle.
+ * an active plan, and runs that plan through the shared execution handle — the
+ * same action as the panel's Execute button. Plans live in `plans.db` on the
+ * server, so this module keeps a per-session cache refreshed by the
+ * `PlansRpc` `changed` event, with an initial fetch and a refetch after the
+ * session goes idle.
  *
  * The API has no disabled pill: while the agent runs, or while an execution is
  * pending, `show` returns undefined and the host renders nothing.
@@ -14,12 +15,9 @@
 import { createSignal, onCleanup } from "solid-js";
 import type { ComposerPillView, Context, MountedSession } from "@opencode/plugin/gui";
 import { PlansRpc, type Plan } from "./contract";
-import { runPlan } from "./execute";
+import { executionFor } from "./execution";
 import { tStatic } from "./i18n";
 import { pickRunnablePlan } from "../plan-select";
-
-/** How long a clicked pill stays hidden while the session starts running. */
-const PENDING_MS = 5_000;
 
 /** Minimum gap between two listing attempts for one session. */
 const RETRY_MS = 1_000;
@@ -39,7 +37,6 @@ export function createPlanPill(ctx: Context): PlanPill {
   const sessions = new Map<string, MountedSession>();
   const seq = new Map<string, number>();
   const attempted = new Map<string, number>();
-  const pendingAt = new Map<string, number>();
   const dirty = new Set<string>();
   const subscriptions = new Map<string, () => void>();
 
@@ -86,25 +83,6 @@ export function createPlanPill(ctx: Context): PlanPill {
     subscriptions.set(server, off);
   };
 
-  const execute = async (session: MountedSession, plan: Plan): Promise<void> => {
-    const key = sessionKey(session);
-    if (pendingAt.has(key)) return;
-    pendingAt.set(key, Date.now());
-    bump();
-    try {
-      await runPlan({ ctx, session, plan, t: translate });
-      ctx.toast.show({ title: translate("toast.executing"), variant: "success" });
-    } catch (cause) {
-      pendingAt.delete(key);
-      bump();
-      ctx.toast.show({
-        title: translate("execute.pillError"),
-        description: cause instanceof Error ? cause.message : String(cause),
-        variant: "error",
-      });
-    }
-  };
-
   onCleanup(() => {
     for (const off of subscriptions.values()) off();
     subscriptions.clear();
@@ -119,19 +97,13 @@ export function createPlanPill(ctx: Context): PlanPill {
       sessions.set(key, session);
       subscribe(session);
 
-      // The agent is working: the pill has nothing to run yet, and the next
-      // idle transition refetches in case a save happened during the turn.
-      if (session.server.data.session.status(session.id) === "running") {
-        pendingAt.delete(key);
+      // The agent is running, or a click is still in flight: the pill has
+      // nothing to run, and the next idle transition refetches in case the
+      // plan changed during the turn. The execution handle owns that state, so
+      // a run started from the panel behaves the same.
+      if (executionFor(ctx, session).busy()) {
         dirty.add(key);
         return undefined;
-      }
-
-      const pending = pendingAt.get(key);
-      if (pending !== undefined) {
-        if (Date.now() - pending < PENDING_MS) return undefined;
-        pendingAt.delete(key);
-        bump();
       }
 
       if (dirty.delete(key) || !cache.has(key)) maybeRefresh(session);
@@ -147,7 +119,7 @@ export function createPlanPill(ctx: Context): PlanPill {
         icon: "arrow-right",
         label,
         title: translate("execute.pillTitle", plan.title),
-        run: () => void execute(session, plan),
+        run: () => void executionFor(ctx, session).execute(plan, translate),
       };
     },
   };

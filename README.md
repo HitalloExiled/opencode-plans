@@ -102,11 +102,14 @@ e o `npm run gui:build`).
    completion mantém o agente em Build.
 9. **Executar pela pill do composer**: quando a sessão está ociosa e tem um
    plano **active**, uma pill **Executar plano** aparece na linha acima do
-   composer (com o progresso `done/total`) e executa o mesmo fluxo do botão do
-   painel em um clique. Ela é alimentada pelo evento RPC
-   `opencode.plans/changed`, emitido pelo `plans.save`, pelos tools de escrita
-   e pelos handlers do painel; some enquanto o agente roda e quando o plano
-   termina (todos os passos `done` viram status `done`).
+   composer (com o progresso `done/total`). O clique chama o mesmo
+   `executionFor(session)` do botão do painel — o handle compartilhado grava o
+   estado `{ planID, pending }` por sessão e executa `runPlan` —, então o painel
+   mostra **Pausar** para um run iniciado pela pill (e vice-versa). Ela é
+   alimentada pelo evento RPC `opencode.plans/changed`, emitido pelo
+   `plans.save`, pelos tools de escrita e pelos handlers do painel; some
+   enquanto o agente roda e quando o plano termina (todos os passos `done`
+   viram status `done`).
 
 ### Criação e edição pela UI
 
