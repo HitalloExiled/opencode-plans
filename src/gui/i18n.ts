@@ -18,7 +18,7 @@ const EN = {
   "scroll.region": "Plans list",
   saveLast: "Save from agent",
   "saveLast.prompt":
-    "Save the plan you just presented with plans.save, steps in the ## Passos section. If it is already saved, confirm instead of creating another. Do not ask; save it now.",
+    "Save the plan you just presented with plans.save, steps in the ## Passos section. plans.save writes only the plans database, not files, so it is allowed in Plan mode. If it is already saved, confirm instead of creating another. Do not call plans.get to confirm; the save result already includes the checklist and step ids. Do not ask; save it now.",
   "saveLast.tooltip": "Ask the agent to save the presented plan",
   newPlan: "New plan",
   editPlan: "Edit plan",
@@ -94,7 +94,7 @@ const EN = {
   "toast.executing": "Executing plan…",
   "toast.executeError": "Could not start the plan",
   "execute.prompt":
-    'Execute or resume the plan "{0}" (id: {1}) from where it is. Use the injected <plans-context>: pending steps already carry their sN ids; only call plans.get for text missing there. Do the remaining steps and mark each with plans.update ("doing" then "done"). The plan is the source of truth: do not replan or rewrite the body.',
+    'Execute or resume the plan "{0}" (id: {1}) from where it is. If the plan is not already in the conversation, read it with plans.get; otherwise use the text and step ids you already have. Do the remaining steps and mark each with plans.update ("doing" then "done"). The plan is the source of truth: do not replan or rewrite the body.',
   "execute.pill": "Run plan",
   "execute.pillTitle": 'Run the plan "{0}"',
   "toast.pausing": "Pausing plan…",
@@ -120,7 +120,7 @@ const PT: Record<keyof typeof EN, string> = {
   "scroll.region": "Lista de planos",
   saveLast: "Salvar do agente",
   "saveLast.prompt":
-    "Salve o plano que você acabou de apresentar com plans.save, passos na seção ## Passos. Se já estiver salvo, confirme em vez de criar outro. Não pergunte; salve agora.",
+    "Salve o plano que você acabou de apresentar com plans.save, passos na seção ## Passos. plans.save grava apenas o banco de planos, não arquivos, então é permitido no Plan mode. Se já estiver salvo, confirme em vez de criar outro. Não chame plans.get para confirmar; o resultado do plans.save já traz o checklist e os IDs. Não pergunte; salve agora.",
   "saveLast.tooltip": "Pedir ao agente para salvar o plano apresentado",
   newPlan: "Novo plano",
   editPlan: "Editar plano",
@@ -196,7 +196,7 @@ const PT: Record<keyof typeof EN, string> = {
   "toast.executing": "Executando plano…",
   "toast.executeError": "Não foi possível iniciar o plano",
   "execute.prompt":
-    'Execute ou retome o plano "{0}" (id: {1}) do ponto atual. Use o bloco <plans-context>: os passos pendentes já trazem os IDs sN; chame plans.get só pelo que faltar ali. Faça os passos restantes e marque cada um com plans.update ("doing" e depois "done"). O plano é a fonte da verdade: não replaneje nem reescreva o body.',
+    'Execute ou retome o plano "{0}" (id: {1}) do ponto atual. Se o plano ainda não estiver na conversa, leia com plans.get; caso contrário, use o texto e os IDs que você já tem. Faça os passos restantes e marque cada um com plans.update ("doing" e depois "done"). O plano é a fonte da verdade: não replaneje nem reescreva o body.',
   "execute.pill": "Executar plano",
   "execute.pillTitle": 'Executar o plano "{0}"',
   "toast.pausing": "Pausando plano…",

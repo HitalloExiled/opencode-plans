@@ -66,16 +66,17 @@ e o `npm run gui:build`).
    outro volta o anterior para `todo`. Quando todos os passos ficam `done`, o
    plano vira `done`. O agente marca `doing` antes de começar um passo e
    `done` ao concluir.
-4. **Injeta contexto**: agentes fora do Plan recebem um bloco curto com os
-   planos ativos **da sessão atual** e os passos pendentes do plano da sessão,
-   com o passo `doing` primeiro.
+4. **Não injeta contexto**: o plugin não altera o system prompt de nenhum
+   agente. O agente lê e atualiza planos sob demanda com
+   `plans.get`/`plans.update`; o prompt do botão Executar orienta a leitura.
+   Isso mantém o prefixo/KV cache estável dentro do mesmo agente.
 5. **Painel lateral**: por padrão lista só a **sessão ativa**; o toggle
    **Projeto** traz todos os planos do projeto, com a sessão de origem em cada
    card. Planos de outra sessão têm o botão **Mover para esta sessão**. O
    painel guarda por sessão o plano aberto, a busca, os filtros, a página e a
    altura dos passos, então fechar e reabrir a aba restaura a mesma tela; com
    um plano aberto, os filtros ficam ocultos. A listagem é paginada no cliente
-   (20 por página); no detalhe, corpo e passos rolam independentemente e a
+   (10 por página); no detalhe, corpo e passos rolam independentemente e a
    altura dos passos é ajustável pelo divisor.
 6. **Salvar o último plano**: `/save-plan` (servidor) captura a última mensagem
    do agente `plan` na sessão. O botão **Salvar do agente** do painel não salva
@@ -92,9 +93,8 @@ e o `npm run gui:build`).
    com `plans.get`, seguir os passos e atualizar o estado com `plans.update`.
    O prompt é uma mensagem de usuário normal (sem `delivery: "queue"`), então
    inicia o turno imediatamente; o botão só habilita com a sessão ociosa. O
-   prompt não obriga `plans.get`: o bloco `<plans-context>` já traz os passos
-   pendentes com IDs (`s1`, `s2`, …); `plans.get` fica para o texto completo ou
-   para passos fora do contexto.
+   prompt orienta o agente a chamar `plans.get` para obter o texto completo e
+   os IDs dos passos; o plugin não injeta um bloco de contexto.
    Enquanto executa, o botão
    vira **Pausar**: ele interrompe o turno (`session.interrupt`), grava uma
    mensagem sintética avisando que o usuário pausou o plano e volta o agente
@@ -119,19 +119,20 @@ via RPC `save`, sem depender do agente: o body é recomposto com `## Passos` e o
 status existentes são preservados por texto. O botão **Salvar do agente**
 continua como ação secundária (hint) para planos gerados em conversa.
 
-### Guard de save
+### Sem injeção de contexto
 
-Depois de um turno do agente `plan`, se a última mensagem com passos não tiver
-um plano salvo correspondente (por `message_id` ou pelos textos dos passos), o
-plugin injeta **um nudge único** pedindo `plans.save` e inicia o turno
-(`resume: true`). Não há auto-save heurístico.
+O plugin não adiciona system parts, mensagens de exceção nem nudges
+automáticos. O fluxo é: a UI cria/edita o plano, o botão Executar envia um
+prompt de usuário pedindo `plans.get`, e o agente atualiza com `plans.update`.
+A troca Build ↔ Plan ainda muda as instruções do core, mas o plugin não
+contribui para invalidar o cache.
 
 ### Agente próprio (opcional)
 
 O plugin não cria agentes em runtime; o editor só atualiza/remove agentes
 existentes. Quem quiser um agente de planejamento dedicado pode defini-lo em
-`opencode.jsonc` (`agents`) e o plugin pode reconhecê-lo/injetar as instruções.
-O fluxo UI → Build não depende disso.
+`opencode.jsonc` (`agents`). O plugin não injeta instruções nele; o fluxo
+UI → Build não depende disso.
 
 ### Formato dos passos
 
@@ -202,12 +203,11 @@ PLANS_DB=/tmp/plans-test.db bun -e 'import("./src/store.ts").then(async (m) => {
 ## Estrutura
 
 ```
-index.ts                 registra tools + /save-plan + RPC + injeção de contexto
+index.ts                 registra tools + /save-plan + RPC
 plans.ts                 definições das tools plans.*
 src/store.ts             camada única: node:sqlite, schema, migrações, SQL
 src/rpc.ts               handlers RPC do servidor (list/read/write)
 src/capture.ts           extrai o último plano do agente Plan da sessão
-src/inject.ts            blocos injetados no Plan e nos demais agentes
 src/gui.tsx              ./gui-experimental → setup
 src/gui/contract.ts      contrato RPC + schemas
 src/gui/setup.tsx        painel, comando e menu

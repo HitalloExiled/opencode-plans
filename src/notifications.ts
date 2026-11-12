@@ -25,9 +25,6 @@ const EN: Record<string, string> = {
   "status.archived.action": "Archived",
   "status.superseded.action": "Superseded",
   "status.active.action": "Reopened",
-  "plan.nudge":
-    "You presented a final plan but did not call plans.save. Call plans.save now with the plan you just presented; do not ask and do not replan.",
-  "plan.nudge.action": "Plan not saved",
   "step.done": "done",
   "step.doing": "in progress",
   "step.todo": "pending",
@@ -61,9 +58,6 @@ const PT: Record<string, string> = {
   "status.archived.action": "Arquivou",
   "status.superseded.action": "Substituiu",
   "status.active.action": "Reabriu",
-  "plan.nudge":
-    "Você apresentou um plano final mas não chamou plans.save. Chame plans.save agora com o plano que acabou de apresentar; não pergunte e não replaneje.",
-  "plan.nudge.action": "Plano não salvo",
   "step.done": "concluído",
   "step.doing": "em andamento",
   "step.todo": "pendente",

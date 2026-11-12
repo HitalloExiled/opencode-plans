@@ -152,11 +152,18 @@ export function saveTool(ctx: Ctx) {
         });
         if (!result.ok) return fail(result.error);
         emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
+        const checklist =
+          result.plan.steps.length > 0
+            ? result.plan.steps
+                .map((step) => `- [${step.status}] (${step.step_id}) ${step.text}`)
+                .join("\n")
+            : "Sem passos extraídos.";
         return {
           content: [
             `Plano salvo: ${result.plan.title}`,
             renderPlanSummary(result.plan),
-            `Use plans.get ${result.plan.id} para reler o plano completo.`,
+            checklist,
+            "O checklist acima já está atualizado; não chame plans.get para confirmar. Use plans.get apenas se precisar do body completo.",
           ].join("\n"),
           metadata: {
             planID: result.plan.id,

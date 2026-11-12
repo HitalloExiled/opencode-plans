@@ -151,6 +151,19 @@ const CSS = `
 }
 .plan-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .plan-actions-end { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.plan-detail-title,
+.plan-meta,
+.plan-status,
+.plan-section-title,
+.plan-progress-label,
+.plan-body,
+.plan-body *,
+.plan-step-text { user-select: text; }
+.plan-actions,
+.plan-actions-end,
+.plan-back,
+.plan-splitter,
+.plan-step-btn { user-select: none; }
 .plan-section-title { font-weight: 600; font-size: 12px; color: var(--v2-text-text-base); margin-top: 4px; }
 .plan-muted { color: var(--v2-text-text-muted); font-size: 11.5px; }
 .plan-steps { display: flex; flex-direction: column; gap: 5px; }

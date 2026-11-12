@@ -15,7 +15,6 @@ import {
   deriveStatus,
   extractTitle,
   getPlan,
-  getPlanByMessageID,
   initSchema,
   listPlans,
   movePlan,
@@ -321,15 +320,6 @@ describe("plan lifecycle", () => {
     expect(rendered).toContain("## Passos");
     expect(rendered).not.toContain("<!-- plans:steps -->");
     expect(rendered.match(/## Passos/g)).toHaveLength(1);
-  });
-
-  test("getPlanByMessageID finds the saved plan and ignores unknown ids", () => {
-    const db = open();
-    const created = savePlan(db, { ...base, body: "# Plan\n\n- [ ] One\n", messageID: "msg-1" });
-    if (!created.ok) throw new Error(created.error);
-
-    expect(getPlanByMessageID(db, "msg-1")?.id).toBe(created.plan.id);
-    expect(getPlanByMessageID(db, "msg-missing")).toBeUndefined();
   });
 
   test("setStep keeps a single doing step per plan", () => {
