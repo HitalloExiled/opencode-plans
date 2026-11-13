@@ -150,7 +150,11 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
     previous = document.activeElement;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    panel?.focus();
+    // Focus the list itself (not the shell) so Home/End/PageUp/PageDown work
+    // without a click.
+    const list = panel?.querySelector(".os-scroll");
+    if (list instanceof HTMLElement) list.focus();
+    else panel?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();

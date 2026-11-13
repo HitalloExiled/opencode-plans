@@ -1251,6 +1251,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
               </>
             )}
           </For>
+              <div ref={nav.sentinelRef} class="os-scroll-sentinel" />
             </div>
           </div>
           <ScrollNav nav={nav} topLabel={t("scroll.top")} bottomLabel={t("scroll.bottom")} />
