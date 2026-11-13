@@ -12,13 +12,21 @@
  */
 
 import { Plugin } from "@opencode/plugin";
+import type { SessionContext } from "@opencode/plugin/promise/session";
 import { findLastPlanMessage, type SessionMessageLike } from "./src/capture.js";
+import {
+  appendTailBlock,
+  hasCompaction,
+  pushRoutingRule,
+  renderPlanContext,
+  type InjectMessage,
+} from "./src/inject.js";
 import { deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
 import { onPlanChange } from "./src/plan-events.js";
 import { createRpcHandlers } from "./src/rpc.js";
-import { planProgress, requireStore, savePlan } from "./src/store.js";
+import { listPlans, planProgress, requireStore, savePlan } from "./src/store.js";
 
 type Ctx = Plugin.Context;
 
@@ -126,6 +134,43 @@ async function registerCommand(ctx: Ctx) {
   });
 }
 
+/**
+ * Two layers, one cache rule: the routing rule is constant and re-pushed on
+ * every request, so the head of the prompt stays byte-identical; the plan
+ * block is dynamic, so it only goes to the tail after a compaction, when the
+ * plan text is no longer in the conversation.
+ */
+async function onContext(ctx: Ctx, event: SessionContext) {
+  // Outside the try/catch: a broken database must not drop the rule.
+  pushRoutingRule(event.system);
+
+  if (String(event.agent) === "plan") return;
+  try {
+    const messages = event.messages as InjectMessage[];
+    if (!hasCompaction(messages)) return;
+
+    // Subagents work on a slice of the parent's task; keep their context lean.
+    const session = await ctx.session.get({ sessionID: event.sessionID });
+    if (session.parentID) return;
+
+    const sessionID = String(event.sessionID);
+    const store = await requireStore();
+    const plans = listPlans(store.db, {
+      projectID: projectID(ctx),
+      sessionID,
+      status: "active",
+      limit: 5,
+    });
+    if (plans.length === 0) return;
+
+    const sessionPlan = plans.find((plan) => plan.session_id === sessionID) ?? plans[0];
+    const text = renderPlanContext(sessionPlan);
+    if (text) appendTailBlock(messages, text);
+  } catch (error) {
+    console.error(`[plans] context injection failed: ${errorText(error)}`);
+  }
+}
+
 export default Plugin.define({
   id: "plans",
   async setup(ctx) {
@@ -137,7 +182,11 @@ export default Plugin.define({
         console.error(`[plans] could not emit plan change: ${errorText(error)}`);
       });
     });
-    const registrations = await Promise.all([registerTools(ctx), registerCommand(ctx)]);
+    const registrations = await Promise.all([
+      registerTools(ctx),
+      registerCommand(ctx),
+      ctx.session.hook("context", (event) => onContext(ctx, event)),
+    ]);
     registrations.push(rpcRegistration);
 
     return async () => {

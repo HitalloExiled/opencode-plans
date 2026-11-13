@@ -12,9 +12,10 @@ OpenCode service hot-reloads the plugin. Read `README.md` for product docs.
   Defined in `plans.ts`, registered in `index.ts`.
 - **GUI** — a SolidJS side panel (`./gui-experimental`), registered in the
   desktop app. Entry `src/gui.tsx`.
-- **No injection** — the plugin does not add system blocks, Plan-mode
-  exemptions or synthetic reminders. The agent reads and updates plans on
-  demand with `plans.get`/`plans.update`.
+- **Context** — `src/inject.ts` adds two layers with opposite cache rules:
+  a constant `Plans routing` system part on every request, and a
+  `<plans-context>` block appended to the tail of the last user message, only
+  after a compaction.
 - **Capture** — `src/capture.ts` finds the last Plan-agent message for
   `/save-plan`; there is no heuristic capture.
 
@@ -31,6 +32,7 @@ src/store.ts             SHARED data layer: node:sqlite, schema v2, migrations, 
 src/plan-body.ts         PURE step parsing/template/reassembly helpers (server + GUI)
 src/rpc.ts               server RPC handlers (list/read/write + notifications)
 src/capture.ts           last Plan-agent message extraction
+src/inject.ts            routing rule (system) + post-compaction block (tail)
 src/gui.tsx              ./gui-experimental entry → setup
 src/gui/contract.ts      PlansRpc contract + Effect schemas
 src/gui/setup.tsx        renderer: registers the Planos tab, command, "+ / New tab" menu
@@ -56,8 +58,17 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
 - **Capture is explicit only.** `plans.save`, `/save-plan` and the panel's
   `PlansRpc.save` (editor) are the explicit entry points. The hint button only
   sends a user-message nudge asking the agent to call `plans.save`; it never
-  captures the last message itself. The plugin does not inject save
-  instructions or plan context into requests.
+  captures the last message itself.
+- **Injection is cache-first, in two layers.** The routing rule is constant and
+  re-pushed VERBATIM on every request — never conditionally, never only on the
+  first one: a shrinking head forces a full re-prefill of the conversation
+  (notes/memory document the same rule). Anything dynamic (progress, step ids,
+  plan titles) goes to the tail of the last user message, never to `system`.
+  There is no post-turn nudge.
+- **Tool descriptions are truncated by the Code Mode catalog at ~119
+  characters.** Put the load-bearing sentence in the first ~110; the rest never
+  reaches the model. `test/inject.test.ts` enforces that budget for
+  `plans.save` (Plan-mode permission) and `plans.update` (call shape).
 - **The panel owns plan creation and editing.** The editor calls
   `PlansRpc.save` (create/update) with title, context and steps; the body is
   recomposed with `## Passos` and existing statuses are preserved by step text.
@@ -179,6 +190,8 @@ bun test plugins/plans/test
 - `test/plan-body.test.ts` — exact step extraction, template, reassembly, GUI body.
 - `test/tools.test.ts` — tool input contracts (e.g. `plans.get` string/object forms).
 - `test/capture.test.ts` — plan-message capture (pure functions).
+- `test/inject.test.ts` — routing rule byte-identity, tail block, compaction
+  detection and the tool-description budget.
 
 Uses `bun test` (Bun's built-in runner).
 

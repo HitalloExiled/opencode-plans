@@ -66,10 +66,13 @@ e o `npm run gui:build`).
    outro volta o anterior para `todo`. Quando todos os passos ficam `done`, o
    plano vira `done`. O agente marca `doing` antes de começar um passo e
    `done` ao concluir.
-4. **Não injeta contexto**: o plugin não altera o system prompt de nenhum
-   agente. O agente lê e atualiza planos sob demanda com
-   `plans.get`/`plans.update`; o prompt do botão Executar orienta a leitura.
-   Isso mantém o prefixo/KV cache estável dentro do mesmo agente.
+4. **Injeta uma regra de routing (system)**: em todo request o plugin anexa um
+   system part constante (`Plans routing`) liberando `plans.save`/`plans.update`
+   no Plan mode e lembrando de salvar o plano final no mesmo turno. O texto é
+   byte-idêntico entre requests, então o prefixo do KV cache não muda. Contexto
+   dinâmico (plano da sessão + pendentes) só entra no **tail** da última
+   mensagem do usuário e **apenas depois de uma compactação**, quando o plano
+   saiu da conversa.
 5. **Painel lateral**: por padrão lista só a **sessão ativa**; o toggle
    **Projeto** traz todos os planos do projeto, com a sessão de origem em cada
    card. Planos de outra sessão têm o botão **Mover para esta sessão**. O
@@ -93,8 +96,8 @@ e o `npm run gui:build`).
    com `plans.get`, seguir os passos e atualizar o estado com `plans.update`.
    O prompt é uma mensagem de usuário normal (sem `delivery: "queue"`), então
    inicia o turno imediatamente; o botão só habilita com a sessão ociosa. O
-   prompt orienta o agente a chamar `plans.get` para obter o texto completo e
-   os IDs dos passos; o plugin não injeta um bloco de contexto.
+   prompt orienta o agente a ler com `plans.get` quando o plano não estiver na
+   conversa; a regra de routing no system já lembra de salvar no mesmo turno.
    Enquanto executa, o botão
    vira **Pausar**: ele interrompe o turno (`session.interrupt`), grava uma
    mensagem sintética avisando que o usuário pausou o plano e volta o agente
@@ -119,13 +122,21 @@ via RPC `save`, sem depender do agente: o body é recomposto com `## Passos` e o
 status existentes são preservados por texto. O botão **Salvar do agente**
 continua como ação secundária (hint) para planos gerados em conversa.
 
-### Sem injeção de contexto
+### Injeção e cache
 
-O plugin não adiciona system parts, mensagens de exceção nem nudges
-automáticos. O fluxo é: a UI cria/edita o plano, o botão Executar envia um
-prompt de usuário pedindo `plans.get`, e o agente atualiza com `plans.update`.
-A troca Build ↔ Plan ainda muda as instruções do core, mas o plugin não
-contribui para invalidar o cache.
+O plugin escreve no request em dois lugares, com regras opostas:
+
+- **System (constante):** `Plans routing`, re-empurrada byte-idêntica em todo
+  request. Empurrar só uma vez faz o head encolher no request seguinte e força
+  um re-prefill completo da conversa; notes e memory seguem a mesma regra.
+- **Tail (dinâmico):** o bloco `<plans-context>` com o plano da sessão e os
+  pendentes é anexado à última mensagem do usuário, e só quando o request tem
+  uma parte de compactação. Dado dinâmico nunca vai para o system: mudaria o
+  prefixo a cada `plans.update`.
+
+Não há nudge pós-turno. A obrigação de salvar vem da regra no system, que
+compete no mesmo nível com o “Do not modify any other files” do Plan mode e
+diz explicitamente que `plans.db` não é arquivo do repositório.
 
 ### Agente próprio (opcional)
 
@@ -208,6 +219,7 @@ plans.ts                 definições das tools plans.*
 src/store.ts             camada única: node:sqlite, schema, migrações, SQL
 src/rpc.ts               handlers RPC do servidor (list/read/write)
 src/capture.ts           extrai o último plano do agente Plan da sessão
+src/inject.ts            regra de routing (system) + bloco pós-compactação (tail)
 src/gui.tsx              ./gui-experimental → setup
 src/gui/contract.ts      contrato RPC + schemas
 src/gui/setup.tsx        painel, comando e menu

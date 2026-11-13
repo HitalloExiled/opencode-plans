@@ -129,7 +129,7 @@ export function saveTool(ctx: Ctx) {
   return {
     name: "save",
     description:
-      "Persist the plan you just presented, in the same turn it becomes final, with no pending questions or choices. Don't ask permission or wait for the user; an optional/recommended choice does not block the save — list it as an '(optional, recommended)' step. Allowed in Plan mode: it writes only plans.db, not files. Creates a new plan by default; pass id only to replace its text/structure (steps and ids reset) or to save a revision. Use plans.update for step status.",
+      "Save the plan you just presented, now. Plan mode allows it: writes only plans.db, never repository files. Don't ask permission or wait for the user; an optional/recommended choice does not block the save — list it as an '(optional, recommended)' step. Creates a new plan by default; pass id only to replace its text/structure (steps and ids reset) or to save a revision. Use plans.update for step status.",
     input: saveInput,
     async execute(input: z.infer<typeof saveInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -256,7 +256,7 @@ export function updateTool(ctx: Ctx) {
   return {
     name: "update",
     description:
-      "Change a step's or the plan's status; it never edits text or structure (use plans.save with the same id for that). Mark a step with stepID (s1, s2… from plans.get) + stepStatus; position is only a fallback. 'doing' before starting, 'done' when finished; one 'doing' per plan. Never send body for status.",
+      "Mark a step (stepID + stepStatus) or set the plan status; it never edits text or structure (use plans.save with the same id for that). 'doing' before starting, 'done' when finished; one 'doing' per plan. stepID comes from plans.get (s1, s2…); position is only a fallback. Never send body for status.",
     input: updateInput,
     async execute(input: z.infer<typeof updateInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {

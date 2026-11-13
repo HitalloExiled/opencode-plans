@@ -391,6 +391,7 @@ export function PlansView(props: { session: MountedSession }) {
   });
 
   const visiblePlans = createMemo(() => filteredPlans().slice(0, visible()));
+  let listElement: HTMLDivElement | undefined;
   const nav = createScrollNav({
     hasMore: () => visible() < filteredPlans().length,
     loadingMore: () => false,
@@ -398,13 +399,13 @@ export function PlansView(props: { session: MountedSession }) {
     visible: () => panel.visible(),
     items: () => filteredPlans().length,
   });
-  // A new query or filter starts from the top of the list.
+  // A new query or filter starts from the top of the list, without moving focus.
   createEffect(() => {
     query();
     statusFilter();
     scopeFilter();
     setVisible(CHUNK_SIZE);
-    nav.reset();
+    listElement?.scrollTo({ top: 0, behavior: "instant" });
   });
 
   const currentSession = () => props.session;
@@ -995,7 +996,10 @@ export function PlansView(props: { session: MountedSession }) {
         <div class="plans-body">
           <div
             class="plans-scroll os-scroll"
-            ref={nav.ref}
+            ref={(element) => {
+              listElement = element;
+              nav.ref(element);
+            }}
             onKeyDown={nav.onKeyDown}
             tabIndex={nav.scrollable() ? 0 : undefined}
             role="region"
