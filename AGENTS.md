@@ -39,7 +39,7 @@ src/gui/setup.tsx        renderer: registers the Planos tab, the window.bottom l
 src/gui/view.tsx         the SolidJS UI: PlansView (panel) and PlansBody (shared)
 src/gui/launcher.tsx     titlebar pill + the all-plans overlay (mounted by a slot item)
 src/gui/page.tsx         builtin-server helpers for the session-less surfaces
-src/gui/group.ts         pure list grouping (one section per project, A-Z)
+src/gui/order.ts         pure ordering (project A-Z, recency inside) + project labels
 src/gui/state.ts         persisted panel state (open plan, search, filters)
 src/gui/i18n.ts          PT-BR / EN-US copy
 test/                    bun tests
@@ -119,10 +119,12 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   `todo` in the same transaction; keep that invariant when touching the store.
 - **Moving a plan is a user action.** The GUI calls the `move` RPC to move a
   project plan into the active session; tools must not move plans.
-- **The list is grouped by project and can be filtered by them.** `groupPlans`
-  (`src/gui/group.ts`, pure and tested) yields one section per
-  `projectDirectory`, ordered by label; `projectLabel` shortens a path to its
-  basename and disambiguates duplicates with the parent folder. The
+- **The global list is ordered by project; the panel is not.** `orderPlans`
+  (`src/gui/order.ts`, pure and tested) sorts by project label and then by
+  recency, and `projectLabel` shortens a path to its basename (disambiguating
+  duplicates with the parent). The renderer paginates the ordered list and
+  opens a header whenever `projectKeyOf` changes between two consecutive items;
+  the panel keeps the store order (flat). The
   `MultiSelect` combo is shared (`opencode-shared/gui`), never copied.
 - **The global surface reuses `PlansBody`, it is not a second UI.** A
   `session.header` pill shows the active count and opens the overlay

@@ -16,7 +16,7 @@ import { executionFor, planTarget, sessionTarget } from "./execution";
 import type { Plan, PlanStatus, PlanStep, StepStatus } from "./contract";
 import { useT } from "./i18n";
 import { bodyWithoutSteps } from "../plan-body";
-import { groupPlans, projectLabel as projectSectionName, type PlanGroup } from "./group";
+import { orderPlans, projectKeyOf, projectLabel as projectSectionName } from "./order";
 import { VIEW_INITIAL, ViewState } from "./state";
 import type { ScopeFilter, StatusFilter } from "./state";
 
@@ -486,23 +486,13 @@ export function PlansBody(props: { target: () => PlansTarget }) {
     });
   });
 
-  const groups = createMemo(() => groupPlans(filteredPlans(), projectSectionLabel));
-  // The panel is a single flat list; the global overlay groups by project.
-  // Pagination runs across groups: take plans in order until the page is full.
-  const listGroups = createMemo<PlanGroup[]>(() => {
-    if (!detached()) {
-      return [{ key: "all", project: "", plans: filteredPlans().slice(0, visible()) }];
-    }
-    const out: PlanGroup[] = [];
-    let left = visible();
-    for (const group of groups()) {
-      if (left <= 0) break;
-      const items = group.plans.slice(0, left);
-      if (items.length > 0) out.push({ ...group, plans: items });
-      left -= items.length;
-    }
-    return out;
-  });
+  // The global overlay orders by project so a page already reads as sections;
+  // the panel keeps the store order (recency) and stays flat. Pagination slices
+  // this one list, so the order is stable across "load more".
+  const orderedPlans = createMemo(() =>
+    detached() ? orderPlans(filteredPlans(), projectSectionLabel) : filteredPlans(),
+  );
+  const visiblePlans = createMemo(() => orderedPlans().slice(0, visible()));
 
   const nav = createScrollNav({
     hasMore: () => visible() < filteredPlans().length,
@@ -1245,13 +1235,19 @@ export function PlansBody(props: { target: () => PlansTarget }) {
               hint={query().trim() ? t("empty.searchHint") : t("empty.hint")}
             />
           </Show>
-          <For each={listGroups()}>
-            {(group) => (
+          <For each={visiblePlans()}>
+            {(plan, index) => (
               <>
-                <Show when={detached()}>
-                  <div class="plans-group-head">{projectSectionLabel(group.project)}</div>
+                <Show
+                  when={
+                    detached() &&
+                    (index() === 0 ||
+                      projectKeyOf(visiblePlans()[index() - 1]!) !== projectKeyOf(plan))
+                  }
+                >
+                  <div class="plans-group-head">{projectSectionLabel(projectKeyOf(plan))}</div>
                 </Show>
-                <For each={group.plans}>{(plan) => card(plan)}</For>
+                {card(plan)}
               </>
             )}
           </For>
