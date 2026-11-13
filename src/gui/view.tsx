@@ -487,8 +487,12 @@ export function PlansBody(props: { target: () => PlansTarget }) {
   });
 
   const groups = createMemo(() => groupPlans(filteredPlans(), projectSectionLabel));
-  // Pagination across sections: take plans in order until the page is full.
-  const visibleGroups = createMemo(() => {
+  // The panel is a single flat list; the global overlay groups by project.
+  // Pagination runs across groups: take plans in order until the page is full.
+  const listGroups = createMemo<PlanGroup[]>(() => {
+    if (!detached()) {
+      return [{ key: "all", project: "", plans: filteredPlans().slice(0, visible()) }];
+    }
     const out: PlanGroup[] = [];
     let left = visible();
     for (const group of groups()) {
@@ -1033,6 +1037,68 @@ export function PlansBody(props: { target: () => PlansTarget }) {
     }
   };
 
+  const card = (plan: Plan) => (
+  <div
+                  class="plan-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => select(plan)}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      select(plan);
+                    }
+                  }}
+                >
+                  <div class="plan-card-top">
+                    <StatusChip tone={statusTone(plan.status)} label={t(`status.${plan.status}`)} />
+                    <span class="plan-updated">{formatDate(plan.updatedAt)}</span>
+                  </div>
+                  <div class="plan-card-title">{plan.title}</div>
+                  <Show when={scope() !== "session"}>
+                    <div class="plan-card-session">
+                      {t("session")}: {shortSession(plan.sessionID)}
+                    </div>
+                  </Show>
+                  <div class="plan-progress-row">
+                    <Show when={plan.status === "active"}>
+                      <ctx.ui.Tooltip value={isExecuting(plan) ? t("pause") : t("execute")}>
+                        <button
+                          type="button"
+                          class={isExecuting(plan) ? "plan-run-card is-pause" : "plan-run-card is-play"}
+                          aria-label={isExecuting(plan) ? t("pause") : t("execute")}
+                          aria-pressed={isExecuting(plan)}
+                          disabled={runDisabled(plan)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void toggleRun(plan);
+                          }}
+                        >
+                          <Show
+                            when={isExecuting(plan)}
+                            fallback={
+                              <ctx.ui.Icon
+                                name="fill-triangle-down"
+                                size="large"
+                                class="plan-run-icon"
+                              />
+                            }
+                          >
+                            <span class="plan-pause-icon" />
+                          </Show>
+                        </button>
+                      </ctx.ui.Tooltip>
+                    </Show>
+                    <div class="plan-progress">
+                      <div class="plan-progress-done" style={{ width: `${donePercent(plan)}%` }} />
+                      <div class="plan-progress-doing" style={{ width: `${doingPercent(plan)}%` }} />
+                    </div>
+                    <span class="plan-progress-label">{progressLabel(plan)}</span>
+                      </div>
+                    </div>
+  );
+
   return (
     <div class="plans" classList={{ "is-detail": Boolean(selectedID()), "is-modal": detached() }}>
       <style>{CSS}</style>
@@ -1089,7 +1155,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
               setVisible(CHUNK_SIZE);
             }}
           />
-          <Show when={projectOptions().length > 1}>
+          <Show when={detached() && projectOptions().length > 1}>
             <MultiSelect
               label={t("filter.projects.label")}
               placeholder={t("filter.projects.placeholder")}
@@ -1179,73 +1245,13 @@ export function PlansBody(props: { target: () => PlansTarget }) {
               hint={query().trim() ? t("empty.searchHint") : t("empty.hint")}
             />
           </Show>
-          <For each={visibleGroups()}>
+          <For each={listGroups()}>
             {(group) => (
               <>
-                <div class="plans-group-head">{projectSectionLabel(group.project)}</div>
-                <For each={group.plans}>
-                  {(plan) => (
-              <div
-                class="plan-card"
-                role="button"
-                tabIndex={0}
-                onClick={() => select(plan)}
-                onKeyDown={(event) => {
-                  if (event.target !== event.currentTarget) return;
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    select(plan);
-                  }
-                }}
-              >
-                <div class="plan-card-top">
-                  <StatusChip tone={statusTone(plan.status)} label={t(`status.${plan.status}`)} />
-                  <span class="plan-updated">{formatDate(plan.updatedAt)}</span>
-                </div>
-                <div class="plan-card-title">{plan.title}</div>
-                <Show when={scope() !== "session"}>
-                  <div class="plan-card-session">
-                    {t("session")}: {shortSession(plan.sessionID)}
-                  </div>
+                <Show when={detached()}>
+                  <div class="plans-group-head">{projectSectionLabel(group.project)}</div>
                 </Show>
-                <div class="plan-progress-row">
-                  <Show when={plan.status === "active"}>
-                    <ctx.ui.Tooltip value={isExecuting(plan) ? t("pause") : t("execute")}>
-                      <button
-                        type="button"
-                        class={isExecuting(plan) ? "plan-run-card is-pause" : "plan-run-card is-play"}
-                        aria-label={isExecuting(plan) ? t("pause") : t("execute")}
-                        aria-pressed={isExecuting(plan)}
-                        disabled={runDisabled(plan)}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void toggleRun(plan);
-                        }}
-                      >
-                        <Show
-                          when={isExecuting(plan)}
-                          fallback={
-                            <ctx.ui.Icon
-                              name="fill-triangle-down"
-                              size="large"
-                              class="plan-run-icon"
-                            />
-                          }
-                        >
-                          <span class="plan-pause-icon" />
-                        </Show>
-                      </button>
-                    </ctx.ui.Tooltip>
-                  </Show>
-                  <div class="plan-progress">
-                    <div class="plan-progress-done" style={{ width: `${donePercent(plan)}%` }} />
-                    <div class="plan-progress-doing" style={{ width: `${doingPercent(plan)}%` }} />
-                  </div>
-                  <span class="plan-progress-label">{progressLabel(plan)}</span>
-                    </div>
-                  </div>
-                  )}
-                </For>
+                <For each={group.plans}>{(plan) => card(plan)}</For>
               </>
             )}
           </For>

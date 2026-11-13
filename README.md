@@ -118,7 +118,7 @@ e o `npm run gui:build`).
 10. **Pill “Planos · N” e overlay**: um pill na linha de título da timeline
     mostra a contagem de planos **ativos** e abre um overlay com todos os
     planos de todos os projetos e sessões, **agrupados por projeto** e com
-    **filtro de projetos em multiselect** (o slot `session.header`
+    **filtro de projetos em multiselect** (o painel continua em lista plana) (o slot `session.header`
     coloca pills de plugins diferentes lado a lado; `window.bottom` empilharia). Não há atalho de teclado nem
     comando na paleta. Reusa o mesmo corpo do
     painel; a diferença são os filtros (**Projeto | Tudo**, default **Tudo**) e
