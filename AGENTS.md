@@ -37,7 +37,7 @@ src/gui.tsx              ./gui-experimental entry → setup
 src/gui/contract.ts      PlansRpc contract + Effect schemas
 src/gui/setup.tsx        renderer: registers the Planos tab, the window.bottom launcher, the pill
 src/gui/view.tsx         the SolidJS UI: PlansView (panel) and PlansBody (shared)
-src/gui/launcher.tsx     global launcher (window.bottom slot) + the all-plans modal
+src/gui/launcher.tsx     titlebar pill + the all-plans overlay (mounted by a slot item)
 src/gui/page.tsx         builtin-server helpers for the session-less surfaces
 src/gui/state.ts         persisted panel state (open plan, search, filters)
 src/gui/i18n.ts          PT-BR / EN-US copy
@@ -118,20 +118,25 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   `todo` in the same transaction; keep that invariant when touching the store.
 - **Moving a plan is a user action.** The GUI calls the `move` RPC to move a
   project plan into the active session; tools must not move plans.
-- **The global launcher reuses `PlansBody`, it is not a second UI.** The
-  `window.bottom` slot (`src/gui/launcher.tsx`) has no routed session: it
-  resolves the builtin server with `ctx.servers`, lists `scope: "all"`, and
-  passes `visible: () => true`. `usePanel()` throws outside `Panel.render`, so
-  it stays in the panel wrapper. Session-bound actions (create, move, save hint)
-  exist only in the panel; Executar exists in both but the modal targets the
-  plan's own session and never moves it.
+- **The global surface reuses `PlansBody`, it is not a second UI.** A
+  `TitlebarItem` pill shows the active count and opens the overlay
+  (`src/gui/launcher.tsx`); the overlay itself is mounted by a `window.bottom`
+  slot item that renders nothing while closed (a plugin has no other place in
+  the tree). The overlay has no routed session: it resolves the builtin server
+  with `ctx.servers`, lists `scope: "all"`, and passes `visible: () => true`.
+  `usePanel()` throws outside `Panel.render`, so it stays in the panel wrapper.
+  Session-bound actions (create, move, save hint) exist only in the panel;
+  Executar exists in both but the overlay targets the plan's own session and
+  never moves it.
+- **Global entries go in the titlebar, not `window.bottom`.** The host stacks
+  bottom-slot items, so two plugins never share a row there; titlebar pills are
+  laid side by side by the host.
 - **There are no keyboard shortcuts or palette commands for Plans.** The
   `window.bottom` bar is the entry point; it opens the all-plans modal. Do not
   add a `bind` back without the user asking.
-- **The launcher bar is always visible.** It shows the active count, zero
-  included, and opens the all-plans modal. Never hide or unmount it on a count
-  change: the modal is a sibling and must survive a run finishing under the
-  user.
+- **The titlebar pill is always visible.** It shows the active count, zero
+  included, and opens the overlay. The overlay is a sibling of the slot item,
+  so a count dropping to zero never closes it under the user.
 - **The launcher count follows the `changed` event**, not a poll: it subscribes
   to `PlansRpc.events.on("changed")` and asks `count({ scope: "all" })` again.
 - **Executing a plan is a user action.** The card, the detail's

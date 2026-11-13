@@ -1,26 +1,27 @@
 /**
- * Window-side registration for the Plans side panel, the global launcher and
- * the composer pill.
+ * Window-side registration for the Plans side panel, the titlebar pill and the
+ * composer pill.
  *
- * The panel is a side tab (one per session). The global surface is the
- * `window.bottom` launcher: it opens every saved plan in a modal, with no
- * session and no keyboard shortcut. The panel, the launcher and the modal all
- * render the same `PlansBody`.
+ * The panel is a side tab (one per session). The global surface is the titlebar
+ * pill: it shows the active plan count and opens the all-plans overlay, which
+ * the plugin renders from a `window.bottom` slot item (nothing visible while
+ * closed). No keyboard shortcuts.
  *
  * The composer pill is the quick path: it appears above the composer when the
  * session is idle with an active plan and runs that plan in one click.
  */
 
 import type { SetupContext } from "@opencode/plugin/gui";
-import { ComposerPill, Slot, Style } from "@opencode/plugin/gui";
-import { registerSidePanel } from "opencode-shared/gui";
-import { PlansLauncher } from "./launcher";
+import { ComposerPill, Slot, Style, TitlebarItem } from "@opencode/plugin/gui";
+import { registerSidePanel, supportedLocale } from "opencode-shared/gui";
+import { activePlanCount, openPlansOverlay, PlansOverlay, startPlansCount } from "./launcher";
+import { tStatic } from "./i18n";
 import { createPlanPill, PLAY_ICON_CSS } from "./pill";
 import { PlansView } from "./view";
 
 export const openPlansId = "plans";
 
-export function setup(ctx: SetupContext<never>): void {
+export function setup(ctx: SetupContext<never>): () => void {
   registerSidePanel(ctx, {
     id: openPlansId,
     title: { pt: "Planos", en: "Plans" },
@@ -36,7 +37,19 @@ export function setup(ctx: SetupContext<never>): void {
     view: ({ session }) => <PlansView session={session} />,
   });
 
-  ctx.add(Slot, { at: "window.bottom", order: 10, render: () => <PlansLauncher /> });
+  const stopCount = startPlansCount(ctx);
+
+  // A titlebar pill per plugin; the host lays them side by side. The overlay
+  // itself needs a place in the plugin's tree, hence the slot item that renders
+  // nothing while closed.
+  ctx.add(TitlebarItem, (): TitlebarItem => ({
+    id: "plans",
+    icon: "checklist",
+    label: tStatic(supportedLocale(ctx.locale.locale()), "launcher.label", activePlanCount()),
+    title: tStatic(supportedLocale(ctx.locale.locale()), "launcher.tooltip"),
+    run: openPlansOverlay,
+  }));
+  ctx.add(Slot, { at: "window.bottom", order: 10, render: () => <PlansOverlay /> });
 
   const pill = createPlanPill(ctx);
   ctx.add(Style, PLAY_ICON_CSS);
@@ -45,4 +58,6 @@ export function setup(ctx: SetupContext<never>): void {
     order: 10,
     show: (input) => pill.show(input.session),
   }));
+
+  return stopCount;
 }

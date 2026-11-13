@@ -1,10 +1,11 @@
 /**
- * The global plans launcher: a bar in the host's `window.bottom` slot that
- * opens every saved plan in a large overlay.
+ * The global plans surface: a titlebar pill with the active count and the
+ * large overlay it opens.
  *
- * The bar is always visible and shows how many plans are active (zero
- * included); the count follows the `PlansRpc` changed event, so marking the
- * last plan done leaves the bar in place instead of removing it.
+ * The pill lives in the host's titlebar (two plugins can sit side by side
+ * there); the overlay covers the window with the shared `PlansBody`. The count
+ * is module state so the pill (registered in `setup`) and the overlay (mounted
+ * by a `window.bottom` slot item) read the same signal.
  *
  * The overlay is ours, not `ctx.ui.Dialog`: the host caps dialogs at 980×600,
  * and this one is capped at 900×640, keeping a 10px gutter on smaller windows.
@@ -12,8 +13,9 @@
  * plan editor's overlay.
  */
 
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createRoot, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { usePlugin } from "@opencode/plugin/gui";
+import type { Context } from "@opencode/plugin/gui";
 import { PlansRpc } from "./contract";
 import { useT } from "./i18n";
 import { builtinServer, globalTarget } from "./page";
@@ -21,15 +23,6 @@ import type { PlansTarget } from "./view";
 import { PlansBody } from "./view";
 
 const CSS = `
-.plans-launcher {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 12px;
-  border-top: 1px solid var(--v2-border-border-muted);
-  background: var(--v2-background-bg-base);
-}
 .plans-modal-scrim {
   position: fixed;
   inset: 0;
@@ -71,8 +64,53 @@ const CSS = `
 .plans-modal-body { flex: 1; min-height: 0; }
 `;
 
+const [active, setActive] = createSignal(0);
+const [opened, setOpened] = createSignal(false);
+
+/** Active plans, for the titlebar pill. */
+export const activePlanCount = (): number => active();
+export const openPlansOverlay = (): void => {
+  setOpened(true);
+};
+const close = (): void => {
+  setOpened(false);
+};
+
+/**
+ * Keeps the active-plan count fresh for the pill. Call once from `setup`; the
+ * returned cleanup stops the subscription.
+ */
+export function startPlansCount(ctx: Context): () => void {
+  return createRoot((dispose) => {
+    createEffect(() => {
+      const server = builtinServer(ctx);
+      if (!server) {
+        setActive(0);
+        return;
+      }
+      const rpc = server.client.rpc(PlansRpc);
+      let live = true;
+      const refresh = () => {
+        void rpc
+          .count({ scope: "all", status: "active" })
+          .then((count) => {
+            if (live) setActive(count);
+          })
+          .catch(() => undefined);
+      };
+      refresh();
+      const off = rpc.events.on("changed", () => refresh());
+      onCleanup(() => {
+        live = false;
+        off();
+      });
+    });
+    return dispose;
+  });
+}
+
 /** The overlay: scrim, header, and the shared PlansBody. */
-function PlansModal(props: { target: PlansTarget; onClose: () => void }) {
+function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
   const ctx = usePlugin();
   const t = useT();
   let panel: HTMLDivElement | undefined;
@@ -109,13 +147,13 @@ function PlansModal(props: { target: PlansTarget; onClose: () => void }) {
       return;
     }
     const last = focusables[focusables.length - 1]!;
-    const active = document.activeElement;
-    if (event.shiftKey && (active === first || active === panel)) {
+    const current = document.activeElement;
+    if (event.shiftKey && (current === first || current === panel)) {
       event.preventDefault();
       last.focus();
       return;
     }
-    if (!event.shiftKey && active === last) {
+    if (!event.shiftKey && current === last) {
       event.preventDefault();
       first.focus();
     }
@@ -138,60 +176,34 @@ function PlansModal(props: { target: PlansTarget; onClose: () => void }) {
           <ctx.ui.IconButton icon="close" label={t("close")} onClick={() => props.onClose()} />
         </div>
         <div class="plans-modal-body">
-          <PlansBody target={() => props.target} />
+          <PlansBody target={props.target} />
         </div>
       </div>
     </div>
   );
 }
 
-export function PlansLauncher() {
+/**
+ * Mounted by the plugin's `window.bottom` slot item (the titlebar pill is the
+ * visible entry point). Renders nothing while closed, so the slot adds no
+ * visible row.
+ */
+export function PlansOverlay() {
   const ctx = usePlugin();
-  const t = useT();
-  const [active, setActive] = createSignal(0);
-  const [opened, setOpened] = createSignal<PlansTarget | null>(null);
-
-  createEffect(() => {
+  const target = () => {
+    if (!opened()) return null;
     const server = builtinServer(ctx);
-    if (!server) {
-      setActive(0);
-      return;
-    }
-    const rpc = server.client.rpc(PlansRpc);
-    let live = true;
-    const refresh = () => {
-      void rpc
-        .count({ scope: "all", status: "active" })
-        .then((count) => {
-          if (live) setActive(count);
-        })
-        .catch(() => undefined);
-    };
-    refresh();
-    const off = rpc.events.on("changed", () => refresh());
-    onCleanup(() => {
-      live = false;
-      off();
-    });
-  });
-
-  const open = () => {
-    const server = builtinServer(ctx);
-    if (!server) return;
-    setOpened(globalTarget(server));
+    return server ? globalTarget(server) : null;
   };
-
   return (
-    <>
-      <style>{CSS}</style>
-      <div class="plans-launcher">
-        <ctx.ui.Button size="small" variant="ghost" icon="checklist" onClick={open}>
-          {t("launcher.label", active())}
-        </ctx.ui.Button>
-      </div>
-      <Show when={opened()}>
-        {(target) => <PlansModal target={target()} onClose={() => setOpened(null)} />}
-      </Show>
-    </>
+    <Show when={target()}>
+      {(current) => (
+        <>
+          <style>{CSS}</style>
+          <PlansModal target={() => current()} onClose={close} />
+        </>
+      )}
+    </Show>
   );
 }
+
