@@ -4,8 +4,8 @@
  *
  * The pill lives in the host's titlebar (two plugins can sit side by side
  * there); the overlay covers the window with the shared `PlansBody`. The count
- * is module state so the pill (registered in `setup`) and the overlay (mounted
- * by a `window.bottom` slot item) read the same signal.
+ * is module state so the pill and the overlay (both in the same slot item)
+ * read the same signal.
  *
  * The overlay is ours, not `ctx.ui.Dialog`: the host caps dialogs at 980×600,
  * and this one is capped at 900×640, keeping a 10px gutter on smaller windows.
@@ -116,11 +116,25 @@ export function startPlansCount(ctx: Context): () => void {
 export function PlansPill(props: { active: boolean }) {
   const ctx = usePlugin();
   const t = useT();
+  const target = () => {
+    if (!opened()) return null;
+    const server = builtinServer(ctx);
+    return server ? globalTarget(server) : null;
+  };
   return (
     <Show when={props.active}>
       <ctx.ui.Button size="small" variant="ghost" icon="checklist" onClick={openPlansOverlay}>
         {t("launcher.label", activePlanCount())}
       </ctx.ui.Button>
+      {/* The overlay is fixed and rides the pill's slot item: no second mount. */}
+      <Show when={target()}>
+        {(current) => (
+          <>
+            <style>{CSS}</style>
+            <PlansModal target={() => current()} onClose={close} />
+          </>
+        )}
+      </Show>
     </Show>
   );
 }
@@ -198,28 +212,3 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
     </div>
   );
 }
-
-/**
- * Mounted by the plugin's `window.bottom` slot item (the titlebar pill is the
- * visible entry point). Renders nothing while closed, so the slot adds no
- * visible row.
- */
-export function PlansOverlay() {
-  const ctx = usePlugin();
-  const target = () => {
-    if (!opened()) return null;
-    const server = builtinServer(ctx);
-    return server ? globalTarget(server) : null;
-  };
-  return (
-    <Show when={target()}>
-      {(current) => (
-        <>
-          <style>{CSS}</style>
-          <PlansModal target={() => current()} onClose={close} />
-        </>
-      )}
-    </Show>
-  );
-}
-

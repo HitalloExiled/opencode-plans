@@ -2,10 +2,9 @@
  * Window-side registration for the Plans side panel, the titlebar pill and the
  * composer pill.
  *
- * The panel is a side tab (one per session). The global surface is the titlebar
- * pill: it shows the active plan count and opens the all-plans overlay, which
- * the plugin renders from a `window.bottom` slot item (nothing visible while
- * closed). No keyboard shortcuts.
+ * The panel is a side tab (one per session). The global surface is the pill in
+ * the timeline's title row: it shows the active plan count and opens the
+ * all-plans overlay, fixed over the window. No keyboard shortcuts.
  *
  * The composer pill is the quick path: it appears above the composer when the
  * session is idle with an active plan and runs that plan in one click.
@@ -14,7 +13,7 @@
 import type { SetupContext } from "@opencode/plugin/gui";
 import { ComposerPill, Slot, Style } from "@opencode/plugin/gui";
 import { registerSidePanel } from "opencode-shared/gui";
-import { PlansOverlay, PlansPill, startPlansCount } from "./launcher";
+import { PlansPill, startPlansCount } from "./launcher";
 import { createPlanPill, PLAY_ICON_CSS } from "./pill";
 import { PlansView } from "./view";
 
@@ -39,14 +38,13 @@ export function setup(ctx: SetupContext<never>): () => void {
   const stopCount = startPlansCount(ctx);
 
   // The entry is a pill in the timeline's title row (session.header), next to
-  // the other plugins' pills. The overlay needs a place in the plugin's tree,
-  // hence the window.bottom item that renders nothing while closed.
+  // the other plugins' pills. The overlay rides the same slot item, fixed over
+  // the window, so there is no second mount point.
   ctx.add(Slot, {
     at: "session.header",
     order: 10,
     render: (input) => <PlansPill active={input.active} />,
   });
-  ctx.add(Slot, { at: "window.bottom", order: 10, render: () => <PlansOverlay /> });
 
   const pill = createPlanPill(ctx);
   ctx.add(Style, PLAY_ICON_CSS);

@@ -120,9 +120,8 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   project plan into the active session; tools must not move plans.
 - **The global surface reuses `PlansBody`, it is not a second UI.** A
   `session.header` pill shows the active count and opens the overlay
-  (`src/gui/launcher.tsx`); the overlay itself is mounted by a `window.bottom`
-  slot item that renders nothing while closed (a plugin has no other place in
-  the tree). The overlay has no routed session: it resolves the builtin server
+  (`src/gui/launcher.tsx`); the overlay is `position: fixed` and rides the same
+  slot item, so there is no second mount point. The overlay has no routed session: it resolves the builtin server
   with `ctx.servers`, lists `scope: "all"`, and passes `visible: () => true`.
   `usePanel()` throws outside `Panel.render`, so it stays in the panel wrapper.
   Session-bound actions (create, move, save hint) exist only in the panel;
