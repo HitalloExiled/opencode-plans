@@ -37,8 +37,9 @@ const CSS = `
   width: 100%;
   box-sizing: border-box;
   height: 100%;
-  padding: 0;
+  padding: 12px;
 }
+.plans.is-modal .plans-scroll { padding-bottom: 24px; overscroll-behavior: contain; }
 .plans-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .plans-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
 .plans-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
