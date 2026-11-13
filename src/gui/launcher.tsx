@@ -61,13 +61,6 @@ const CSS = `
   color: var(--v2-text-text-base);
 }
 .plans-modal-body { flex: 1; min-height: 0; }
-.oc-header-pill {
-  order: -20;
-  color: var(--v2-text-text-muted);
-  font-weight: 400;
-  font-size: 11.5px;
-}
-.oc-header-pill:hover { color: var(--v2-text-text-base); }
 `;
 
 const [active, setActive] = createSignal(0);
@@ -129,7 +122,7 @@ export function PlansPill(props: { active: boolean }) {
   };
   return (
     <Show when={props.active}>
-      <ctx.ui.Button class="oc-header-pill" size="small" variant="ghost" icon="checklist" onClick={openPlansOverlay}>
+      <ctx.ui.Button size="small" variant="ghost-muted" icon="checklist" onClick={openPlansOverlay}>
         {t("launcher.label", activePlanCount())}
       </ctx.ui.Button>
       {/* The overlay is fixed and rides the pill's slot item: no second mount. */}

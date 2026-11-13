@@ -42,7 +42,7 @@ export function setup(ctx: SetupContext<never>): () => void {
   // the window, so there is no second mount point.
   ctx.add(Slot, {
     at: "session.header",
-    order: 10,
+    order: -10,
     render: (input) => <PlansPill active={input.active} />,
   });
 
