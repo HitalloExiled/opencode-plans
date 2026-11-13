@@ -12,6 +12,7 @@ import { PlansRpc, type Plan, type PlanResult, type Status } from "./gui/contrac
 import { notificationLocale, tn } from "./notifications.js";
 import { emitPlanChange } from "./plan-events.js";
 import {
+  countPlans,
   deletePlan,
   getPlan,
   getStore,
@@ -96,11 +97,24 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const sessionID = input.sessionID ? String(input.sessionID) : undefined;
       if (scope === "session" && !sessionID) return [];
       return listPlans(store.db, {
-        projectID: String(ctx.location.project.id),
+        projectID: scope === "all" ? undefined : String(ctx.location.project.id),
         sessionID: scope === "session" ? sessionID : undefined,
         status: input.status,
         limit: input.limit,
+        offset: input.offset,
       }).map(toPlan);
+    },
+
+    count: async (input) => {
+      const store = await requireStore();
+      const scope = input.scope ?? "session";
+      const sessionID = input.sessionID ? String(input.sessionID) : undefined;
+      if (scope === "session" && !sessionID) return 0;
+      return countPlans(store.db, {
+        projectID: scope === "all" ? undefined : String(ctx.location.project.id),
+        sessionID: scope === "session" ? sessionID : undefined,
+        status: input.status,
+      });
     },
 
     get: async (id) => {

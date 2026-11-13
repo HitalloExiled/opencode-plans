@@ -78,6 +78,16 @@ describe("routing rule", () => {
     expect(PLANS_ROUTING_RULE).toContain("do not call plans.get just to confirm");
     expect(PLANS_ROUTING_RULE).not.toContain("undefined");
   });
+
+  test("separates plans.db from the Plan-mode plan files", () => {
+    expect(PLANS_ROUTING_RULE).toContain("they write only plans.db");
+    expect(PLANS_ROUTING_RULE).toContain("never repository files or a plan file under ~/.opencode/plan");
+  });
+
+  test("keeps every stated requirement inside the plan under construction", () => {
+    expect(PLANS_ROUTING_RULE).toContain("every requirement the user states belongs in the plan under construction");
+    expect(PLANS_ROUTING_RULE).toContain("never treat a requirement as a side task");
+  });
 });
 
 describe("tail block", () => {

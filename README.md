@@ -6,7 +6,8 @@ Plan** em um SQLite dedicado e os expõe de duas formas:
 - **Tools tipadas** no namespace `plans` — `save`, `list`, `get`, `update`,
   `delete`, `doctor`;
 - **Painel lateral “Planos”** no app desktop, com lista, progresso, checklist
-  e o Markdown original.
+  e o Markdown original;
+- **Página “Todos os planos”**, de largura total e sem escopo de sessão.
 
 A gravação é sempre explícita: o agente Plan chama `plans.save` no mesmo turno
 em que apresenta o plano final, assim que não houver mais perguntas ou escolhas
@@ -113,6 +114,14 @@ e o `npm run gui:build`).
    `plans.save`, pelos tools de escrita e pelos handlers do painel; some
    enquanto o agente roda e quando o plano termina (todos os passos `done`
    viram status `done`).
+10. **Página “Todos os planos”**: página de largura total (Settings →
+    `plans-all`, comando **Abrir todos os planos**, `mod+shift+a`) que lista os
+    planos de todos os projetos e sessões. Reusa o mesmo corpo do painel; a
+    diferença são os filtros (**Projeto | Tudo**, default **Tudo**) e a ausência
+    das ações que dependem de sessão (criar, mover, hint de salvar). O botão
+    **Abrir sessão** leva à sessão dona do plano; **Executar** roda na sessão do
+    plano, **sem mover**. Consulta só o servidor builtin, porque o `plans.db` é
+    local a ele.
 
 ### Criação e edição pela UI
 

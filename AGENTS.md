@@ -35,8 +35,9 @@ src/capture.ts           last Plan-agent message extraction
 src/inject.ts            routing rule (system) + post-compaction block (tail)
 src/gui.tsx              ./gui-experimental entry → setup
 src/gui/contract.ts      PlansRpc contract + Effect schemas
-src/gui/setup.tsx        renderer: registers the Planos tab, command, "+ / New tab" menu
-src/gui/view.tsx         the SolidJS UI
+src/gui/setup.tsx        renderer: registers the Planos tab, the all-plans page, commands
+src/gui/view.tsx         the SolidJS UI: PlansView (panel) and PlansBody (shared)
+src/gui/page.tsx         the all-plans page (SettingsPage, builtin server, no session)
 src/gui/state.ts         persisted panel state (open plan, search, filters)
 src/gui/i18n.ts          PT-BR / EN-US copy
 test/                    bun tests
@@ -47,10 +48,12 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
 
 - **UI copy is PT-BR; code is English.** Localized strings go through `useT()`
   in `src/gui/i18n.ts`.
-- **Every user-facing message — UI copy, toasts and synthetic/session
-  messages — must exist in PT-BR and EN-US, with EN-US as the fallback.** Code
-  and identifiers stay English. Never hardcode a UI or synthetic string in a
-  single language; localized server messages go through `src/notifications.ts`.
+- **Every message the plugin displays — UI copy, toasts and synthetic/session
+  messages — must exist in PT-BR and EN-US, with EN-US as the fallback.** This
+  covers product strings only; agent chat replies follow the user's language and
+  are not duplicated per locale. Code and identifiers stay English. Never
+  hardcode a displayed string in a single language; localized server messages go
+  through `src/notifications.ts`.
 - **Never read OpenCode's `opencode.db` directly.** The GUI sources app data
   (projects, sessions) from the official `ctx.client.*` APIs only.
 - **Do not write data inside the repo.** All DB writes go to `plans.db` (see
@@ -114,9 +117,16 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   `todo` in the same transaction; keep that invariant when touching the store.
 - **Moving a plan is a user action.** The GUI calls the `move` RPC to move a
   project plan into the active session; tools must not move plans.
+- **The all-plans page reuses `PlansBody`, it is not a second UI.** The page
+  (`src/gui/page.tsx`) has no routed session: it resolves the builtin server
+  with `ctx.servers`, lists `scope: "all"`, and passes `visible: () => true`.
+  `usePanel()` throws outside `Panel.render`, so it stays in the panel wrapper.
+  Session-bound actions (create, move, save hint) exist only in the panel;
+  Executar exists in both but the page targets the plan's own session and never
+  moves it.
 - **Executing a plan is a user action.** The card, the detail's
   **Executar/Pausar** button (for `active` plans) and the composer pill all call
-  the same `executionFor(session)` handle (`src/gui/execution.ts`): it owns the
+  the same `executionFor(target)` handle (`src/gui/execution.ts`): it owns the
   per-session `{ planID, pending }` store, runs `runPlan`
   (`src/gui/execute.ts`) and switches the session agent to `build` before
   sending the prompt. The pill appears only while the session is idle with an

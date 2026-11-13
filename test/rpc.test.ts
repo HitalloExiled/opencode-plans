@@ -84,6 +84,31 @@ describe("plans RPC handlers", () => {
     expect(project.some((item) => item.id === other.id)).toBe(true);
   });
 
+  test("list scope all ignores project and session, and counts the same set", async () => {
+    const here = await makePlan(undefined, "s1");
+    const store = await requireStore();
+    const elsewhere = savePlan(store.db, {
+      body: "# Elsewhere\n\n- [ ] Y\n",
+      projectID: "p2",
+      projectDirectory: "/tmp/p2",
+      sessionID: "s9",
+    });
+    if (!elsewhere.ok) throw new Error(elsewhere.error);
+
+    const all = await h.list({ status: "all", scope: "all" });
+    expect(all.some((item) => item.id === here.id)).toBe(true);
+    expect(all.some((item) => item.id === elsewhere.plan.id)).toBe(true);
+
+    const project = await h.list({ status: "all", scope: "project" });
+    expect(project.some((item) => item.id === elsewhere.plan.id)).toBe(false);
+
+    const page = await h.list({ status: "all", scope: "all", limit: 1, offset: 1 });
+    expect(page).toHaveLength(1);
+
+    const total = await h.count({ status: "all", scope: "all" });
+    expect(total).toBe(all.length);
+  });
+
   test("setStep updates progress and notifies the session", async () => {
     const plan = await makePlan();
     notifications.length = 0;

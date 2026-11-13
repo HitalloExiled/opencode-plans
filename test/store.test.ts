@@ -11,6 +11,7 @@ import { describe, expect, test } from "bun:test";
 const { DatabaseSync } = (await import("node:sqlite")) as any;
 
 import {
+  countPlans,
   deletePlan,
   deriveStatus,
   extractTitle,
@@ -272,6 +273,24 @@ describe("plan lifecycle", () => {
 
     const project = listPlans(db, { projectID: "project-1", status: "all" });
     expect(project.length).toBe(2);
+  });
+
+  test("list pages with offset and countPlans follows the same filters", () => {
+    const db = open();
+    for (const title of ["One", "Two", "Three"]) {
+      const saved = savePlan(db, { ...base, body: `# ${title}\n\n- [ ] A\n` });
+      if (!saved.ok) throw new Error(saved.error);
+    }
+
+    const first = listPlans(db, { status: "all", limit: 2, offset: 0 });
+    const second = listPlans(db, { status: "all", limit: 2, offset: 2 });
+    expect(first).toHaveLength(2);
+    expect(second).toHaveLength(1);
+    expect([...first, ...second]).toHaveLength(3);
+
+    expect(countPlans(db, { status: "all" })).toBe(3);
+    expect(countPlans(db, { sessionID: "session-1", status: "active" })).toBe(3);
+    expect(countPlans(db, { sessionID: "missing" })).toBe(0);
   });
 
   test("movePlan changes the session and keeps status/steps", () => {

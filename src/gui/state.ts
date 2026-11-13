@@ -8,7 +8,7 @@
 import { Schema } from "effect";
 
 export type StatusFilter = "active" | "done" | "all";
-export type ScopeFilter = "session" | "project";
+export type ScopeFilter = "session" | "project" | "all";
 
 export type ViewStateValue = {
   selectedID: string | null;
@@ -27,7 +27,7 @@ export const ViewState = Schema.Struct({
     Schema.Literal("done"),
     Schema.Literal("all"),
   ]),
-  scope: Schema.Union([Schema.Literal("session"), Schema.Literal("project")]),
+  scope: Schema.Union([Schema.Literal("session"), Schema.Literal("project"), Schema.Literal("all")]),
   // Kept optional for states written before the body collapse was removed.
   bodyCollapsed: Schema.optional(Schema.Boolean),
   stepsHeight: Schema.optional(Schema.Number),

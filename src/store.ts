@@ -376,33 +376,49 @@ export type ListOptions = {
   sessionID?: string | undefined;
   status?: PlanStatus | "all" | undefined;
   limit?: number | undefined;
+  /** Rows to skip; pairs with `limit` for the global page's infinite scroll. */
+  offset?: number | undefined;
 };
 
-export function listPlans(db: Db, opts: ListOptions = {}): Plan[] {
-  const where: string[] = [];
+function filterClause(opts: ListOptions): { where: string; params: unknown[] } {
+  const clauses: string[] = [];
   const params: unknown[] = [];
   if (opts.projectID) {
-    where.push("project_id = ?");
+    clauses.push("project_id = ?");
     params.push(opts.projectID);
   }
   if (opts.sessionID) {
-    where.push("session_id = ?");
+    clauses.push("session_id = ?");
     params.push(opts.sessionID);
   }
   if (opts.status && opts.status !== "all") {
-    where.push("status = ?");
+    clauses.push("status = ?");
     params.push(opts.status);
   }
+  return { where: clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "", params };
+}
+
+export function listPlans(db: Db, opts: ListOptions = {}): Plan[] {
+  const { where, params } = filterClause(opts);
   const limit = Math.max(1, Math.min(opts.limit ?? 200, 1000));
-  const sql = `SELECT * FROM plans${where.length ? ` WHERE ${where.join(" AND ")}` : ""}
-               ORDER BY updated_at DESC, rowid DESC LIMIT ?`;
-  params.push(limit);
-  const rows = db.prepare(sql).all(...params) as PlanRow[];
+  const offset = Math.max(0, opts.offset ?? 0);
+  const sql = `SELECT * FROM plans${where}
+               ORDER BY updated_at DESC, rowid DESC LIMIT ? OFFSET ?`;
+  const rows = db.prepare(sql).all(...params, limit, offset) as PlanRow[];
   const steps = stepsForPlans(
     db,
     rows.map((row) => row.id),
   );
   return rows.map((row) => ({ ...row, steps: steps.get(row.id) ?? [] }));
+}
+
+/** Total rows a `listPlans` call with the same filters would page through. */
+export function countPlans(db: Db, opts: ListOptions = {}): number {
+  const { where, params } = filterClause(opts);
+  const row = db.prepare(`SELECT COUNT(*) AS total FROM plans${where}`).get(...params) as
+    | { total: number }
+    | undefined;
+  return row?.total ?? 0;
 }
 
 export function getPlan(db: Db, id: string): Plan | undefined {

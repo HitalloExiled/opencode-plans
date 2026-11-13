@@ -16,7 +16,8 @@ import { planProgress, type Plan } from "./store.js";
 
 export const PLANS_ROUTING_RULE = [
   "Plans routing (additive; never overrides safety/correctness):",
-  "- Plan mode allows plans.save and plans.update: they write only the plans database, never repository files.",
+  "- Plan mode allows plans.save and plans.update: they write only plans.db, never repository files or a plan file under ~/.opencode/plan.",
+  "- In Plan mode, every requirement the user states belongs in the plan under construction: add steps or amend it; never treat a requirement as a side task.",
   "- When you present a final plan with no blocking question, call plans.save in the same turn; do not ask for permission.",
   "- The plans.save result already lists the step ids; do not call plans.get just to confirm.",
   '- Track progress with plans.update (stepID + stepStatus: "doing" then "done"); never rewrite the body to change status.',

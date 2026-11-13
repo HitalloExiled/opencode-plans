@@ -9,10 +9,10 @@
 
 import { createEffect, createMemo, createSignal, For, Index, onCleanup, Show } from "solid-js";
 import { usePanel, usePlugin } from "@opencode/plugin/gui";
-import type { MountedSession } from "@opencode/plugin/gui";
+import type { MountedSession, ServerRef } from "@opencode/plugin/gui";
 import { SHARED_CSS, ScrollNav, createScrollNav, EmptyState, ErrorBanner, LoadingRow, StatusChip, type ChipTone } from "opencode-shared/gui";
 import { PlansRpc } from "./contract";
-import { executionFor } from "./execution";
+import { executionFor, planTarget, sessionTarget } from "./execution";
 import type { Plan, PlanStatus, PlanStep, StepStatus } from "./contract";
 import { useT } from "./i18n";
 import { bodyWithoutSteps } from "../plan-body";
@@ -33,6 +33,15 @@ const CSS = `
   font-size: 12.5px;
 }
 .plans.is-detail { overflow: hidden; }
+.plans.is-page {
+  max-width: 1080px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+  height: calc(100vh - 190px);
+  min-height: 420px;
+  padding: 16px 20px 24px;
+}
 .plans-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .plans-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
 .plans-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -333,19 +342,76 @@ const CSS = `
 
 const STEP_STATUSES: readonly StepStatus[] = ["todo", "doing", "done"];
 const CHUNK_SIZE = 20;
+/** The store caps a single list call at 1000 rows. */
+const PAGE_SIZE = 1000;
+
+/**
+ * What a Plans surface reads and where it writes. The side panel keeps the
+ * routed session (and its directory for RPC routing); the full page has no
+ * session, lists every plan and queries the builtin server directly.
+ */
+export type PlansTarget = {
+  mode: "panel" | "page";
+  server: ServerRef;
+  /** Routed session; undefined on the page. */
+  session?: MountedSession | undefined;
+  /** Key of the persisted view state. */
+  storageKey: string;
+  /** Panel visibility for the scroll nav; the page is always on screen. */
+  visible: () => boolean;
+  /** Routed project name; empty on the page, which falls back to the directory. */
+  projectName: () => string;
+};
 
 export function PlansView(props: { session: MountedSession }) {
-  const ctx = usePlugin();
   const panel = usePanel();
+  return (
+    <PlansBody
+      target={() => ({
+        mode: "panel",
+        server: props.session.server,
+        session: props.session,
+        storageKey: `view:${props.session.server.id}:${props.session.id}`,
+        visible: () => panel.visible(),
+        projectName: () => {
+          const project = props.session.project;
+          return project?.name || (project?.worktree ? project.worktree.split("/").pop() || "" : "");
+        },
+      })}
+    />
+  );
+}
+
+export function PlansBody(props: { target: () => PlansTarget }) {
+  const ctx = usePlugin();
   const t = useT();
-  // One execution handle per session, shared with the composer pill: any entry
-  // point renders the same executing state.
-  const execution = createMemo(() => executionFor(ctx, props.session));
+  const target = () => props.target();
+  const page = () => target().mode === "page";
+  const sessionID = () => target().session?.id;
+  const client = () => target().server.client;
+  // The panel routes RPC calls by session directory; the page talks to the
+  // builtin server, whose default location applies.
+  const rpcOptions = (signal?: AbortSignal) => {
+    const directory = target().session?.directory;
+    return {
+      ...(directory ? { location: { directory } } : {}),
+      ...(signal ? { signal } : {}),
+    };
+  };
+  // One execution handle per session, shared with the composer pill and the
+  // panel: any entry point renders the same executing state. The page runs a
+  // plan in its own session, so nothing is moved.
+  const execution = (plan: Plan) => {
+    const current = target();
+    return executionFor(ctx, current.session ? sessionTarget(current.session) : planTarget(current.server, plan));
+  };
 
   // The server context has no locale; keep it in sync so /save-plan messages
-  // follow the interface language (EN-US is the fallback).
+  // follow the interface language (EN-US is the fallback). The page has no
+  // routed session, and the panel's routed session owns the stored locale.
   createEffect(() => {
-    const session = props.session;
+    const session = target().session;
+    if (!session) return;
     void session.server.client
       .rpc(PlansRpc)
       .setLocale(ctx.locale.locale(), { location: { directory: session.directory } })
@@ -353,8 +419,7 @@ export function PlansView(props: { session: MountedSession }) {
   });
 
   const viewStore = createMemo(() => {
-    const session = props.session;
-    return ctx.storage.store(`view:${session.server.id}:${session.id}`, {
+    return ctx.storage.store(target().storageKey, {
       schema: ViewState,
       initial: VIEW_INITIAL,
     });
@@ -365,15 +430,20 @@ export function PlansView(props: { session: MountedSession }) {
   const [selectedID, setSelectedID] = createSignal<string | null>(saved?.selectedID ?? null);
   const [detail, setDetail] = createSignal<Plan | null>(null);
   const [statusFilter, setStatusFilter] = createSignal<StatusFilter>(saved?.status ?? "active");
-  const [scopeFilter, setScopeFilter] = createSignal<ScopeFilter>(saved?.scope ?? "session");
+  const [scopeFilter, setScopeFilter] = createSignal<ScopeFilter>(
+    saved?.scope ?? (page() ? "all" : "session"),
+  );
   const [stepsHeight, setStepsHeight] = createSignal(saved?.stepsHeight ?? 240);
   const [visible, setVisible] = createSignal(CHUNK_SIZE);
+  /** Total rows in the DB for the current filter; the page shows it when it differs. */
+  const [total, setTotal] = createSignal<number | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
   const [hydrated, setHydrated] = createSignal(saved !== undefined);
   const [editorOpen, setEditorOpen] = createSignal(false);
   const [editorID, setEditorID] = createSignal<string | null>(null);
+  const [editorSession, setEditorSession] = createSignal<string | null>(null);
   const [editorTitle, setEditorTitle] = createSignal("");
   const [editorBody, setEditorBody] = createSignal("");
   const [editorSteps, setEditorSteps] = createSignal<string[]>([]);
@@ -395,7 +465,7 @@ export function PlansView(props: { session: MountedSession }) {
     hasMore: () => visible() < filteredPlans().length,
     loadingMore: () => false,
     loadMore: () => setVisible((value) => value + CHUNK_SIZE),
-    visible: () => panel.visible(),
+    visible: () => target().visible(),
     items: () => filteredPlans().length,
   });
   // A new query or filter starts from the top of the list.
@@ -407,8 +477,6 @@ export function PlansView(props: { session: MountedSession }) {
     nav.reset();
   });
 
-  const currentSession = () => props.session;
-
   const statusTone = (status: PlanStatus): ChipTone =>
     status === "active"
       ? "info"
@@ -418,10 +486,10 @@ export function PlansView(props: { session: MountedSession }) {
           ? "warning"
           : "neutral";
 
-  const isExecuting = (plan: Plan): boolean => execution().isExecuting(plan);
+  const isExecuting = (plan: Plan): boolean => execution(plan).isExecuting(plan);
 
   const runDisabled = (plan: Plan): boolean =>
-    saving() || (!isExecuting(plan) && (plan.steps.length === 0 || execution().busy()));
+    saving() || (!isExecuting(plan) && (plan.steps.length === 0 || execution(plan).busy()));
 
   const stepsMax = (): number => Math.min(480, Math.round(window.innerHeight * 0.6));
   const clampSteps = (value: number): number => Math.min(stepsMax(), Math.max(120, value));
@@ -456,14 +524,11 @@ export function PlansView(props: { session: MountedSession }) {
   const shortSession = (id: string): string => (id.length > 14 ? `${id.slice(0, 14)}…` : id);
 
   const canMove = (plan: Plan): boolean => {
-    const id = currentSession()?.id;
+    const id = sessionID();
     return !!id && id !== plan.sessionID;
   };
 
-  const activeProjectName = (): string => {
-    const project = currentSession()?.project;
-    return project?.name || (project?.worktree ? basename(project.worktree) : "");
-  };
+  const activeProjectName = (): string => target().projectName();
 
   const formatDate = (iso: string): string => {
     const date = new Date(iso);
@@ -501,8 +566,9 @@ export function PlansView(props: { session: MountedSession }) {
     const gen = ++loadGen;
     setError("");
 
-    const session = currentSession();
-    if (!session) {
+    const routed = sessionID();
+    // The page lists every plan and needs no routed session; the panel needs one.
+    if (!page() && !routed) {
       setPlans([]);
       setSelectedID(null);
       setDetail(null);
@@ -516,19 +582,30 @@ export function PlansView(props: { session: MountedSession }) {
     if (!silent) setLoading(true);
 
     try {
-      const rpc = session.server.client.rpc(PlansRpc);
-      const options = { location: { directory: session.directory }, signal: controller.signal };
+      const rpc = client().rpc(PlansRpc);
+      const options = rpcOptions(controller.signal);
       const list = await rpc.list(
         {
           scope: scopeFilter(),
-          sessionID: session.id,
+          sessionID: routed,
           status: statusFilter(),
-          limit: 200,
+          limit: PAGE_SIZE,
         },
         options,
       );
       if (gen !== loadGen) return;
       if (!sameJSON(plans(), list)) setPlans([...list]);
+
+      if (page()) {
+        const counted = await rpc.count(
+          { scope: scopeFilter(), sessionID: routed, status: statusFilter() },
+          options,
+        );
+        if (gen !== loadGen) return;
+        setTotal(counted);
+      } else {
+        setTotal(null);
+      }
 
       const id = selectedID();
       if (id) {
@@ -643,6 +720,7 @@ export function PlansView(props: { session: MountedSession }) {
 
   const openNewPlan = () => {
     setEditorID(null);
+    setEditorSession(sessionID() ?? null);
     setEditorTitle("");
     setEditorBody("");
     setEditorSteps([""]);
@@ -652,6 +730,7 @@ export function PlansView(props: { session: MountedSession }) {
 
   const openEditPlan = (plan: Plan) => {
     setEditorID(plan.id);
+    setEditorSession(plan.sessionID);
     setEditorTitle(plan.title);
     setEditorBody(bodyFromPlan(plan));
     setEditorSteps(plan.steps.length > 0 ? plan.steps.map((step) => step.text) : [""]);
@@ -680,16 +759,18 @@ export function PlansView(props: { session: MountedSession }) {
 
   const moveEditorStep = (index: number, delta: number) => {
     const next = [...editorSteps()];
-    const target = index + delta;
-    if (target < 0 || target >= next.length) return;
+    const destination = index + delta;
+    if (destination < 0 || destination >= next.length) return;
     const [item] = next.splice(index, 1);
-    next.splice(target, 0, item ?? "");
+    next.splice(destination, 0, item ?? "");
     setEditorSteps(next);
   };
 
   const saveEditor = async () => {
-    const session = currentSession();
-    if (!session) {
+    // The panel creates plans in its routed session; the page only edits a plan
+    // that already exists, so its own session is the owner.
+    const sid = editorSession() ?? sessionID();
+    if (!sid) {
       ctx.toast.show({ title: t("toast.noSession"), variant: "error" });
       return;
     }
@@ -712,17 +793,17 @@ export function PlansView(props: { session: MountedSession }) {
     setSaving(true);
     setEditorError("");
     try {
-      const rpc = session.server.client.rpc(PlansRpc);
+      const rpc = client().rpc(PlansRpc);
       const result = await rpc.save(
         {
           id: editorID() ?? undefined,
           title,
           body,
           steps,
-          sessionID: session.id,
+          sessionID: sid,
           locale: ctx.locale.locale(),
         },
-        { location: { directory: session.directory } },
+        rpcOptions(),
       );
       if (!result.ok) throw new Error(result.error ?? t("toast.createError"));
       if (result.plan) {
@@ -746,14 +827,14 @@ export function PlansView(props: { session: MountedSession }) {
 
   const setStepStatus = async (step: PlanStep, status: StepStatus) => {
     const id = selectedID();
-    const session = currentSession();
-    if (!id || !session) return;
+    const sid = detail()?.sessionID;
+    if (!id || !sid) return;
     setSaving(true);
     try {
-      const rpc = session.server.client.rpc(PlansRpc);
+      const rpc = client().rpc(PlansRpc);
       const result = await rpc.setStep(
-        { id, stepID: step.id, status, sessionID: session.id, locale: ctx.locale.locale() },
-        { location: { directory: session.directory } },
+        { id, stepID: step.id, status, sessionID: sid, locale: ctx.locale.locale() },
+        rpcOptions(),
       );
       if (!result.ok) throw new Error(result.error ?? t("toast.updateError"));
       if (result.plan) setDetail(result.plan);
@@ -768,7 +849,7 @@ export function PlansView(props: { session: MountedSession }) {
   const executePlan = async (plan: Plan) => {
     setSaving(true);
     try {
-      const result = await execution().execute(plan, t);
+      const result = await execution(plan).execute(plan, t);
       if (result?.moved) {
         setDetail(result.plan);
         await load(true);
@@ -781,7 +862,7 @@ export function PlansView(props: { session: MountedSession }) {
   const pausePlan = async (plan: Plan) => {
     setSaving(true);
     try {
-      await execution().pause(plan, t);
+      await execution(plan).pause(plan, t);
     } finally {
       setSaving(false);
     }
@@ -795,16 +876,21 @@ export function PlansView(props: { session: MountedSession }) {
     await executePlan(plan);
   };
 
+  /** The page opens the plan's own session; it never moves the plan. */
+  const openSession = (plan: Plan) => {
+    ctx.tabs.open({ server: target().server.id, id: plan.sessionID }, { focus: true });
+  };
+
   const changeStatus = async (status: PlanStatus) => {
     const id = selectedID();
-    const session = currentSession();
-    if (!id || !session) return;
+    const sid = detail()?.sessionID;
+    if (!id || !sid) return;
     setSaving(true);
     try {
-      const rpc = session.server.client.rpc(PlansRpc);
+      const rpc = client().rpc(PlansRpc);
       const result = await rpc.update(
-        { id, status, sessionID: session.id, locale: ctx.locale.locale() },
-        { location: { directory: session.directory } },
+        { id, status, sessionID: sid, locale: ctx.locale.locale() },
+        rpcOptions(),
       );
       if (!result.ok) throw new Error(result.error ?? t("toast.updateError"));
       if (result.plan) setDetail(result.plan);
@@ -819,8 +905,8 @@ export function PlansView(props: { session: MountedSession }) {
 
   const removeCurrent = async () => {
     const id = selectedID();
-    const session = currentSession();
-    if (!id || !session) return;
+    const sid = detail()?.sessionID;
+    if (!id || !sid) return;
     const ok = await ctx.dialogs.confirm({
       title: t("confirm.remove.title"),
       description: t("confirm.remove.desc"),
@@ -830,11 +916,8 @@ export function PlansView(props: { session: MountedSession }) {
     if (!ok) return;
     setSaving(true);
     try {
-      const rpc = session.server.client.rpc(PlansRpc);
-      const result = await rpc.remove(
-        { id, sessionID: session.id, locale: ctx.locale.locale() },
-        { location: { directory: session.directory } },
-      );
+      const rpc = client().rpc(PlansRpc);
+      const result = await rpc.remove({ id, sessionID: sid, locale: ctx.locale.locale() }, rpcOptions());
       if (!result.ok) throw new Error(result.error ?? t("toast.removeError"));
       setSelectedID(null);
       setDetail(null);
@@ -849,14 +932,14 @@ export function PlansView(props: { session: MountedSession }) {
 
   const moveCurrent = async () => {
     const id = selectedID();
-    const session = currentSession();
-    if (!id || !session) return;
+    const sid = sessionID();
+    if (!id || !sid) return;
     setSaving(true);
     try {
-      const rpc = session.server.client.rpc(PlansRpc);
+      const rpc = client().rpc(PlansRpc);
       const result = await rpc.move(
-        { id, sessionID: session.id, locale: ctx.locale.locale() },
-        { location: { directory: session.directory } },
+        { id, sessionID: sid, locale: ctx.locale.locale() },
+        rpcOptions(),
       );
       if (!result.ok) throw new Error(result.error ?? t("toast.moveError"));
       if (result.plan) setDetail(result.plan);
@@ -870,8 +953,8 @@ export function PlansView(props: { session: MountedSession }) {
   };
 
   const saveLast = async () => {
-    const session = currentSession();
-    if (!session) {
+    const sid = sessionID();
+    if (!sid) {
       ctx.toast.show({ title: t("toast.noSession"), variant: "error" });
       return;
     }
@@ -879,8 +962,8 @@ export function PlansView(props: { session: MountedSession }) {
     try {
       // This is a nudge, not a capture: the agent must call plans.save with
       // its own context, so a regular message is never persisted as a plan.
-      await session.server.client.session.prompt({
-        sessionID: session.id,
+      await client().session.prompt({
+        sessionID: sid,
         text: t("saveLast.prompt"),
       });
       ctx.toast.show({ title: t("toast.saveHint"), variant: "success" });
@@ -892,7 +975,7 @@ export function PlansView(props: { session: MountedSession }) {
   };
 
   return (
-    <div class="plans" classList={{ "is-detail": Boolean(selectedID()) }}>
+    <div class="plans" classList={{ "is-detail": Boolean(selectedID()), "is-page": page() }}>
       <style>{CSS}</style>
       <style>{SHARED_CSS}</style>
 
@@ -900,25 +983,30 @@ export function PlansView(props: { session: MountedSession }) {
         <div class="plans-head">
           <div class="plans-title">
             <ctx.ui.Icon name="checklist" size="small" />
-            <h2 class="plans-title-text">{t("title")}</h2>
-            <span class="plans-count">{filteredPlans().length}</span>
+            <h2 class="plans-title-text">{page() ? t("page.title") : t("title")}</h2>
+            <span class="plans-count">
+              {filteredPlans().length}
+              {total() !== null && total() !== filteredPlans().length ? ` / ${total()}` : ""}
+            </span>
           </div>
           <div class="plans-actions">
-            <ctx.ui.Button
-              size="small"
-              variant="contrast"
-              icon="plus"
-              onClick={openNewPlan}
-            >
-              {t("newPlan")}
-            </ctx.ui.Button>
-            <ctx.ui.Tooltip value={t("saveLast.tooltip")}>
-              <ctx.ui.IconButton
-                icon="download"
-                label={t("saveLast")}
-                onClick={() => void saveLast()}
-              />
-            </ctx.ui.Tooltip>
+            <Show when={!page()}>
+              <ctx.ui.Button
+                size="small"
+                variant="contrast"
+                icon="plus"
+                onClick={openNewPlan}
+              >
+                {t("newPlan")}
+              </ctx.ui.Button>
+              <ctx.ui.Tooltip value={t("saveLast.tooltip")}>
+                <ctx.ui.IconButton
+                  icon="download"
+                  label={t("saveLast")}
+                  onClick={() => void saveLast()}
+                />
+              </ctx.ui.Tooltip>
+            </Show>
             <ctx.ui.IconButton
               icon="outline-rotate-clockwise"
               label={t("refresh")}
@@ -941,14 +1029,16 @@ export function PlansView(props: { session: MountedSession }) {
             }}
           />
           <div class="plans-toggles" role="group" aria-label={t("filters.scope")}>
-            <button
-              type="button"
-              class="plans-toggle"
-              classList={{ "is-active": scopeFilter() === "session" }}
-              onClick={() => setScopeFilter("session")}
-            >
-              {t("scope.session")}
-            </button>
+            <Show when={!page()}>
+              <button
+                type="button"
+                class="plans-toggle"
+                classList={{ "is-active": scopeFilter() === "session" }}
+                onClick={() => setScopeFilter("session")}
+              >
+                {t("scope.session")}
+              </button>
+            </Show>
             <button
               type="button"
               class="plans-toggle"
@@ -957,6 +1047,16 @@ export function PlansView(props: { session: MountedSession }) {
             >
               {t("scope.project")}
             </button>
+            <Show when={page()}>
+              <button
+                type="button"
+                class="plans-toggle"
+                classList={{ "is-active": scopeFilter() === "all" }}
+                onClick={() => setScopeFilter("all")}
+              >
+                {t("scope.all")}
+              </button>
+            </Show>
           </div>
           <div class="plans-toggles" role="group" aria-label={t("filters.label")}>
             <button
@@ -1032,7 +1132,7 @@ export function PlansView(props: { session: MountedSession }) {
                   <span class="plan-updated">{formatDate(plan.updatedAt)}</span>
                 </div>
                 <div class="plan-card-title">{plan.title}</div>
-                <Show when={scopeFilter() === "project"}>
+                <Show when={scopeFilter() !== "session"}>
                   <div class="plan-card-session">
                     {t("session")}: {shortSession(plan.sessionID)}
                   </div>
@@ -1124,6 +1224,16 @@ export function PlansView(props: { session: MountedSession }) {
               <div>
                 {t("session")}: {plan().sessionID}
               </div>
+              <Show when={page()}>
+                <ctx.ui.Button
+                  size="small"
+                  variant="ghost"
+                  icon="arrow-up-right"
+                  onClick={() => openSession(plan())}
+                >
+                  {t("openSession")}
+                </ctx.ui.Button>
+              </Show>
             </div>
 
             <div class="plan-progress-row">

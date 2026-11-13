@@ -16,7 +16,7 @@ import { Schema } from "effect";
 
 export type PlanStatus = "active" | "done" | "archived" | "superseded";
 export type StepStatus = "todo" | "doing" | "done";
-export type PlanScope = "session" | "project";
+export type PlanScope = "session" | "project" | "all";
 
 export type PlanStep = {
   id: string;
@@ -51,6 +51,8 @@ export type ListOptions = {
   sessionID?: string | undefined;
   status?: PlanStatus | "all" | undefined;
   limit?: number | undefined;
+  /** Rows to skip, for the global page's infinite scroll. */
+  offset?: number | undefined;
 };
 
 export type UpdateInput = {
@@ -103,7 +105,11 @@ export const planStatusSchema = Schema.Union([
   Schema.Literal("superseded"),
 ]);
 
-export const planScopeSchema = Schema.Union([Schema.Literal("session"), Schema.Literal("project")]);
+export const planScopeSchema = Schema.Union([
+  Schema.Literal("session"),
+  Schema.Literal("project"),
+  Schema.Literal("all"),
+]);
 
 export const stepStatusSchema = Schema.Union([
   Schema.Literal("todo"),
@@ -144,6 +150,13 @@ export const listOptionsSchema = Schema.Struct({
   sessionID: optString,
   status: Schema.optional(Schema.Union([planStatusSchema, Schema.Literal("all")])),
   limit: optNum,
+  offset: optNum,
+});
+
+export const countOptionsSchema = Schema.Struct({
+  scope: Schema.optional(planScopeSchema),
+  sessionID: optString,
+  status: Schema.optional(Schema.Union([planStatusSchema, Schema.Literal("all")])),
 });
 
 export const updateInputSchema = Schema.Struct({
@@ -220,6 +233,10 @@ export const PlansRpc = Rpc.define({
     list: {
       input: Schema.toStandardSchemaV1(listOptionsSchema),
       output: Schema.toStandardSchemaV1(Schema.Array(planSchema)),
+    },
+    count: {
+      input: Schema.toStandardSchemaV1(countOptionsSchema),
+      output: Schema.toStandardSchemaV1(Schema.Number),
     },
     get: {
       input: Schema.toStandardSchemaV1(Schema.String),

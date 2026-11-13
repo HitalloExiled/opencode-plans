@@ -15,7 +15,7 @@
 import { createSignal, onCleanup } from "solid-js";
 import type { ComposerPillView, Context, MountedSession } from "@opencode/plugin/gui";
 import { PlansRpc, type Plan } from "./contract";
-import { executionFor } from "./execution";
+import { executionFor, sessionTarget } from "./execution";
 import { tStatic } from "./i18n";
 import { pickRunnablePlan } from "../plan-select";
 
@@ -117,7 +117,7 @@ export function createPlanPill(ctx: Context): PlanPill {
       // nothing to run, and the next idle transition refetches in case the
       // plan changed during the turn. The execution handle owns that state, so
       // a run started from the panel behaves the same.
-      if (executionFor(ctx, session).busy()) {
+      if (executionFor(ctx, sessionTarget(session)).busy()) {
         dirty.add(key);
         return undefined;
       }
@@ -136,7 +136,7 @@ export function createPlanPill(ctx: Context): PlanPill {
         tone: "success",
         label,
         title: translate("execute.pillTitle", plan.title),
-        run: () => void executionFor(ctx, session).execute(plan, translate),
+        run: () => void executionFor(ctx, sessionTarget(session)).execute(plan, translate),
       };
     },
   };

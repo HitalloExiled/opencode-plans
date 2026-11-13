@@ -1,18 +1,19 @@
 /**
- * The execution action shared by the Plans panel and the composer pill.
+ * The execution action shared by the Plans panel, the composer pill and the
+ * all-plans page.
  *
  * One handle per session owns the state and the action: clicking Execute in the
- * panel or running the pill lands here, records `{ planID, pending }` in the
- * session's store and calls `runPlan`. Both entry points then render the same
- * executing state, so the panel shows Pausar for a run started from the pill
- * (and the pill hides for a run started from the panel).
+ * panel, running the pill or executing from the page lands here, records
+ * `{ planID, pending }` in the session's store and calls `runPlan`. Every entry
+ * point then renders the same executing state, so the panel shows Pausar for a
+ * run started elsewhere.
  */
 
 import { createEffect, createRoot, createSignal, onCleanup } from "solid-js";
 import { Schema } from "effect";
-import type { Context, MountedSession, Persisted } from "@opencode/plugin/gui";
+import type { Context, MountedSession, Persisted, ServerRef } from "@opencode/plugin/gui";
 import type { Plan } from "./contract";
-import { runPlan, type RunPlanResult, type Translate } from "./execute";
+import { runPlan, type ExecutionTarget, type RunPlanResult, type Translate } from "./execute";
 import {
   EXECUTION_INITIAL,
   executionBusy,
@@ -42,10 +43,32 @@ export type ExecutionHandle = {
 const handles = new Map<string, ExecutionHandle>();
 const stores = new Map<string, Persisted<ExecutionState>>();
 
-const sessionKey = (session: MountedSession): string => `${session.server.id}\u0000${session.id}`;
+const sessionKey = (target: ExecutionTarget): string =>
+  `${target.serverID}\u0000${target.sessionID}`;
 
-function storeFor(ctx: Context, session: MountedSession): Persisted<ExecutionState> {
-  const key = `execution:${session.server.id}:${session.id}`;
+/** The routed session of a side panel or the pill. */
+export function sessionTarget(session: MountedSession): ExecutionTarget {
+  return {
+    serverID: session.server.id,
+    sessionID: session.id,
+    client: session.server.client,
+    status: () => session.server.data.session.status(session.id),
+    directory: session.directory,
+  };
+}
+
+/** A plan's own session, resolved from a server: the page runs plans in place. */
+export function planTarget(server: ServerRef, plan: Plan): ExecutionTarget {
+  return {
+    serverID: server.id,
+    sessionID: plan.sessionID,
+    client: server.client,
+    status: () => server.data.session.status(plan.sessionID),
+  };
+}
+
+function storeFor(ctx: Context, target: ExecutionTarget): Persisted<ExecutionState> {
+  const key = `execution:${target.serverID}:${target.sessionID}`;
   let store = stores.get(key);
   if (!store) {
     store = ctx.storage.store(key, { schema: ExecutionStore, initial: EXECUTION_INITIAL });
@@ -54,17 +77,16 @@ function storeFor(ctx: Context, session: MountedSession): Persisted<ExecutionSta
   return store;
 }
 
-export function executionFor(ctx: Context, session: MountedSession): ExecutionHandle {
-  const key = sessionKey(session);
+export function executionFor(ctx: Context, target: ExecutionTarget): ExecutionHandle {
+  const key = sessionKey(target);
   const cached = handles.get(key);
   if (cached) return cached;
 
   const handle = createRoot((dispose) => {
-    const store = storeFor(ctx, session);
+    const store = storeFor(ctx, target);
     const [revision, setRevision] = createSignal(0);
     const value = (): ExecutionState => store.value ?? EXECUTION_INITIAL;
-    const running = (): boolean =>
-      session.server.data.session.status(session.id) === "running";
+    const running = (): boolean => target.status() === "running";
     const notify = (title: string, variant: "success" | "error", cause?: unknown): void => {
       ctx.toast.show({
         title,
@@ -107,7 +129,7 @@ export function executionFor(ctx: Context, session: MountedSession): ExecutionHa
         }
         store.set({ planID: plan.id, pending: true, startedAt: Date.now() });
         try {
-          const run = await runPlan({ ctx, session, plan, t });
+          const run = await runPlan({ ctx, target, plan, t });
           notify(t("toast.executing"), "success");
           return run;
         } catch (error) {
@@ -118,13 +140,13 @@ export function executionFor(ctx: Context, session: MountedSession): ExecutionHa
       },
       pause: async (plan, t) => {
         try {
-          const interrupted = await session.server.client.session.interrupt({
-            sessionID: session.id,
+          const interrupted = await target.client.session.interrupt({
+            sessionID: target.sessionID,
           });
           // Tell the next turn why the run paused, not just that the mode changed.
           try {
-            await session.server.client.session.synthetic({
-              sessionID: session.id,
+            await target.client.session.synthetic({
+              sessionID: target.sessionID,
               text: t("pause.synthetic", plan.title, plan.id),
               description: t("pause.action", plan.title),
               resume: false,
@@ -133,8 +155,8 @@ export function executionFor(ctx: Context, session: MountedSession): ExecutionHa
           } catch (error) {
             console.warn("[plans] could not record the pause message", error);
           }
-          await session.server.client.session.switchAgent({
-            sessionID: session.id,
+          await target.client.session.switchAgent({
+            sessionID: target.sessionID,
             agent: "plan",
           });
           if (!interrupted.interrupted) store.set(EXECUTION_INITIAL);
