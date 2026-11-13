@@ -10,12 +10,13 @@
 import { createEffect, createMemo, createSignal, For, Index, onCleanup, Show } from "solid-js";
 import { usePanel, usePlugin } from "@opencode/plugin/gui";
 import type { MountedSession, ServerRef } from "@opencode/plugin/gui";
-import { SHARED_CSS, ScrollNav, createScrollNav, EmptyState, ErrorBanner, LoadingRow, StatusChip, type ChipTone } from "opencode-shared/gui";
+import { SHARED_CSS, MultiSelect, ScrollNav, createScrollNav, EmptyState, ErrorBanner, LoadingRow, StatusChip, type ChipTone } from "opencode-shared/gui";
 import { PlansRpc } from "./contract";
 import { executionFor, planTarget, sessionTarget } from "./execution";
 import type { Plan, PlanStatus, PlanStep, StepStatus } from "./contract";
 import { useT } from "./i18n";
 import { bodyWithoutSteps } from "../plan-body";
+import { groupPlans, projectLabel as projectSectionName, type PlanGroup } from "./group";
 import { VIEW_INITIAL, ViewState } from "./state";
 import type { ScopeFilter, StatusFilter } from "./state";
 
@@ -65,6 +66,16 @@ const CSS = `
   font-weight: 600;
 }
 .plans-toggle:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
+.plans-filter-cell { min-width: 0; }
+.plans-group-head {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--v2-text-text-muted);
+  padding: 2px 2px 0;
+}
+.plans-group-head:not(:first-child) { margin-top: 4px; }
 .plan-card {
   display: flex;
   flex-direction: column;
@@ -428,6 +439,8 @@ export function PlansBody(props: { target: () => PlansTarget }) {
   const [selectedID, setSelectedID] = createSignal<string | null>(saved?.selectedID ?? null);
   const [detail, setDetail] = createSignal<Plan | null>(null);
   const [statusFilter, setStatusFilter] = createSignal<StatusFilter>(saved?.status ?? "active");
+  const [projectFilter, setProjectFilter] = createSignal<string[]>([]);
+  const [openFilter, setOpenFilter] = createSignal<string | null>(null);
   const [scopeFilter, setScopeFilter] = createSignal<ScopeFilter>(
     detached() ? "all" : (saved?.scope ?? "session"),
   );
@@ -451,16 +464,42 @@ export function PlansBody(props: { target: () => PlansTarget }) {
 
   const selectedPlan = createMemo(() => (selectedID() ? detail() : null));
 
+  // Projects present in the loaded plans: the filter options and the section
+  // headers.
+  const projectOptions = createMemo(() =>
+    [...new Set(plans().map((plan) => plan.projectDirectory).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b),
+    ),
+  );
+  const projectSectionLabel = (project: string): string =>
+    projectSectionName(project, projectOptions());
+
   const filteredPlans = createMemo(() => {
+    const selected = projectFilter();
+    let out = plans();
+    if (selected.length > 0) out = out.filter((plan) => selected.includes(plan.projectDirectory));
     const q = query().trim().toLowerCase();
-    if (!q) return plans();
-    return plans().filter((plan) => {
+    if (!q) return out;
+    return out.filter((plan) => {
       const haystack = [plan.title, plan.body, ...plan.steps.map((step) => step.text)].join("\n").toLowerCase();
       return haystack.includes(q);
     });
   });
 
-  const visiblePlans = createMemo(() => filteredPlans().slice(0, visible()));
+  const groups = createMemo(() => groupPlans(filteredPlans(), projectSectionLabel));
+  // Pagination across sections: take plans in order until the page is full.
+  const visibleGroups = createMemo(() => {
+    const out: PlanGroup[] = [];
+    let left = visible();
+    for (const group of groups()) {
+      if (left <= 0) break;
+      const items = group.plans.slice(0, left);
+      if (items.length > 0) out.push({ ...group, plans: items });
+      left -= items.length;
+    }
+    return out;
+  });
+
   const nav = createScrollNav({
     hasMore: () => visible() < filteredPlans().length,
     loadingMore: () => false,
@@ -473,6 +512,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
     query();
     statusFilter();
     scope();
+    projectFilter();
     setVisible(CHUNK_SIZE);
     nav.reset();
   });
@@ -511,6 +551,25 @@ export function PlansBody(props: { target: () => PlansTarget }) {
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   };
+
+  // One combo at a time: a mousedown outside any `.oc-ms` (or Escape) closes it.
+  createEffect(() => {
+    if (!openFilter()) return;
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (target.closest(".oc-ms")) return;
+      setOpenFilter(null);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenFilter(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    onCleanup(() => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    });
+  });
 
   const onSplitterKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
@@ -1030,6 +1089,22 @@ export function PlansBody(props: { target: () => PlansTarget }) {
               setVisible(CHUNK_SIZE);
             }}
           />
+          <Show when={projectOptions().length > 1}>
+            <MultiSelect
+              label={t("filter.projects.label")}
+              placeholder={t("filter.projects.placeholder")}
+              options={projectOptions()}
+              display={projectSectionLabel}
+              optionTitle={(opt) => opt}
+              value={projectFilter}
+              onValueChange={setProjectFilter}
+              openFilter={openFilter}
+              which="project"
+              onOpenChange={() => setOpenFilter((v) => (v === "project" ? null : "project"))}
+              t={t}
+              class="plans-filter-cell"
+            />
+          </Show>
           <Show when={!detached()}>
             <div class="plans-toggles" role="group" aria-label={t("filters.scope")}>
               <button
@@ -1104,8 +1179,12 @@ export function PlansBody(props: { target: () => PlansTarget }) {
               hint={query().trim() ? t("empty.searchHint") : t("empty.hint")}
             />
           </Show>
-          <For each={visiblePlans()}>
-            {(plan) => (
+          <For each={visibleGroups()}>
+            {(group) => (
+              <>
+                <div class="plans-group-head">{projectSectionLabel(group.project)}</div>
+                <For each={group.plans}>
+                  {(plan) => (
               <div
                 class="plan-card"
                 role="button"
@@ -1163,8 +1242,11 @@ export function PlansBody(props: { target: () => PlansTarget }) {
                     <div class="plan-progress-doing" style={{ width: `${doingPercent(plan)}%` }} />
                   </div>
                   <span class="plan-progress-label">{progressLabel(plan)}</span>
-                </div>
-              </div>
+                    </div>
+                  </div>
+                  )}
+                </For>
+              </>
             )}
           </For>
             </div>
