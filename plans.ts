@@ -34,6 +34,13 @@ import { emitPlanChange } from "./src/plan-events.js";
 type ToolResult = { content: string; metadata?: Record<string, unknown> };
 type Ctx = Plugin.Context;
 
+/** Catalog group label. Code Mode truncates this at ~119 characters. */
+export const PLANS_NAMESPACE = {
+  name: "plans",
+  description:
+    "Persisted plans: save, list, read and track steps in a dedicated plans.db.",
+} as const;
+
 function fail(error: string): ToolResult {
   return { content: `❌ ${error}`, metadata: { rejected: true } };
 }
@@ -52,33 +59,31 @@ const saveInput = z.object({
   body: z
     .string()
     .min(1)
-    .describe(
-      "Full plan markdown as presented. Steps go in one flat '## Passos' checklist; the plugin extracts them and stores the rest without that section.",
-    ),
+    .describe("Full markdown; steps in '## Passos'."),
   title: z
     .string()
     .optional()
-    .describe("Short title; derived from the first heading when omitted."),
+    .describe("Short title; defaults to first heading."),
   id: z
     .string()
     .optional()
-    .describe("Existing plan id to update; omit to create a new plan."),
+    .describe("Id to replace; omit to create."),
   steps: z
     .array(z.string())
     .optional()
-    .describe("Explicit steps; derived from the '## Passos' checklist when omitted."),
+    .describe("Explicit steps; else parsed from body."),
 });
 
 const listInput = z.object({
   scope: z
     .enum(["session", "project"])
     .default("session")
-    .describe("'session' (default): this session only; 'project': every session in the project."),
+    .describe("'session' (default) or 'project'."),
   status: z
     .union([STATUS, z.literal("all")])
     .optional()
     .describe("Filter by status; defaults to active."),
-  limit: z.number().int().min(1).max(200).optional().describe("Max plans; defaults to 50."),
+  limit: z.number().int().min(1).max(200).optional().describe("Max plans (default 50)."),
 });
 
 // Accept both the documented object (`{ id, scope? }`) and a bare plan id.
@@ -91,7 +96,7 @@ const getInput = z.preprocess(
     scope: z
       .enum(["session", "project"])
       .default("session")
-      .describe("'session' (default) or 'project' to read another session's plan."),
+      .describe("'session' (default) or 'project'."),
   }),
 );
 
@@ -100,27 +105,23 @@ const updateInput = z.object({
   stepID: z
     .string()
     .optional()
-    .describe("Step id from plans.get (s1, s2…); use with stepStatus. Preferred over position."),
+    .describe("Step id (s1…); fallback is position."),
   position: z
     .number()
     .int()
     .min(0)
     .optional()
-    .describe("Zero-based step index; fallback when the step id is unknown."),
+    .describe("Zero-based step index; fallback to stepID."),
   stepStatus: z
     .enum(["todo", "doing", "done"])
     .optional()
-    .describe(
-      "New status; pair with stepID. 'doing' when starting, 'done' when finished. Never send body for status.",
-    ),
+    .describe("New status; pair with stepID."),
   status: STATUS.optional().describe("New plan status."),
   title: z.string().optional().describe("New title (rarely needed)."),
   body: z
     .string()
     .optional()
-    .describe(
-      "Advanced: replaces text/structure and re-creates steps (ids and statuses reset). Never use it for status; use stepID + stepStatus.",
-    ),
+    .describe("Rewrites text/structure; not for status."),
 });
 
 const doctorInput = z.object({});
@@ -129,7 +130,7 @@ export function saveTool(ctx: Ctx) {
   return {
     name: "save",
     description:
-      "Save the plan you just presented, now. Plan mode allows it: writes only plans.db, never repository files. Don't ask permission or wait for the user; an optional/recommended choice does not block the save — list it as an '(optional, recommended)' step. Creates a new plan by default; pass id only to replace its text/structure (steps and ids reset) or to save a revision. Use plans.update for step status.",
+      "Save the plan now: Plan mode allows it (writes plans.db, not repo files). Do not wait for permission.",
     input: saveInput,
     async execute(input: z.infer<typeof saveInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -182,7 +183,7 @@ export function listTool(ctx: Ctx) {
   return {
     name: "list",
     description:
-      "List persisted plans with status and step progress. Defaults to the current session; scope='project' includes every session. Use plans.get for the full text.",
+      "List plans with status and step progress; this session by default, project with scope.",
     input: listInput,
     async execute(input: z.infer<typeof listInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -231,7 +232,7 @@ export function getTool(ctx: Ctx) {
   return {
     name: "get",
     description:
-      "Read one plan in full: metadata, checklist with live statuses and the original Markdown. Call plans.get({ id }); a bare id is also accepted. scope defaults to 'session'; use 'project' for another session's plan.",
+      "Read one plan in full: metadata, live step statuses, original markdown. Bare id accepted.",
     input: getInput,
     async execute(input: z.infer<typeof getInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -256,7 +257,7 @@ export function updateTool(ctx: Ctx) {
   return {
     name: "update",
     description:
-      "Mark a step (stepID + stepStatus) or set the plan status; it never edits text or structure (use plans.save with the same id for that). 'doing' before starting, 'done' when finished; one 'doing' per plan. stepID comes from plans.get (s1, s2…); position is only a fallback. Never send body for status.",
+      "Mark a step (stepID + stepStatus) or set plan status. Never edits text; use plans.save.",
     input: updateInput,
     async execute(input: z.infer<typeof updateInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -365,8 +366,8 @@ export function doctorTool(ctx: Ctx) {
 export function deleteTool(ctx: Ctx) {
   return {
     name: "delete",
-    description: "Permanently delete a persisted plan and its steps. Prefer plans.update with status='archived' unless the user asked to delete it.",
-    input: z.object({ id: z.string().min(1) }),
+    description: "Permanently delete a plan. Prefer status=archived unless the user asked to delete.",
+    input: z.object({ id: z.string().min(1).describe("Plan id.") }),
     async execute(input: { id: string }, toolCtx: ToolContext): Promise<ToolResult> {
       try {
         const store = await requireStore();

@@ -66,9 +66,10 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   plan titles) goes to the tail of the last user message, never to `system`.
   There is no post-turn nudge.
 - **Tool descriptions are truncated by the Code Mode catalog at ~119
-  characters.** Put the load-bearing sentence in the first ~110; the rest never
-  reaches the model. `test/inject.test.ts` enforces that budget for
-  `plans.save` (Plan-mode permission) and `plans.update` (call shape).
+  characters.** Keep every tool and namespace description ≤110 with the
+  load-bearing sentence first; parameter descriptions stay ≤6 words.
+  `test/inject.test.ts` enforces all three (`plans.save` keeps the Plan-mode
+  permission, `plans.update` the call shape).
 - **The panel owns plan creation and editing.** The editor calls
   `PlansRpc.save` (create/update) with title, context and steps; the body is
   recomposed with `## Passos` and existing statuses are preserved by step text.

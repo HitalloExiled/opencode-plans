@@ -21,7 +21,7 @@ import {
   renderPlanContext,
   type InjectMessage,
 } from "./src/inject.js";
-import { deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
+import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
 import { onPlanChange } from "./src/plan-events.js";
@@ -62,11 +62,7 @@ export async function registerTools(ctx: Ctx) {
     // editor.namespace() only labels the catalog group; the per-tool
     // options.namespace is what actually prefixes the qualified name
     // (tools.plans.*) in Code Mode.
-    editor.namespace({
-      name: "plans",
-      description:
-        "Persisted plans: save a final plan, list or read the active ones, and track steps with plans.update. Backed by a dedicated SQLite plans.db.",
-    });
+    editor.namespace(PLANS_NAMESPACE);
     // Add each tool separately so TypeScript keeps its input schema.
     // `pinned` keeps the essential tools visible in the Code Mode catalog even
     // when the per-namespace budget would otherwise drop their signatures.

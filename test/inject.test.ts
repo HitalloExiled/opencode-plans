@@ -13,7 +13,15 @@ import {
   type InjectMessage,
 } from "../src/inject";
 import type { Plan, StepRow, StepStatus } from "../src/store";
-import { saveTool, updateTool } from "../plans";
+import {
+  PLANS_NAMESPACE,
+  deleteTool,
+  doctorTool,
+  getTool,
+  listTool,
+  saveTool,
+  updateTool,
+} from "../plans";
 
 const user = (text: string): InjectMessage => ({ role: "user", content: [{ type: "text", text }] });
 const assistant = (text: string): InjectMessage => ({
@@ -186,5 +194,42 @@ describe("catalog budget", () => {
   test("plans.update shows the call shape inside the budget", () => {
     const visible = updateTool({} as never).description.slice(0, BUDGET);
     expect(visible).toContain("stepID + stepStatus");
+  });
+
+  const allTools = () => [
+    saveTool({} as never),
+    listTool({} as never),
+    getTool({} as never),
+    updateTool({} as never),
+    deleteTool({} as never),
+    doctorTool({} as never),
+  ];
+
+  function shapeOf(input: unknown): Record<string, { description?: string }> {
+    const schema = input as {
+      shape?: Record<string, { description?: string }>;
+      _def?: { schema?: { shape?: Record<string, { description?: string }> } };
+    };
+    return schema.shape ?? schema._def?.schema?.shape ?? {};
+  }
+
+  test("every tool and the namespace fit the budget", () => {
+    expect(PLANS_NAMESPACE.description.length).toBeLessThanOrEqual(BUDGET);
+    for (const tool of allTools()) {
+      expect(tool.description.length, tool.name).toBeLessThanOrEqual(BUDGET);
+    }
+  });
+
+  test("keeps every parameter description short enough for the catalog", () => {
+    for (const tool of allTools()) {
+      for (const [name, property] of Object.entries(shapeOf(tool.input))) {
+        const description = property.description ?? "";
+        expect(description.length, `${tool.name}.${name}`).toBeGreaterThan(0);
+        expect(
+          description.split(/\s+/).filter(Boolean).length,
+          `${tool.name}.${name}`,
+        ).toBeLessThanOrEqual(6);
+      }
+    }
   });
 });
