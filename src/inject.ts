@@ -45,23 +45,36 @@ export function hasCompaction(messages: readonly InjectMessage[]): boolean {
   return messages.some((message) => message.content.some((part) => part.type === "compaction"));
 }
 
+/**
+ * Only a part that OPENS with the tag is an injected block. A compaction
+ * summary can quote the tag mid-text; treating that as the block would make
+ * the injection refuse itself for the rest of the session.
+ */
 export function hasPlanBlock(messages: readonly InjectMessage[]): boolean {
   return messages.some((message) =>
-    message.content.some((part) => part.type === "text" && (part.text ?? "").includes(PLANS_CONTEXT_OPEN)),
+    message.content.some((part) => part.type === "text" && (part.text ?? "").trimStart().startsWith(PLANS_CONTEXT_OPEN)),
   );
 }
 
 /**
- * Appends the block to the tail of the current turn. Only a user message can
- * take it: within a tool loop the last message is an assistant/tool one, and
- * rewriting those would either fake tool output or break role alternation.
+ * Appends the block to the tail of the request. A user message takes the part
+ * inline; after a steer compaction the turn resumes on a tool step, so the
+ * block rides a new user message instead of rewriting tool output or breaking
+ * role alternation.
  */
 export function appendTailBlock(messages: InjectMessage[], text: string): boolean {
   const last = messages.at(-1);
-  if (!last || last.role !== "user") return false;
+  if (!last) return false;
   if (hasPlanBlock(messages)) return false;
-  last.content.push({ type: "text", text });
-  return true;
+  if (last.role === "user") {
+    last.content.push({ type: "text", text });
+    return true;
+  }
+  if (last.role === "tool") {
+    messages.push({ role: "user", content: [{ type: "text", text }] });
+    return true;
+  }
+  return false;
 }
 
 function clip(text: string, max: number): string {

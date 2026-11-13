@@ -42,6 +42,9 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Sessions compacted since their last injected plan block (one-shot per compaction). */
+const compactedSessions = new Set<string>();
+
 /**
  * The server context has no locale of its own; the GUI writes the current
  * interface locale to storage, and anything unknown falls back to EN-US.
@@ -147,7 +150,17 @@ async function onContext(ctx: Ctx, event: SessionContext) {
   if (String(event.agent) === "plan") return;
   try {
     const messages = event.messages as InjectMessage[];
-    if (!hasCompaction(messages)) return;
+    const last = messages.at(-1);
+    const structural = hasCompaction(messages);
+    const flagged = compactedSessions.has(String(event.sessionID));
+    // The compaction hook fires for the summarization request itself; that
+    // request has no conversation tail, and injecting there would put the plan
+    // into the summary. Keep the flag for the request that resumes the session.
+    if (!structural && !flagged) return;
+    if (flagged && (last?.role !== "user" && last?.role !== "tool")) return;
+    // One-shot per compaction: consume the flag on the request that resumes the
+    // session, even if there is no active plan to inject right now.
+    if (flagged) compactedSessions.delete(String(event.sessionID));
 
     // Subagents work on a slice of the parent's task; keep their context lean.
     const session = await ctx.session.get({ sessionID: event.sessionID });
@@ -164,6 +177,7 @@ async function onContext(ctx: Ctx, event: SessionContext) {
     if (plans.length === 0) return;
 
     const sessionPlan = plans.find((plan) => plan.session_id === sessionID) ?? plans[0];
+    if (!sessionPlan) return;
     const text = renderPlanContext(sessionPlan);
     if (text) appendTailBlock(messages, text);
   } catch (error) {
@@ -185,6 +199,9 @@ export default Plugin.define({
     const registrations = await Promise.all([
       registerTools(ctx),
       registerCommand(ctx),
+      ctx.session.hook("compaction", (event) => {
+        compactedSessions.add(String(event.sessionID));
+      }),
       ctx.session.hook("context", (event) => onContext(ctx, event)),
     ]);
     registrations.push(rpcRegistration);

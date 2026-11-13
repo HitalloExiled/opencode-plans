@@ -91,9 +91,15 @@ describe("tail block", () => {
     expect(messages[2]!.content).toHaveLength(2);
   });
 
-  test("refuses a turn that already moved past the user message", () => {
+  test("appends a user message when the turn resumes on a tool step", () => {
+    const messages = [user("a"), toolResult("r")];
+    expect(appendTailBlock(messages, BLOCK)).toBe(true);
+    expect(messages).toHaveLength(3);
+    expect(messages[2]).toEqual({ role: "user", content: [{ type: "text", text: BLOCK }] });
+  });
+
+  test("refuses a turn that ends on an assistant message", () => {
     expect(appendTailBlock([user("a"), assistant("b")], BLOCK)).toBe(false);
-    expect(appendTailBlock([user("a"), toolResult("r")], BLOCK)).toBe(false);
     expect(appendTailBlock([], BLOCK)).toBe(false);
   });
 
@@ -109,6 +115,14 @@ describe("tail block", () => {
     expect(hasPlanBlock(messages)).toBe(true);
     expect(appendTailBlock(messages, BLOCK)).toBe(false);
     expect(messages.at(-1)!.content).toHaveLength(1);
+  });
+
+  test("a compaction summary quoting the tag mid-text is not a block", () => {
+    const summary = `## Objective\n- verify that <plans-context> lands after compaction`;
+    const messages = [user(summary)];
+    expect(hasPlanBlock(messages)).toBe(false);
+    expect(appendTailBlock(messages, BLOCK)).toBe(true);
+    expect(messages[0]!.content).toHaveLength(2);
   });
 });
 
