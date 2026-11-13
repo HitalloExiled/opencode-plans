@@ -36,8 +36,7 @@ const CSS = `
 .plans.is-modal {
   width: 100%;
   box-sizing: border-box;
-  height: min(400px, calc(100vh - 340px));
-  min-height: 280px;
+  height: 100%;
   padding: 0;
 }
 .plans-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -982,8 +981,10 @@ export function PlansBody(props: { target: () => PlansTarget }) {
       <Show when={!selectedID()}>
         <div class="plans-head">
           <div class="plans-title">
-            <ctx.ui.Icon name="checklist" size="small" />
-            <h2 class="plans-title-text">{detached() ? t("page.title") : t("title")}</h2>
+            <Show when={!detached()}>
+              <ctx.ui.Icon name="checklist" size="small" />
+              <h2 class="plans-title-text">{t("title")}</h2>
+            </Show>
             <span class="plans-count">
               {filteredPlans().length}
               {total() !== null && total() !== filteredPlans().length ? ` / ${total()}` : ""}
