@@ -429,8 +429,10 @@ export function PlansBody(props: { target: () => PlansTarget }) {
   const [detail, setDetail] = createSignal<Plan | null>(null);
   const [statusFilter, setStatusFilter] = createSignal<StatusFilter>(saved?.status ?? "active");
   const [scopeFilter, setScopeFilter] = createSignal<ScopeFilter>(
-    saved?.scope ?? (detached() ? "all" : "session"),
+    detached() ? "all" : (saved?.scope ?? "session"),
   );
+  // The modal has no scope filter: it always reads every plan.
+  const scope = (): ScopeFilter => (detached() ? "all" : scopeFilter());
   const [stepsHeight, setStepsHeight] = createSignal(saved?.stepsHeight ?? 240);
   const [visible, setVisible] = createSignal(CHUNK_SIZE);
   /** Total rows in the DB for the current filter; the page shows it when it differs. */
@@ -470,7 +472,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
   createEffect(() => {
     query();
     statusFilter();
-    scopeFilter();
+    scope();
     setVisible(CHUNK_SIZE);
     nav.reset();
   });
@@ -584,7 +586,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
       const options = rpcOptions(controller.signal);
       const list = await rpc.list(
         {
-          scope: scopeFilter(),
+          scope: scope(),
           sessionID: routed,
           status: statusFilter(),
           limit: PAGE_SIZE,
@@ -596,7 +598,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
 
       if (detached()) {
         const counted = await rpc.count(
-          { scope: scopeFilter(), sessionID: routed, status: statusFilter() },
+          { scope: scope(), sessionID: routed, status: statusFilter() },
           options,
         );
         if (gen !== loadGen) return;
@@ -631,10 +633,10 @@ export function PlansBody(props: { target: () => PlansTarget }) {
     const value = viewStore().value;
     if (!value) return;
     setHydrated(true);
-    filterKey = `${value.scope}\u0000${value.status}`;
+    filterKey = `${scope()}\u0000${value.status}`;
     setQuery(value.query);
     setStatusFilter(value.status);
-    setScopeFilter(value.scope);
+    if (!detached()) setScopeFilter(value.scope);
     setSelectedID(value.selectedID);
     setStepsHeight(value.stepsHeight ?? 240);
     void load();
@@ -648,7 +650,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
       selectedID: selectedID(),
       query: query(),
       status: statusFilter(),
-      scope: scopeFilter(),
+      scope: scope(),
       stepsHeight: stepsHeight(),
     });
   });
@@ -657,7 +659,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
   // step toggle, a notification) must not collapse an expanded plan, and the
   // first run must keep the restored selection.
   createEffect(() => {
-    const key = `${scopeFilter()}\u0000${statusFilter()}`;
+    const key = `${scope()}\u0000${statusFilter()}`;
     if (filterKey === undefined) {
       filterKey = key;
       void load();
@@ -1026,8 +1028,8 @@ export function PlansBody(props: { target: () => PlansTarget }) {
               setVisible(CHUNK_SIZE);
             }}
           />
-          <div class="plans-toggles" role="group" aria-label={t("filters.scope")}>
-            <Show when={!detached()}>
+          <Show when={!detached()}>
+            <div class="plans-toggles" role="group" aria-label={t("filters.scope")}>
               <button
                 type="button"
                 class="plans-toggle"
@@ -1036,26 +1038,16 @@ export function PlansBody(props: { target: () => PlansTarget }) {
               >
                 {t("scope.session")}
               </button>
-            </Show>
-            <button
-              type="button"
-              class="plans-toggle"
-              classList={{ "is-active": scopeFilter() === "project" }}
-              onClick={() => setScopeFilter("project")}
-            >
-              {t("scope.project")}
-            </button>
-            <Show when={detached()}>
               <button
                 type="button"
                 class="plans-toggle"
-                classList={{ "is-active": scopeFilter() === "all" }}
-                onClick={() => setScopeFilter("all")}
+                classList={{ "is-active": scopeFilter() === "project" }}
+                onClick={() => setScopeFilter("project")}
               >
-                {t("scope.all")}
+                {t("scope.project")}
               </button>
-            </Show>
-          </div>
+            </div>
+          </Show>
           <div class="plans-toggles" role="group" aria-label={t("filters.label")}>
             <button
               type="button"
@@ -1130,7 +1122,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
                   <span class="plan-updated">{formatDate(plan.updatedAt)}</span>
                 </div>
                 <div class="plan-card-title">{plan.title}</div>
-                <Show when={scopeFilter() !== "session"}>
+                <Show when={scope() !== "session"}>
                   <div class="plan-card-session">
                     {t("session")}: {shortSession(plan.sessionID)}
                   </div>
