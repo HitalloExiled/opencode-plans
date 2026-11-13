@@ -36,6 +36,8 @@ const CSS = `
   inset: 0;
   z-index: 60;
   display: flex;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
   padding: 10px;
   background: var(--v2-overlay-simple-overlay-scrim);
@@ -43,8 +45,8 @@ const CSS = `
 .plans-modal {
   display: flex;
   flex-direction: column;
-  width: 100%;
-  height: 100%;
+  width: min(900px, 100%);
+  height: min(640px, 100%);
   min-height: 0;
   box-sizing: border-box;
   overflow: hidden;
