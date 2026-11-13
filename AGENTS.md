@@ -128,10 +128,10 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
 - **There are no keyboard shortcuts or palette commands for Plans.** The
   `window.bottom` bar is the entry point; it opens the all-plans modal. Do not
   add a `bind` back without the user asking.
-- **The launcher stays mounted while hidden.** The host closes a dialog when
-  the component that opened it ends; unmounting the bar (e.g. when the active
-  count drops to zero) would close the modal while the user is using it. Hide
-  it with `display: none`.
+- **The launcher bar is always visible.** It shows the active count, zero
+  included, and opens the all-plans modal. Never hide or unmount it on a count
+  change: the modal is a sibling and must survive a run finishing under the
+  user.
 - **The launcher count follows the `changed` event**, not a poll: it subscribes
   to `PlansRpc.events.on("changed")` and asks `count({ scope: "all" })` again.
 - **Executing a plan is a user action.** The card, the detail's

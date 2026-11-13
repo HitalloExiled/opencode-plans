@@ -1,15 +1,15 @@
 /**
  * The global plans launcher: a bar in the host's `window.bottom` slot that
- * opens every saved plan in a near-full-window overlay.
+ * opens every saved plan in a large overlay.
  *
- * It shows only while the builtin server has an active plan, and keeps the
- * count fresh from the `PlansRpc` changed event. The bar stays mounted while
- * hidden so the overlay keeps its owner when the count drops to zero (marking
- * the last active plan done must not close the modal under the user).
+ * The bar is always visible and shows how many plans are active (zero
+ * included); the count follows the `PlansRpc` changed event, so marking the
+ * last plan done leaves the bar in place instead of removing it.
  *
- * The overlay is ours, not `ctx.ui.Dialog`: the host caps dialogs at 980×600
- * and the modal must cover the window minus a 10px gutter. Esc, outside click,
- * focus and scroll lock are handled here, following the plan editor's overlay.
+ * The overlay is ours, not `ctx.ui.Dialog`: the host caps dialogs at 980×600,
+ * and this one is capped at 900×640, keeping a 10px gutter on smaller windows.
+ * Esc, outside click, focus and scroll lock are handled here, following the
+ * plan editor's overlay.
  */
 
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
@@ -30,7 +30,6 @@ const CSS = `
   border-top: 1px solid var(--v2-border-border-muted);
   background: var(--v2-background-bg-base);
 }
-.plans-launcher.is-hidden { display: none; }
 .plans-modal-scrim {
   position: fixed;
   inset: 0;
@@ -185,7 +184,7 @@ export function PlansLauncher() {
   return (
     <>
       <style>{CSS}</style>
-      <div class="plans-launcher" classList={{ "is-hidden": active() === 0 }}>
+      <div class="plans-launcher">
         <ctx.ui.Button size="small" variant="ghost" icon="checklist" onClick={open}>
           {t("launcher.label", active())}
         </ctx.ui.Button>
