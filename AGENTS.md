@@ -35,9 +35,10 @@ src/capture.ts           last Plan-agent message extraction
 src/inject.ts            routing rule (system) + post-compaction block (tail)
 src/gui.tsx              ./gui-experimental entry → setup
 src/gui/contract.ts      PlansRpc contract + Effect schemas
-src/gui/setup.tsx        renderer: registers the Planos tab, the all-plans page, commands
+src/gui/setup.tsx        renderer: registers the Planos tab, the window.bottom launcher, the pill
 src/gui/view.tsx         the SolidJS UI: PlansView (panel) and PlansBody (shared)
-src/gui/page.tsx         the all-plans page (SettingsPage, builtin server, no session)
+src/gui/launcher.tsx     global launcher (window.bottom slot) + the all-plans modal
+src/gui/page.tsx         builtin-server helpers for the session-less surfaces
 src/gui/state.ts         persisted panel state (open plan, search, filters)
 src/gui/i18n.ts          PT-BR / EN-US copy
 test/                    bun tests
@@ -117,13 +118,22 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   `todo` in the same transaction; keep that invariant when touching the store.
 - **Moving a plan is a user action.** The GUI calls the `move` RPC to move a
   project plan into the active session; tools must not move plans.
-- **The all-plans page reuses `PlansBody`, it is not a second UI.** The page
-  (`src/gui/page.tsx`) has no routed session: it resolves the builtin server
-  with `ctx.servers`, lists `scope: "all"`, and passes `visible: () => true`.
-  `usePanel()` throws outside `Panel.render`, so it stays in the panel wrapper.
-  Session-bound actions (create, move, save hint) exist only in the panel;
-  Executar exists in both but the page targets the plan's own session and never
-  moves it.
+- **The global launcher reuses `PlansBody`, it is not a second UI.** The
+  `window.bottom` slot (`src/gui/launcher.tsx`) has no routed session: it
+  resolves the builtin server with `ctx.servers`, lists `scope: "all"`, and
+  passes `visible: () => true`. `usePanel()` throws outside `Panel.render`, so
+  it stays in the panel wrapper. Session-bound actions (create, move, save hint)
+  exist only in the panel; Executar exists in both but the modal targets the
+  plan's own session and never moves it.
+- **There are no keyboard shortcuts or palette commands for Plans.** The
+  `window.bottom` bar is the entry point; it opens the all-plans modal. Do not
+  add a `bind` back without the user asking.
+- **The launcher stays mounted while hidden.** The host closes a dialog when
+  the component that opened it ends; unmounting the bar (e.g. when the active
+  count drops to zero) would close the modal while the user is using it. Hide
+  it with `display: none`.
+- **The launcher count follows the `changed` event**, not a poll: it subscribes
+  to `PlansRpc.events.on("changed")` and asks `count({ scope: "all" })` again.
 - **Executing a plan is a user action.** The card, the detail's
   **Executar/Pausar** button (for `active` plans) and the composer pill all call
   the same `executionFor(target)` handle (`src/gui/execution.ts`): it owns the

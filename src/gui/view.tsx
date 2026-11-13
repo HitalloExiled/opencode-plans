@@ -33,14 +33,12 @@ const CSS = `
   font-size: 12.5px;
 }
 .plans.is-detail { overflow: hidden; }
-.plans.is-page {
-  max-width: 1080px;
+.plans.is-modal {
   width: 100%;
-  margin: 0 auto;
   box-sizing: border-box;
-  height: calc(100vh - 190px);
-  min-height: 420px;
-  padding: 16px 20px 24px;
+  height: min(400px, calc(100vh - 340px));
+  min-height: 280px;
+  padding: 0;
 }
 .plans-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .plans-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
@@ -347,19 +345,19 @@ const PAGE_SIZE = 1000;
 
 /**
  * What a Plans surface reads and where it writes. The side panel keeps the
- * routed session (and its directory for RPC routing); the full page has no
+ * routed session (and its directory for RPC routing); the global modal has no
  * session, lists every plan and queries the builtin server directly.
  */
 export type PlansTarget = {
-  mode: "panel" | "page";
+  mode: "panel" | "modal";
   server: ServerRef;
-  /** Routed session; undefined on the page. */
+  /** Routed session; undefined in the modal. */
   session?: MountedSession | undefined;
   /** Key of the persisted view state. */
   storageKey: string;
-  /** Panel visibility for the scroll nav; the page is always on screen. */
+  /** Panel visibility for the scroll nav; the modal is always on screen. */
   visible: () => boolean;
-  /** Routed project name; empty on the page, which falls back to the directory. */
+  /** Routed project name; empty in the modal, which falls back to the directory. */
   projectName: () => string;
 };
 
@@ -386,10 +384,10 @@ export function PlansBody(props: { target: () => PlansTarget }) {
   const ctx = usePlugin();
   const t = useT();
   const target = () => props.target();
-  const page = () => target().mode === "page";
+  const detached = () => target().mode === "modal";
   const sessionID = () => target().session?.id;
   const client = () => target().server.client;
-  // The panel routes RPC calls by session directory; the page talks to the
+  // The panel routes RPC calls by session directory; the modal talks to the
   // builtin server, whose default location applies.
   const rpcOptions = (signal?: AbortSignal) => {
     const directory = target().session?.directory;
@@ -431,7 +429,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
   const [detail, setDetail] = createSignal<Plan | null>(null);
   const [statusFilter, setStatusFilter] = createSignal<StatusFilter>(saved?.status ?? "active");
   const [scopeFilter, setScopeFilter] = createSignal<ScopeFilter>(
-    saved?.scope ?? (page() ? "all" : "session"),
+    saved?.scope ?? (detached() ? "all" : "session"),
   );
   const [stepsHeight, setStepsHeight] = createSignal(saved?.stepsHeight ?? 240);
   const [visible, setVisible] = createSignal(CHUNK_SIZE);
@@ -568,7 +566,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
 
     const routed = sessionID();
     // The page lists every plan and needs no routed session; the panel needs one.
-    if (!page() && !routed) {
+    if (!detached() && !routed) {
       setPlans([]);
       setSelectedID(null);
       setDetail(null);
@@ -596,7 +594,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
       if (gen !== loadGen) return;
       if (!sameJSON(plans(), list)) setPlans([...list]);
 
-      if (page()) {
+      if (detached()) {
         const counted = await rpc.count(
           { scope: scopeFilter(), sessionID: routed, status: statusFilter() },
           options,
@@ -975,7 +973,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
   };
 
   return (
-    <div class="plans" classList={{ "is-detail": Boolean(selectedID()), "is-page": page() }}>
+    <div class="plans" classList={{ "is-detail": Boolean(selectedID()), "is-modal": detached() }}>
       <style>{CSS}</style>
       <style>{SHARED_CSS}</style>
 
@@ -983,14 +981,14 @@ export function PlansBody(props: { target: () => PlansTarget }) {
         <div class="plans-head">
           <div class="plans-title">
             <ctx.ui.Icon name="checklist" size="small" />
-            <h2 class="plans-title-text">{page() ? t("page.title") : t("title")}</h2>
+            <h2 class="plans-title-text">{detached() ? t("page.title") : t("title")}</h2>
             <span class="plans-count">
               {filteredPlans().length}
               {total() !== null && total() !== filteredPlans().length ? ` / ${total()}` : ""}
             </span>
           </div>
           <div class="plans-actions">
-            <Show when={!page()}>
+            <Show when={!detached()}>
               <ctx.ui.Button
                 size="small"
                 variant="contrast"
@@ -1029,7 +1027,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
             }}
           />
           <div class="plans-toggles" role="group" aria-label={t("filters.scope")}>
-            <Show when={!page()}>
+            <Show when={!detached()}>
               <button
                 type="button"
                 class="plans-toggle"
@@ -1047,7 +1045,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
             >
               {t("scope.project")}
             </button>
-            <Show when={page()}>
+            <Show when={detached()}>
               <button
                 type="button"
                 class="plans-toggle"
@@ -1224,7 +1222,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
               <div>
                 {t("session")}: {plan().sessionID}
               </div>
-              <Show when={page()}>
+              <Show when={detached()}>
                 <ctx.ui.Button
                   size="small"
                   variant="ghost"
