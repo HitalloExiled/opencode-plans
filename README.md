@@ -7,8 +7,8 @@ Plan** em um SQLite dedicado e os expõe de duas formas:
   `delete`, `doctor`;
 - **Painel lateral “Planos”** no app desktop, com lista, progresso, checklist
   e o Markdown original;
-- **Pill “Planos · N”** na titlebar, que abre todos os planos em um overlay,
-  sem escopo de sessão.
+- **Pill “Planos · N”** na linha de título da timeline (`session.header`), que
+  abre todos os planos em um overlay, sem escopo de sessão.
 
 A gravação é sempre explícita: o agente Plan chama `plans.save` no mesmo turno
 em que apresenta o plano final, assim que não houver mais perguntas ou escolhas
@@ -115,10 +115,10 @@ e o `npm run gui:build`).
    `plans.save`, pelos tools de escrita e pelos handlers do painel; some
    enquanto o agente roda e quando o plano termina (todos os passos `done`
    viram status `done`).
-10. **Pill “Planos · N” e overlay**: um pill na titlebar mostra a contagem de
-    planos **ativos** e abre um overlay de 900×640 com todos os planos de todos
-    os projetos e sessões (a titlebar coloca pills de plugins diferentes lado a
-    lado; a faixa `window.bottom` empilharia). Não há atalho de teclado nem
+10. **Pill “Planos · N” e overlay**: um pill na linha de título da timeline
+    mostra a contagem de planos **ativos** e abre um overlay de 900×640 com
+    todos os planos de todos os projetos e sessões (o slot `session.header`
+    coloca pills de plugins diferentes lado a lado; `window.bottom` empilharia). Não há atalho de teclado nem
     comando na paleta. Reusa o mesmo corpo do
     painel; a diferença são os filtros (**Projeto | Tudo**, default **Tudo**) e
     a ausência das ações que dependem de sessão (criar, mover, hint de salvar).

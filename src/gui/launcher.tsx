@@ -109,6 +109,22 @@ export function startPlansCount(ctx: Context): () => void {
   });
 }
 
+/**
+ * The session header entry: a small pill with the active count. Mounted by the
+ * host in the timeline's title row, next to the other plugins' pills.
+ */
+export function PlansPill(props: { active: boolean }) {
+  const ctx = usePlugin();
+  const t = useT();
+  return (
+    <Show when={props.active}>
+      <ctx.ui.Button size="small" variant="ghost" icon="checklist" onClick={openPlansOverlay}>
+        {t("launcher.label", activePlanCount())}
+      </ctx.ui.Button>
+    </Show>
+  );
+}
+
 /** The overlay: scrim, header, and the shared PlansBody. */
 function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
   const ctx = usePlugin();

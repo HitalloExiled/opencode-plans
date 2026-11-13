@@ -12,10 +12,9 @@
  */
 
 import type { SetupContext } from "@opencode/plugin/gui";
-import { ComposerPill, Slot, Style, TitlebarItem } from "@opencode/plugin/gui";
-import { registerSidePanel, supportedLocale } from "opencode-shared/gui";
-import { activePlanCount, openPlansOverlay, PlansOverlay, startPlansCount } from "./launcher";
-import { tStatic } from "./i18n";
+import { ComposerPill, Slot, Style } from "@opencode/plugin/gui";
+import { registerSidePanel } from "opencode-shared/gui";
+import { PlansOverlay, PlansPill, startPlansCount } from "./launcher";
 import { createPlanPill, PLAY_ICON_CSS } from "./pill";
 import { PlansView } from "./view";
 
@@ -39,16 +38,14 @@ export function setup(ctx: SetupContext<never>): () => void {
 
   const stopCount = startPlansCount(ctx);
 
-  // A titlebar pill per plugin; the host lays them side by side. The overlay
-  // itself needs a place in the plugin's tree, hence the slot item that renders
-  // nothing while closed.
-  ctx.add(TitlebarItem, (): TitlebarItem => ({
-    id: "plans",
-    icon: "checklist",
-    label: tStatic(supportedLocale(ctx.locale.locale()), "launcher.label", activePlanCount()),
-    title: tStatic(supportedLocale(ctx.locale.locale()), "launcher.tooltip"),
-    run: openPlansOverlay,
-  }));
+  // The entry is a pill in the timeline's title row (session.header), next to
+  // the other plugins' pills. The overlay needs a place in the plugin's tree,
+  // hence the window.bottom item that renders nothing while closed.
+  ctx.add(Slot, {
+    at: "session.header",
+    order: 10,
+    render: (input) => <PlansPill active={input.active} />,
+  });
   ctx.add(Slot, { at: "window.bottom", order: 10, render: () => <PlansOverlay /> });
 
   const pill = createPlanPill(ctx);

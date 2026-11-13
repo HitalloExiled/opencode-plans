@@ -119,7 +119,7 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
 - **Moving a plan is a user action.** The GUI calls the `move` RPC to move a
   project plan into the active session; tools must not move plans.
 - **The global surface reuses `PlansBody`, it is not a second UI.** A
-  `TitlebarItem` pill shows the active count and opens the overlay
+  `session.header` pill shows the active count and opens the overlay
   (`src/gui/launcher.tsx`); the overlay itself is mounted by a `window.bottom`
   slot item that renders nothing while closed (a plugin has no other place in
   the tree). The overlay has no routed session: it resolves the builtin server
@@ -128,9 +128,10 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   Session-bound actions (create, move, save hint) exist only in the panel;
   Executar exists in both but the overlay targets the plan's own session and
   never moves it.
-- **Global entries go in the titlebar, not `window.bottom`.** The host stacks
-  bottom-slot items, so two plugins never share a row there; titlebar pills are
-  laid side by side by the host.
+- **The entry is a `session.header` slot, not `window.bottom`.** The host
+  stacks bottom-slot items, so two plugins never share a row there; the
+  timeline's title row lays slot items side by side. Render nothing when the
+  timeline is cached (`active` false) so a hidden timeline adds no pill.
 - **There are no keyboard shortcuts or palette commands for Plans.** The
   `window.bottom` bar is the entry point; it opens the all-plans modal. Do not
   add a `bind` back without the user asking.
