@@ -14,6 +14,7 @@
  */
 
 import { createEffect, createRoot, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { Portal } from "solid-js/web";
 import { usePlugin } from "@opencode/plugin/gui";
 import type { Context } from "@opencode/plugin/gui";
 import { PlansRpc } from "./contract";
@@ -128,10 +129,10 @@ export function PlansPill(props: { active: boolean }) {
       {/* The overlay is fixed and rides the pill's slot item: no second mount. */}
       <Show when={target()}>
         {(current) => (
-          <>
+          <Portal>
             <style>{CSS}</style>
             <PlansModal target={() => current()} onClose={close} />
-          </>
+          </Portal>
         )}
       </Show>
     </Show>
