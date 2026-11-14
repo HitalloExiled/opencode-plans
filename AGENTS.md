@@ -75,6 +75,11 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   load-bearing sentence first; parameter descriptions stay ≤6 words.
   `test/inject.test.ts` enforces all three (`plans.save` keeps the Plan-mode
   permission, `plans.update` the call shape).
+- **Saving is the expected behavior, not a permission.** The routing rule says
+  it imperatively and spells out that the core Plan-mode reminder about "plan
+  files" does not cover `plans.save`/`plans.update` (it means markdown under
+  `~/.opencode/plan`; the tools write only `plans.db`). Agents that "wait for
+  the user to ask" are misreading the core reminder, not following this rule.
 - **The panel owns plan creation and editing.** The editor calls
   `PlansRpc.save` (create/update) with title, context and steps; the body is
   recomposed with `## Passos` and existing statuses are preserved by step text.

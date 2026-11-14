@@ -10,9 +10,12 @@ Plan** em um SQLite dedicado e os expõe de duas formas:
 - **Pill “Planos · N”** na linha de título da timeline (`session.header`), que
   abre todos os planos em um overlay, sem escopo de sessão.
 
-A gravação é sempre explícita: o agente Plan chama `plans.save` no mesmo turno
-em que apresenta o plano final, assim que não houver mais perguntas ou escolhas
-**bloqueantes** pendentes do usuário — sem pedir permissão. Uma escolha
+A gravação é sempre explícita e **esperada**: o agente Plan chama `plans.save`
+no mesmo turno em que apresenta o plano final, assim que não houver mais
+perguntas ou escolhas **bloqueantes** pendentes do usuário — sem pedir
+permissão. O lembrete do Plan mode sobre "plan files" (arquivos markdown em
+`~/.opencode/plan`) **não** cobre `plans.save`; esperar o usuário pedir é uma
+leitura errada da regra. Uma escolha
 **opcional/recomendada** não bloqueia o save: o passo entra no plano marcado
 como “(Opcional, recomendado)”. Salvar/editar o plano
 (`plans.save`/`plans.update`) é permitido no **Plan mode** porque grava apenas o

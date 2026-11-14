@@ -71,22 +71,24 @@ describe("routing rule", () => {
     expect(system.at(-1)?.text).toBe(PLANS_ROUTING_RULE);
   });
 
-  test("states the Plan-mode exception and the save contract", () => {
-    expect(PLANS_ROUTING_RULE).toContain("Plan mode allows plans.save and plans.update");
-    expect(PLANS_ROUTING_RULE).toContain("never repository files");
-    expect(PLANS_ROUTING_RULE).toContain("same turn");
+  test("makes saving the expected behavior, not a permission", () => {
+    expect(PLANS_ROUTING_RULE).toContain("Saving is expected, not optional");
+    expect(PLANS_ROUTING_RULE).toContain("call plans.save in the same turn");
+    expect(PLANS_ROUTING_RULE).toContain("Never wait for the user to ask");
     expect(PLANS_ROUTING_RULE).toContain("do not call plans.get just to confirm");
     expect(PLANS_ROUTING_RULE).not.toContain("undefined");
   });
 
   test("separates plans.db from the Plan-mode plan files", () => {
-    expect(PLANS_ROUTING_RULE).toContain("they write only plans.db");
-    expect(PLANS_ROUTING_RULE).toContain("never repository files or a plan file under ~/.opencode/plan");
+    expect(PLANS_ROUTING_RULE).toContain('The Plan-mode reminder about "plan files" does not cover plans.save');
+    expect(PLANS_ROUTING_RULE).toContain("markdown files under ~/.opencode/plan");
+    expect(PLANS_ROUTING_RULE).toContain("these tools write only plans.db");
+    expect(PLANS_ROUTING_RULE).toContain("Never write a markdown copy as a substitute");
+    expect(PLANS_ROUTING_RULE).toContain("plans.db is the only plan record");
   });
 
   test("keeps every stated requirement inside the plan under construction", () => {
     expect(PLANS_ROUTING_RULE).toContain("every requirement the user states belongs in the plan under construction");
-    expect(PLANS_ROUTING_RULE).toContain("never treat a requirement as a side task");
   });
 });
 
