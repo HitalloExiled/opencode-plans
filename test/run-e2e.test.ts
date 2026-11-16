@@ -27,7 +27,7 @@ const store = await import("../src/store");
 const {
   addWorkItemDep,
   claimNextMerge,
-  createProject,
+  createInitiative,
   createWorkItem,
   finishMerge,
   getPlanByWorkItem,
@@ -37,7 +37,7 @@ const {
   listRunItems,
   requireStore,
   savePlan,
-  setProjectRunSettings,
+  setInitiativeRunSettings,
   setRunItemStatus,
   setStep,
   setWorkItemStatus,
@@ -187,13 +187,13 @@ function fakeAgent(input: {
 }
 
 function setupRun(db: Db, directory: string) {
-  const project = createProject(db, { name: "App", locations: [{ directory }] });
+  const project = createInitiative(db, { name: "App", repos: [{ directory }] });
   if (!project.ok) throw new Error(project.error);
-  return project.project;
+  return project.initiative;
 }
 
-const makeItem = (db: Db, projectID: string, title: string, touches: string[]) => {
-  const created = createWorkItem(db, { projectID, title });
+const makeItem = (db: Db, initiativeID: string, title: string, touches: string[]) => {
+  const created = createWorkItem(db, { initiativeID, title });
   if (!created.ok) throw new Error(created.error);
   setWorkItemStatus(db, { id: created.item.id, status: "ready" });
   const saved = savePlan(db, {
@@ -235,10 +235,10 @@ describe("run engine end to end", () => {
 
     // Six items in the first pass: X and Y must start from the same tip to
     // really conflict when their branches merge.
-    setProjectRunSettings(db, project.id, { maxParallel: 6 });
+    setInitiativeRunSettings(db, project.id, { maxParallel: 6 });
     const { ctx } = fakeAgent({ db, failExecution: new Set(), failMerge: new Set(), shared: new Set([x, y]) });
     const base = (await currentSha(dir))!;
-    const started = await startProjectRun(ctx as never, db, { projectID: project.id, directory: dir });
+    const started = await startProjectRun(ctx as never, db, { initiativeID: project.id, directory: dir });
     expect(started.ok).toBe(true);
     if (!started.ok) return;
 
@@ -288,7 +288,7 @@ describe("run engine end to end", () => {
       shared: new Set(),
       hang: true,
     });
-    const started = await startProjectRun(ctx as never, db, { projectID: project.id, directory: dir });
+    const started = await startProjectRun(ctx as never, db, { initiativeID: project.id, directory: dir });
     expect(started.ok).toBe(true);
     if (!started.ok) return;
 
@@ -316,7 +316,7 @@ describe("run engine end to end", () => {
 
     const { ctx } = fakeAgent({ db, failExecution: new Set(), failMerge: new Set([q]), shared: new Set() });
     const base = (await currentSha(dir))!;
-    const started = await startProjectRun(ctx as never, db, { projectID: project.id, directory: dir });
+    const started = await startProjectRun(ctx as never, db, { initiativeID: project.id, directory: dir });
     expect(started.ok).toBe(true);
     if (!started.ok) return;
 

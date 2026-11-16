@@ -4,7 +4,7 @@ const { DatabaseSync } = (await import("node:sqlite")) as any;
 
 import {
   addWorkItemDep,
-  createProject,
+  createInitiative,
   createWorkItem,
   initSchema,
   removeWorkItemDep,
@@ -20,10 +20,10 @@ const open = (): Db => {
 
 function setup() {
   const db = open();
-  const project = createProject(db, { name: "App", locations: [{ directory: "/work/app" }] });
+  const project = createInitiative(db, { name: "App", repos: [{ directory: "/work/app" }] });
   if (!project.ok) throw new Error(project.error);
   const add = (title: string) => {
-    const result = createWorkItem(db, { projectID: project.project.id, title });
+    const result = createWorkItem(db, { initiativeID: project.initiative.id, title });
     if (!result.ok) throw new Error(result.error);
     return result.item;
   };
@@ -63,14 +63,14 @@ describe("work item dependencies", () => {
 
   test("requires both items in the same project", () => {
     const { db, a } = setup();
-    const other = createProject(db, { name: "Other", locations: [{ directory: "/work/other" }] });
+    const other = createInitiative(db, { name: "Other", repos: [{ directory: "/work/other" }] });
     if (!other.ok) throw new Error(other.error);
-    const d = createWorkItem(db, { projectID: other.project.id, title: "D" });
+    const d = createWorkItem(db, { initiativeID: other.initiative.id, title: "D" });
     if (!d.ok) throw new Error(d.error);
 
     expect(addWorkItemDep(db, { itemID: a.id, blocksID: d.item.id })).toEqual({
       ok: false,
-      error: "os itens precisam pertencer ao mesmo projeto",
+      error: "os itens precisam pertencer à mesma iniciativa",
     });
     expect(addWorkItemDep(db, { itemID: a.id, blocksID: "missing" }).ok).toBe(false);
   });

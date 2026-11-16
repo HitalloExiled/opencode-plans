@@ -30,13 +30,13 @@ export function renderWorkItemLine(
 }
 
 export function renderWorkItemList(input: {
-  projectName: string;
+  initiativeName: string;
   status: string;
   items: readonly WorkItemRow[];
   /** Per-item extras, keyed by item id. */
   extras: ReadonlyMap<string, { blockedBy: readonly WorkItemRow[]; plan?: Plan | undefined }>;
 }): string {
-  const header = `Work items (projeto "${input.projectName}", status=${input.status}): ${input.items.length}`;
+  const header = `Work items (iniciativa "${input.initiativeName}", status=${input.status}): ${input.items.length}`;
   const lines = input.items.map((item) =>
     renderWorkItemLine(item, input.extras.get(item.id) ?? { blockedBy: [] }),
   );
@@ -45,7 +45,7 @@ export function renderWorkItemList(input: {
 
 export function renderWorkItemDetail(input: {
   item: WorkItemRow;
-  projectName: string;
+  initiativeName: string;
   blockedBy: readonly WorkItemRow[];
   blocks: readonly WorkItemRow[];
   parent?: WorkItemRow | undefined;
@@ -55,7 +55,7 @@ export function renderWorkItemDetail(input: {
   const { item } = input;
   const lines = [
     `Work item: ${oneLine(item.title)}`,
-    `id=${item.id} project="${input.projectName}" status=${item.status} rank=${item.rank} origin=${item.origin}`,
+    `id=${item.id} initiative="${input.initiativeName}" status=${item.status} rank=${item.rank} origin=${item.origin}`,
     `parent: ${input.parent ? ref(input.parent) : "none"}`,
     `children (${input.children.length}): ${input.children.length > 0 ? input.children.map((child) => child.id).join(",") : "none"}`,
     `blocked by (${input.blockedBy.length}):`,

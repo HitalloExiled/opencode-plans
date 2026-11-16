@@ -168,7 +168,7 @@ export function saveTool(ctx: Ctx) {
         // The footprint decides the implicit dependencies of the project run.
         if (result.plan.work_item_id) {
           const item = getWorkItem(store.db, result.plan.work_item_id);
-          if (item) recomputeImplicitDeps(store.db, item.project_id);
+          if (item) recomputeImplicitDeps(store.db, item.initiative_id);
         }
         const checklist =
           result.plan.steps.length > 0

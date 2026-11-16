@@ -4,8 +4,8 @@ import type { Plan, StepRow, WorkItemRow } from "../src/store";
 
 const item = (id: string, overrides: Partial<WorkItemRow> = {}): WorkItemRow => ({
   id,
-  project_id: "p1",
-  location_id: null,
+  initiative_id: "p1",
+  repo_id: null,
   parent_id: null,
   title: `Item ${id}`,
   body: "",
@@ -68,7 +68,7 @@ describe("renderWorkItemDetail", () => {
   test("renders metadata, deps, plans and the body as data", () => {
     const text = renderWorkItemDetail({
       item: item("a", { title: "Need it", body: "  do the thing  ", status: "doing" }),
-      projectName: "App",
+      initiativeName: "App",
       blockedBy: [item("b", { title: "First" })],
       blocks: [],
       parent: undefined,
@@ -76,7 +76,7 @@ describe("renderWorkItemDetail", () => {
       plan: plan([step("s1", "done")]),
     });
     expect(text).toContain("Work item: Need it");
-    expect(text).toContain("id=a project=\"App\" status=doing");
+    expect(text).toContain("id=a initiative=\"App\" status=doing");
     expect(text).toContain("parent: none");
     expect(text).toContain("children (1): c");
     expect(text).toContain("  - b — First (backlog)");
@@ -88,7 +88,7 @@ describe("renderWorkItemDetail", () => {
   test("marks a missing body and a missing plan", () => {
     const text = renderWorkItemDetail({
       item: item("a"),
-      projectName: "App",
+      initiativeName: "App",
       blockedBy: [],
       blocks: [],
       children: [],

@@ -15,7 +15,7 @@ process.env.PLANS_DB = join(temp(), "plans.db");
 const store = await import("../src/store");
 const {
   claimNextMerge,
-  createProject,
+  createInitiative,
   createRun,
   createRunItem,
   createWorkItem,
@@ -49,9 +49,9 @@ async function setup(itemTitles: string[]) {
   const store = await requireStore();
   const db = store.db;
   const dir = repo();
-  const project = createProject(db, { name: "App", locations: [{ directory: dir }] });
+  const project = createInitiative(db, { name: "App", repos: [{ directory: dir }] });
   if (!project.ok) throw new Error(project.error);
-  const run = createRun(db, { projectID: project.project.id, baseRef: "main" });
+  const run = createRun(db, { initiativeID: project.initiative.id, baseRef: "main" });
   if (!run.ok) throw new Error(run.error);
   const paths = runPaths(run.run.id);
   const integration = await addWorktree({
@@ -65,7 +65,7 @@ async function setup(itemTitles: string[]) {
   setRunMergeSession(db, run.run.id, sessionID);
 
   const items = itemTitles.map((title) => {
-    const created = createWorkItem(db, { projectID: project.project.id, title });
+    const created = createWorkItem(db, { initiativeID: project.initiative.id, title });
     if (!created.ok) throw new Error(created.error);
     createRunItem(db, { runID: run.run.id, workItemID: created.item.id });
     setRunItemStatus(db, { runID: run.run.id, workItemID: created.item.id, status: "merging" });

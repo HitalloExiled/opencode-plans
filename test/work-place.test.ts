@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 const { DatabaseSync } = (await import("node:sqlite")) as any;
 
 import {
-  createProject,
+  createInitiative,
   createWorkItem,
   getWorkItem,
   initSchema,
@@ -20,57 +20,57 @@ const open = (): Db => {
 
 function setup() {
   const db = open();
-  const project = createProject(db, { name: "App", locations: [{ directory: "/work/app" }] });
+  const project = createInitiative(db, { name: "App", repos: [{ directory: "/work/app" }] });
   if (!project.ok) throw new Error(project.error);
   const add = (title: string) => {
-    const result = createWorkItem(db, { projectID: project.project.id, title });
+    const result = createWorkItem(db, { initiativeID: project.initiative.id, title });
     if (!result.ok) throw new Error(result.error);
     return result.item;
   };
-  return { db, projectID: project.project.id, add };
+  return { db, initiativeID: project.initiative.id, add };
 }
 
-const titles = (db: Db, projectID: string, status: string) =>
-  listWorkItems(db, projectID)
+const titles = (db: Db, initiativeID: string, status: string) =>
+  listWorkItems(db, initiativeID)
     .filter((item) => item.status === status)
     .map((item) => item.title);
-const ranks = (db: Db, projectID: string, status: string) =>
-  listWorkItems(db, projectID)
+const ranks = (db: Db, initiativeID: string, status: string) =>
+  listWorkItems(db, initiativeID)
     .filter((item) => item.status === status)
     .map((item) => item.rank);
 
 describe("placeWorkItem", () => {
   test("moves into another status at an exact index and renumbers it", () => {
-    const { db, projectID, add } = setup();
+    const { db, initiativeID, add } = setup();
     add("a");
     add("b");
     const c = add("c");
     // Promote a and b so the destination has an order to insert into.
     for (const title of ["a", "b"]) {
-      const item = listWorkItems(db, projectID).find((entry) => entry.title === title)!;
+      const item = listWorkItems(db, initiativeID).find((entry) => entry.title === title)!;
       placeWorkItem(db, { id: item.id, status: "ready", position: 0 });
     }
-    expect(titles(db, projectID, "ready")).toEqual(["b", "a"]);
+    expect(titles(db, initiativeID, "ready")).toEqual(["b", "a"]);
 
     const moved = placeWorkItem(db, { id: c.id, status: "ready", position: 1 });
     expect(moved.ok).toBe(true);
-    expect(titles(db, projectID, "ready")).toEqual(["b", "c", "a"]);
-    expect(ranks(db, projectID, "ready")).toEqual([1, 2, 3]);
-    expect(titles(db, projectID, "backlog")).toEqual([]);
+    expect(titles(db, initiativeID, "ready")).toEqual(["b", "c", "a"]);
+    expect(ranks(db, initiativeID, "ready")).toEqual([1, 2, 3]);
+    expect(titles(db, initiativeID, "backlog")).toEqual([]);
   });
 
   test("reorders inside the same status", () => {
-    const { db, projectID, add } = setup();
+    const { db, initiativeID, add } = setup();
     add("a");
     add("b");
     const c = add("c");
 
     expect(placeWorkItem(db, { id: c.id, status: "backlog", position: 0 }).ok).toBe(true);
-    expect(titles(db, projectID, "backlog")).toEqual(["c", "a", "b"]);
-    expect(ranks(db, projectID, "backlog")).toEqual([1, 2, 3]);
+    expect(titles(db, initiativeID, "backlog")).toEqual(["c", "a", "b"]);
+    expect(ranks(db, initiativeID, "backlog")).toEqual([1, 2, 3]);
 
     expect(placeWorkItem(db, { id: c.id, status: "backlog", position: 99 }).ok).toBe(true);
-    expect(titles(db, projectID, "backlog")).toEqual(["a", "b", "c"]);
+    expect(titles(db, initiativeID, "backlog")).toEqual(["a", "b", "c"]);
   });
 
   test("rejects an invalid transition", () => {

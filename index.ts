@@ -46,7 +46,7 @@ import {
   listWorkItems,
   planProgress,
   requireStore,
-  resolveProject,
+  resolveInitiative,
   savePlan,
   type Store,
 } from "./src/store.js";
@@ -204,7 +204,7 @@ async function registerCommand(ctx: Ctx) {
             sessionID,
             text: [
               tn(locale, "work.created", result.item.title),
-              tn(locale, "work.project", result.project.name),
+              tn(locale, "work.project", result.initiative.name),
               tn(locale, "work.id", result.item.id),
             ].join("\n"),
           });
@@ -258,15 +258,15 @@ async function registerPlanToolHook(ctx: Ctx) {
 
 /** The tail list for the session's project: open items and their plans. */
 function workItemsText(store: Store, directory: string): string | undefined {
-  const resolved = resolveProject(store.db, directory);
+  const resolved = resolveInitiative(store.db, directory);
   if (!resolved) return undefined;
-  const items = listWorkItems(store.db, resolved.project.id);
+  const items = listWorkItems(store.db, resolved.initiative.id);
   const plans = new Map<string, NonNullable<ReturnType<typeof getPlanByWorkItem>>>();
   for (const item of items) {
     const plan = getPlanByWorkItem(store.db, item.id);
     if (plan) plans.set(item.id, plan);
   }
-  return renderWorkItemsContext(items, resolved.project.name, plans) || undefined;
+  return renderWorkItemsContext(items, resolved.initiative.name, plans) || undefined;
 }
 
 /**

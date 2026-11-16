@@ -333,8 +333,8 @@ describe("catalog budget", () => {
 
 const workItem = (id: string, status: WorkItemRow["status"], body = ""): WorkItemRow => ({
   id,
-  project_id: "p1",
-  location_id: null,
+  initiative_id: "p1",
+  repo_id: null,
   parent_id: null,
   title: `Need ${id}`,
   body,

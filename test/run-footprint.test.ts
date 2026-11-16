@@ -4,7 +4,7 @@ const { DatabaseSync } = (await import("node:sqlite")) as any;
 
 import {
   addWorkItemDep,
-  createProject,
+  createInitiative,
   createWorkItem,
   getPlan,
   initSchema,
@@ -24,10 +24,10 @@ const open = (): Db => {
 
 function setup() {
   const db = open();
-  const project = createProject(db, { name: "App", locations: [{ directory: "/work/app" }] });
+  const project = createInitiative(db, { name: "App", repos: [{ directory: "/work/app" }] });
   if (!project.ok) throw new Error(project.error);
   const item = (title: string) => {
-    const created = createWorkItem(db, { projectID: project.project.id, title });
+    const created = createWorkItem(db, { initiativeID: project.initiative.id, title });
     if (!created.ok) throw new Error(created.error);
     setWorkItemStatus(db, { id: created.item.id, status: "ready" });
     return created.item.id;
@@ -44,7 +44,7 @@ function setup() {
     if (!saved.ok) throw new Error(saved.error);
     return saved.plan;
   };
-  return { db, projectID: project.project.id, item, plan };
+  return { db, initiativeID: project.initiative.id, item, plan };
 }
 
 const implicitDeps = (db: Db, itemID: string) =>
@@ -91,13 +91,13 @@ describe("plan footprint", () => {
 
 describe("recomputeImplicitDeps", () => {
   test("overlapping footprints get a deterministic implicit edge with the reason", () => {
-    const { db, projectID, item, plan } = setup();
+    const { db, initiativeID, item, plan } = setup();
     const a = item("A");
     const b = item("B");
     plan(a, ["src/**"]);
     plan(b, ["src/a.ts"]);
 
-    const result = recomputeImplicitDeps(db, projectID);
+    const result = recomputeImplicitDeps(db, initiativeID);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.added).toBe(1);
@@ -111,18 +111,18 @@ describe("recomputeImplicitDeps", () => {
   });
 
   test("rerunning replaces the implicit edges instead of duplicating", () => {
-    const { db, projectID, item, plan } = setup();
+    const { db, initiativeID, item, plan } = setup();
     const a = item("A");
     const b = item("B");
     plan(a, ["src/**"]);
     plan(b, ["src/a.ts"]);
-    recomputeImplicitDeps(db, projectID);
-    recomputeImplicitDeps(db, projectID);
+    recomputeImplicitDeps(db, initiativeID);
+    recomputeImplicitDeps(db, initiativeID);
     expect(implicitDeps(db, b)).toHaveLength(1);
   });
 
   test("disjoint footprints stay parallel; an explicit order wins over the implicit one", () => {
-    const { db, projectID, item, plan } = setup();
+    const { db, initiativeID, item, plan } = setup();
     const a = item("A");
     const b = item("B");
     const c = item("C");
@@ -131,7 +131,7 @@ describe("recomputeImplicitDeps", () => {
     plan(c, ["docs/**"]);
 
     addWorkItemDep(db, { itemID: a, blocksID: b });
-    const result = recomputeImplicitDeps(db, projectID);
+    const result = recomputeImplicitDeps(db, initiativeID);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     // A and B are already ordered by the explicit edge; C touches another tree.
@@ -140,23 +140,23 @@ describe("recomputeImplicitDeps", () => {
   });
 
   test("items without a plan do not take part", () => {
-    const { db, projectID, item, plan } = setup();
+    const { db, initiativeID, item, plan } = setup();
     const a = item("A");
     item("No plan");
     plan(a, ["src/**"]);
-    const result = recomputeImplicitDeps(db, projectID);
+    const result = recomputeImplicitDeps(db, initiativeID);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.added).toBe(0);
   });
 
   test("an unknown footprint serializes against everything", () => {
-    const { db, projectID, item, plan } = setup();
+    const { db, initiativeID, item, plan } = setup();
     const a = item("A");
     const b = item("B");
     plan(a, []);
     plan(b, ["src/a.ts"]);
-    const result = recomputeImplicitDeps(db, projectID);
+    const result = recomputeImplicitDeps(db, initiativeID);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.edges).toEqual([{ itemID: b, blocksID: a }]);

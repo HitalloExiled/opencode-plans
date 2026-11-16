@@ -1,23 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import { filterWorkGroups } from "../src/work-filter";
-import type { Project, WorkGroup, WorkItem } from "../src/gui/contract";
+import type { Initiative, WorkGroup, WorkItem } from "../src/gui/contract";
 
-const project = (id: string): Project => ({
+const initiative = (id: string): Initiative => ({
   id,
   name: id,
   createdAt: "",
   updatedAt: "",
-  locations: [],
+  repos: [],
 });
 
 const item = (
   id: string,
   origin: "user" | "agent",
-  projectID = "p1",
+  initiativeID = "p1",
   status: WorkItem["status"] = "backlog",
 ): WorkItem => ({
   id,
-  projectID,
+  initiativeID,
   title: id,
   status,
   rank: 1,
@@ -26,7 +26,7 @@ const item = (
   updatedAt: "",
 });
 
-const group = (id: string, items: WorkItem[]): WorkGroup => ({ project: project(id), items });
+const group = (id: string, items: WorkItem[]): WorkGroup => ({ initiative: initiative(id), items });
 
 const ids = (groups: WorkGroup[]) => groups.flatMap((entry) => entry.items.map((item) => item.id));
 
@@ -49,7 +49,7 @@ describe("filterWorkGroups", () => {
     ];
     const filtered = filterWorkGroups(groups, { agentOnly: true, showDropped: false });
     expect(filtered).toHaveLength(1);
-    expect(filtered[0]!.project.id).toBe("p1");
+    expect(filtered[0]!.initiative.id).toBe("p1");
     expect(ids(filtered)).toEqual(["b"]);
 
     expect(filterWorkGroups([group("p1", [item("a", "user")])], { agentOnly: true, showDropped: true })).toEqual(

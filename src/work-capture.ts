@@ -1,15 +1,15 @@
 /**
  * `/work <title>`: capture a need without a model turn.
  *
- * The project is resolved from the session directory (created on first use),
- * and the item starts in the backlog, owned by the user.
+ * The initiative is resolved from the session directory (created on first
+ * use), and the item starts in the backlog, owned by the user.
  */
 
 import {
   createWorkItem,
-  ensureProjectForDirectory,
+  ensureInitiativeForDirectory,
   type Db,
-  type Project,
+  type Initiative,
   type WorkItemRow,
 } from "./store.js";
 
@@ -20,19 +20,19 @@ export type CaptureWorkInput = {
 };
 
 export type CaptureWorkResult =
-  | { ok: true; item: WorkItemRow; project: Project; createdProject: boolean }
+  | { ok: true; item: WorkItemRow; initiative: Initiative; createdInitiative: boolean }
   | { ok: false; error: string };
 
 export function captureWorkItem(db: Db, input: CaptureWorkInput): CaptureWorkResult {
   const title = input.title.trim();
   if (!title) return { ok: false, error: "o título do work item é obrigatório" };
 
-  const project = ensureProjectForDirectory(db, input.directory);
-  if (!project.ok) return project;
+  const ensured = ensureInitiativeForDirectory(db, input.directory);
+  if (!ensured.ok) return ensured;
 
   const item = createWorkItem(db, {
-    projectID: project.project.id,
-    locationID: project.location.id,
+    initiativeID: ensured.initiative.id,
+    repoID: ensured.repo.id,
     title,
     body: input.body,
     origin: "user",
@@ -42,7 +42,7 @@ export function captureWorkItem(db: Db, input: CaptureWorkInput): CaptureWorkRes
   return {
     ok: true,
     item: item.item,
-    project: project.project,
-    createdProject: project.created,
+    initiative: ensured.initiative,
+    createdInitiative: ensured.created,
   };
 }

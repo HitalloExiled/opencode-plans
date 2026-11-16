@@ -93,7 +93,7 @@ export type Status = {
   error?: string | undefined;
 };
 
-export type ProjectLocation = {
+export type InitiativeRepo = {
   id: string;
   directory: string;
   label: string;
@@ -101,44 +101,44 @@ export type ProjectLocation = {
   position: number;
 };
 
-export type Project = {
+export type Initiative = {
   id: string;
   name: string;
   createdAt: string;
   updatedAt: string;
-  locations: readonly ProjectLocation[];
+  repos: readonly InitiativeRepo[];
   /** Run settings (F4). */
   baseBranch?: string | undefined;
   maxParallel?: number | undefined;
   verifyCommand?: string | undefined;
 };
 
-export type ProjectResult = {
+export type InitiativeResult = {
   ok: boolean;
   error?: string | undefined;
-  project?: Project | undefined;
+  initiative?: Initiative | undefined;
   /** The workspace has items; send `confirm: true` to remove it anyway. */
   needsConfirmation?: boolean | undefined;
   items?: number | undefined;
 };
 
-export type CreateProjectInput = {
+export type CreateInitiativeInput = {
   name: string;
-  locations: readonly { directory: string; label?: string | undefined }[];
+  repos: readonly { directory: string; label?: string | undefined }[];
 };
 
-export type ProjectLocationInput = {
-  projectID: string;
+export type InitiativeRepoInput = {
+  initiativeID: string;
   directory: string;
   label?: string | undefined;
 };
 
-export type ProjectLocationRef = {
-  projectID: string;
-  locationID: string;
+export type InitiativeRepoRef = {
+  initiativeID: string;
+  repoID: string;
 };
 
-export type RemoveProjectLocationInput = ProjectLocationRef & {
+export type RemoveInitiativeRepoInput = InitiativeRepoRef & {
   confirm?: boolean | undefined;
 };
 
@@ -160,8 +160,8 @@ export const WORK_ITEM_TRANSITIONS: Record<WorkItemStatus, readonly WorkItemStat
 
 export type WorkItem = {
   id: string;
-  projectID: string;
-  locationID?: string | undefined;
+  initiativeID: string;
+  repoID?: string | undefined;
   parentID?: string | undefined;
   title: string;
   status: WorkItemStatus;
@@ -172,19 +172,19 @@ export type WorkItem = {
 };
 
 export type WorkGroup = {
-  project: Project;
+  initiative: Initiative;
   items: readonly WorkItem[];
 };
 
 export type WorkListInput = {
-  scope: "project" | "all";
+  scope: "initiative" | "all";
   /** Session directory; resolves the project for `scope: "project"`. */
   directory?: string | undefined;
 };
 
 export type WorkItemDetail = {
   item: WorkItem & { body: string; closedAt?: string | undefined };
-  project: Project;
+  initiative: Initiative;
   /** Items this one depends on. */
   blockedBy: readonly WorkItem[];
   /** Items that depend on this one. */
@@ -199,7 +199,7 @@ export type WorkItemDetail = {
 
 export type SaveWorkItemInput = {
   id?: string | undefined;
-  /** Required when creating: resolves (or creates) the project. */
+  /** Required when creating: resolves (or creates) the initiative. */
   directory?: string | undefined;
   title: string;
   body?: string | undefined;
@@ -306,7 +306,7 @@ export const planResultSchema = Schema.Struct({
   plan: Schema.optional(planSchema),
 });
 
-export const projectLocationSchema = Schema.Struct({
+export const initiativeRepoSchema = Schema.Struct({
   id: Schema.String,
   directory: Schema.String,
   label: Schema.String,
@@ -314,49 +314,49 @@ export const projectLocationSchema = Schema.Struct({
   position: Schema.Number,
 });
 
-export const projectSchema = Schema.Struct({
+export const initiativeSchema = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   createdAt: Schema.String,
   updatedAt: Schema.String,
-  locations: Schema.Array(projectLocationSchema),
+  repos: Schema.Array(initiativeRepoSchema),
   baseBranch: optString,
   maxParallel: Schema.optional(Schema.Number),
   verifyCommand: optString,
 });
 
-export const projectResultSchema = Schema.Struct({
+export const initiativeResultSchema = Schema.Struct({
   ok: Schema.Boolean,
   error: optString,
-  project: Schema.optional(projectSchema),
+  initiative: Schema.optional(initiativeSchema),
   needsConfirmation: Schema.optional(Schema.Boolean),
   items: optNum,
 });
 
-export const createProjectInputSchema = Schema.Struct({
+export const createInitiativeInputSchema = Schema.Struct({
   name: Schema.String,
-  locations: Schema.Array(Schema.Struct({ directory: Schema.String, label: optString })),
+  repos: Schema.Array(Schema.Struct({ directory: Schema.String, label: optString })),
 });
 
-export const renameProjectInputSchema = Schema.Struct({
+export const renameInitiativeInputSchema = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
 });
 
-export const projectLocationInputSchema = Schema.Struct({
-  projectID: Schema.String,
+export const initiativeRepoInputSchema = Schema.Struct({
+  initiativeID: Schema.String,
   directory: Schema.String,
   label: optString,
 });
 
-export const projectLocationRefSchema = Schema.Struct({
-  projectID: Schema.String,
-  locationID: Schema.String,
+export const initiativeRepoRefSchema = Schema.Struct({
+  initiativeID: Schema.String,
+  repoID: Schema.String,
 });
 
-export const removeProjectLocationInputSchema = Schema.Struct({
-  projectID: Schema.String,
-  locationID: Schema.String,
+export const removeInitiativeRepoInputSchema = Schema.Struct({
+  initiativeID: Schema.String,
+  repoID: Schema.String,
   confirm: Schema.optional(Schema.Boolean),
 });
 
@@ -373,8 +373,8 @@ export const workOriginSchema = Schema.Union([Schema.Literal("user"), Schema.Lit
 
 export const workItemSchema = Schema.Struct({
   id: Schema.String,
-  projectID: Schema.String,
-  locationID: optString,
+  initiativeID: Schema.String,
+  repoID: optString,
   parentID: optString,
   title: Schema.String,
   status: workStatusSchema,
@@ -385,7 +385,7 @@ export const workItemSchema = Schema.Struct({
 });
 
 export const workGroupSchema = Schema.Struct({
-  project: projectSchema,
+  initiative: initiativeSchema,
   items: Schema.Array(workItemSchema),
 });
 
@@ -402,7 +402,7 @@ export const workItemFullSchema = Schema.Struct({
 
 export const workItemDetailSchema = Schema.Struct({
   item: workItemFullSchema,
-  project: projectSchema,
+  initiative: initiativeSchema,
   blockedBy: Schema.Array(workItemSchema),
   blocks: Schema.Array(workItemSchema),
   parent: Schema.optional(Schema.NullOr(workItemSchema)),
@@ -419,6 +419,23 @@ export const workItemResultSchema = Schema.Struct({
   ok: Schema.Boolean,
   error: optString,
   item: Schema.optional(workItemSchema),
+});
+
+export const setWorkItemRepoInputSchema = Schema.Struct({
+  id: Schema.String,
+  repoID: Schema.String,
+});
+
+export const ensureInitiativeRepoInputSchema = Schema.Struct({
+  initiativeID: Schema.String,
+  directory: Schema.String,
+});
+
+export const ensureRepoResultSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  error: optString,
+  repo: Schema.optional(initiativeRepoSchema),
+  created: Schema.optional(Schema.Boolean),
 });
 
 export const workItemIdInputSchema = Schema.Struct({
@@ -536,7 +553,7 @@ export const planChangeSchema = Schema.Struct({
 });
 
 /* ------------------------------------------------------------------ */
-/* Project runs (F4)                                                   */
+/* Initiative runs (F4)                                                   */
 /* ------------------------------------------------------------------ */
 
 export type RunItemView = {
@@ -565,7 +582,7 @@ export type MergeEntryView = {
 
 export type RunView = {
   id: string;
-  projectID: string;
+  initiativeID: string;
   baseRef: string;
   status: string;
   maxParallel: number;
@@ -617,7 +634,7 @@ export const mergeEntryViewSchema = Schema.Struct({
 
 export const runViewSchema = Schema.Struct({
   id: Schema.String,
-  projectID: Schema.String,
+  initiativeID: Schema.String,
   baseRef: Schema.String,
   status: Schema.String,
   maxParallel: Schema.Number,
@@ -654,7 +671,7 @@ export const runStartViewSchema = Schema.Struct({
 export const runIDInputSchema = Schema.Struct({ runID: Schema.String });
 
 export const runProjectInputSchema = Schema.Struct({
-  projectID: Schema.String,
+  initiativeID: Schema.String,
   directory: Schema.String,
 });
 
@@ -664,7 +681,7 @@ export const runRetryInputSchema = Schema.Struct({
 });
 
 export const runSettingsInputSchema = Schema.Struct({
-  projectID: Schema.String,
+  initiativeID: Schema.String,
   baseBranch: Schema.optional(Schema.NullOr(Schema.String)),
   maxParallel: Schema.optional(Schema.Number),
   verifyCommand: Schema.optional(Schema.NullOr(Schema.String)),
@@ -725,29 +742,29 @@ export const PlansRpc = Rpc.define({
       input: Schema.toStandardSchemaV1(planFlowSchema),
       output: Schema.toStandardSchemaV1(planFlowSchema),
     },
-    listProjects: {
+    listInitiatives: {
       input: Schema.toStandardSchemaV1(Schema.Struct({})),
-      output: Schema.toStandardSchemaV1(Schema.Array(projectSchema)),
+      output: Schema.toStandardSchemaV1(Schema.Array(initiativeSchema)),
     },
-    createProject: {
-      input: Schema.toStandardSchemaV1(createProjectInputSchema),
-      output: Schema.toStandardSchemaV1(projectResultSchema),
+    createInitiative: {
+      input: Schema.toStandardSchemaV1(createInitiativeInputSchema),
+      output: Schema.toStandardSchemaV1(initiativeResultSchema),
     },
-    renameProject: {
-      input: Schema.toStandardSchemaV1(renameProjectInputSchema),
-      output: Schema.toStandardSchemaV1(projectResultSchema),
+    renameInitiative: {
+      input: Schema.toStandardSchemaV1(renameInitiativeInputSchema),
+      output: Schema.toStandardSchemaV1(initiativeResultSchema),
     },
-    addProjectLocation: {
-      input: Schema.toStandardSchemaV1(projectLocationInputSchema),
-      output: Schema.toStandardSchemaV1(projectResultSchema),
+    addInitiativeRepo: {
+      input: Schema.toStandardSchemaV1(initiativeRepoInputSchema),
+      output: Schema.toStandardSchemaV1(initiativeResultSchema),
     },
-    removeProjectLocation: {
-      input: Schema.toStandardSchemaV1(removeProjectLocationInputSchema),
-      output: Schema.toStandardSchemaV1(projectResultSchema),
+    removeInitiativeRepo: {
+      input: Schema.toStandardSchemaV1(removeInitiativeRepoInputSchema),
+      output: Schema.toStandardSchemaV1(initiativeResultSchema),
     },
-    setProjectPrimary: {
-      input: Schema.toStandardSchemaV1(projectLocationRefSchema),
-      output: Schema.toStandardSchemaV1(projectResultSchema),
+    setInitiativePrimary: {
+      input: Schema.toStandardSchemaV1(initiativeRepoRefSchema),
+      output: Schema.toStandardSchemaV1(initiativeResultSchema),
     },
     listWorkItems: {
       input: Schema.toStandardSchemaV1(workListInputSchema),
@@ -773,6 +790,14 @@ export const PlansRpc = Rpc.define({
       input: Schema.toStandardSchemaV1(placeWorkItemInputSchema),
       output: Schema.toStandardSchemaV1(workItemResultSchema),
     },
+    setWorkItemRepo: {
+      input: Schema.toStandardSchemaV1(setWorkItemRepoInputSchema),
+      output: Schema.toStandardSchemaV1(workItemResultSchema),
+    },
+    ensureInitiativeRepo: {
+      input: Schema.toStandardSchemaV1(ensureInitiativeRepoInputSchema),
+      output: Schema.toStandardSchemaV1(ensureRepoResultSchema),
+    },
     addWorkItemDep: {
       input: Schema.toStandardSchemaV1(workItemDepInputSchema),
       output: Schema.toStandardSchemaV1(opResultSchema),
@@ -794,7 +819,7 @@ export const PlansRpc = Rpc.define({
       output: Schema.toStandardSchemaV1(runStartViewSchema),
     },
     runActive: {
-      input: Schema.toStandardSchemaV1(Schema.Struct({ projectID: Schema.String })),
+      input: Schema.toStandardSchemaV1(Schema.Struct({ initiativeID: Schema.String })),
       output: Schema.toStandardSchemaV1(Schema.NullOr(runViewSchema)),
     },
     runGet: {
@@ -811,7 +836,7 @@ export const PlansRpc = Rpc.define({
     },
     runSettings: {
       input: Schema.toStandardSchemaV1(runSettingsInputSchema),
-      output: Schema.toStandardSchemaV1(projectResultSchema),
+      output: Schema.toStandardSchemaV1(initiativeResultSchema),
     },
   },
   events: {

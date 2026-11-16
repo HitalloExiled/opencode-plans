@@ -14,8 +14,8 @@ import {
   type Plan,
   type PlanFlow,
   type PlanResult,
-  type Project,
-  type ProjectResult,
+  type Initiative,
+  type InitiativeResult,
   type Status,
   type MergeEntryView,
   type RunItemView,
@@ -31,22 +31,22 @@ import { emitPlanChange } from "./plan-events.js";
 import { cancelProjectRun, preflightRun, retryRunItem, startProjectRun } from "./run-engine.js";
 import {
   activeRun,
-  addProjectLocation,
+  addInitiativeRepo,
   addWorkItemDep as addDepRow,
   countPlans,
-  createProject,
+  createInitiative,
   deletePlan,
   getPlan,
   getPlanByWorkItem,
-  getProject,
+  getInitiative,
   getStore,
   getRun,
   getWorkItem as getWorkItemRow,
   listMergeQueue,
   listPlans,
   listRunItems,
-  listProjects,
-  listWorkItems as listProjectWorkItems,
+  listInitiatives,
+  listWorkItems as listInitiativeWorkItems,
   listWorkItemsAll,
   movePlan,
   moveWorkItem as moveWorkItemRow,
@@ -54,16 +54,18 @@ import {
   planProgress,
   plansDbPath,
   recomputeImplicitDeps,
-  removeProjectLocation,
+  removeInitiativeRepo,
   removeWorkItemDep as removeDepRow,
-  renameProject,
+  renameInitiative,
   requireStore,
-  resolveProject,
+  resolveInitiative,
   savePlan,
   schemaVersion,
-  setPrimaryLocation,
-  setProjectRunSettings,
+  ensureInitiativeRepo as ensureInitiativeRepoRow,
+  setInitiativePrimary,
+  setInitiativeRunSettings,
   setStep,
+  setWorkItemRepo as setWorkItemRepoRow,
   setWorkItemParent as setParentRow,
   setWorkItemStatus as setStatusRow,
   updatePlan,
@@ -72,7 +74,7 @@ import {
   workItemDeps,
   type Db,
   type Plan as StorePlan,
-  type Project as StoreProject,
+  type Initiative as StoreInitiative,
   type SaveOk,
   type WorkItemRow as StoreWorkItemRow,
   type WriteError,
@@ -105,20 +107,28 @@ const toPlan = (plan: StorePlan): Plan => ({
 const fromWrite = (result: SaveOk | WriteError): PlanResult =>
   result.ok ? { ok: true, plan: toPlan(result.plan) } : { ok: false, error: result.error };
 
-const toProject = (project: StoreProject): Project => ({
-  id: project.id,
-  name: project.name,
-  createdAt: project.created_at,
-  updatedAt: project.updated_at,
-  ...(project.base_branch ? { baseBranch: project.base_branch } : {}),
-  maxParallel: project.max_parallel,
-  ...(project.verify_command ? { verifyCommand: project.verify_command } : {}),
-  locations: project.locations.map((location) => ({
-    id: location.id,
-    directory: location.directory,
-    label: location.label,
-    primary: location.primary,
-    position: location.position,
+const toInitiativeRepo = (repo: StoreInitiative["repos"][number]) => ({
+  id: repo.id,
+  directory: repo.directory,
+  label: repo.label,
+  primary: repo.primary,
+  position: repo.position,
+});
+
+const toInitiative = (initiative: StoreInitiative): Initiative => ({
+  id: initiative.id,
+  name: initiative.name,
+  createdAt: initiative.created_at,
+  updatedAt: initiative.updated_at,
+  ...(initiative.base_branch ? { baseBranch: initiative.base_branch } : {}),
+  maxParallel: initiative.max_parallel,
+  ...(initiative.verify_command ? { verifyCommand: initiative.verify_command } : {}),
+  repos: initiative.repos.map((repo) => ({
+    id: repo.id,
+    directory: repo.directory,
+    label: repo.label,
+    primary: repo.primary,
+    position: repo.position,
   })),
 });
 
@@ -147,7 +157,7 @@ function buildRunView(db: Db, run: NonNullable<ReturnType<typeof getRun>>): RunV
   }));
   return {
     id: run.id,
-    projectID: run.project_id,
+    initiativeID: run.initiative_id,
     baseRef: run.base_ref,
     status: run.status,
     maxParallel: run.max_parallel,
@@ -160,12 +170,12 @@ function buildRunView(db: Db, run: NonNullable<ReturnType<typeof getRun>>): RunV
   };
 }
 
-const projectOk = (project: StoreProject): ProjectResult => ({ ok: true, project: toProject(project) });
+const initiativeOk = (initiative: StoreInitiative): InitiativeResult => ({ ok: true, initiative: toInitiative(initiative) });
 
-const projectError = (
+const initiativeError = (
   error: string,
   extra: { needsConfirmation?: boolean | undefined; items?: number | undefined } = {},
-): ProjectResult => ({
+): InitiativeResult => ({
   ok: false,
   error,
   ...(extra.needsConfirmation ? { needsConfirmation: true } : {}),
@@ -174,8 +184,8 @@ const projectError = (
 
 const toWorkItem = (item: StoreWorkItemRow): WorkItem => ({
   id: item.id,
-  projectID: item.project_id,
-  ...(item.location_id ? { locationID: item.location_id } : {}),
+  initiativeID: item.initiative_id,
+  ...(item.repo_id ? { repoID: item.repo_id } : {}),
   ...(item.parent_id ? { parentID: item.parent_id } : {}),
   title: item.title,
   status: item.status,
@@ -285,7 +295,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
         if (result.plan.work_item_id) {
           const item = getWorkItemRow(store.db, result.plan.work_item_id);
-          if (item) recomputeImplicitDeps(store.db, item.project_id);
+          if (item) recomputeImplicitDeps(store.db, item.initiative_id);
         }
       }
       return fromWrite(result);
@@ -421,104 +431,104 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
 
     setFlow: async (flow) => persistFlow(flow as PlanFlow),
 
-    listProjects: async () => {
+    listInitiatives: async () => {
       const store = await requireStore();
-      return listProjects(store.db).map(toProject);
+      return listInitiatives(store.db).map(toInitiative);
     },
 
-    createProject: async (input) => {
+    createInitiative: async (input) => {
       const store = await requireStore();
-      const result = createProject(store.db, {
+      const result = createInitiative(store.db, {
         name: input.name,
-        locations: input.locations.map((location) => ({
-          directory: location.directory,
-          ...(location.label ? { label: location.label } : {}),
+        repos: input.repos.map((repo) => ({
+          directory: repo.directory,
+          ...(repo.label ? { label: repo.label } : {}),
         })),
       });
-      return result.ok ? projectOk(result.project) : projectError(result.error);
+      return result.ok ? initiativeOk(result.initiative) : initiativeError(result.error);
     },
 
-    renameProject: async (input) => {
+    renameInitiative: async (input) => {
       const store = await requireStore();
-      const result = renameProject(store.db, input.id, input.name);
-      return result.ok ? projectOk(result.project) : projectError(result.error);
+      const result = renameInitiative(store.db, input.id, input.name);
+      return result.ok ? initiativeOk(result.initiative) : initiativeError(result.error);
     },
 
-    addProjectLocation: async (input) => {
+    addInitiativeRepo: async (input) => {
       const store = await requireStore();
-      const result = addProjectLocation(store.db, input.projectID, {
+      const result = addInitiativeRepo(store.db, input.initiativeID, {
         directory: input.directory,
         ...(input.label ? { label: input.label } : {}),
       });
-      if (!result.ok) return projectError(result.error);
-      const project = getProject(store.db, input.projectID);
-      return project ? projectOk(project) : projectError("projeto não encontrado após adicionar o workspace");
+      if (!result.ok) return initiativeError(result.error);
+      const initiative = getInitiative(store.db, input.initiativeID);
+      return initiative ? initiativeOk(initiative) : initiativeError("iniciativa não encontrado após adicionar o repositório");
     },
 
-    removeProjectLocation: async (input) => {
+    removeInitiativeRepo: async (input) => {
       const store = await requireStore();
-      const result = removeProjectLocation(store.db, input.projectID, input.locationID, {
+      const result = removeInitiativeRepo(store.db, input.initiativeID, input.repoID, {
         confirm: input.confirm === true,
       });
       if (!result.ok) {
-        return projectError(result.error, {
+        return initiativeError(result.error, {
           needsConfirmation: result.needsConfirmation === true,
           ...(result.items !== undefined ? { items: result.items } : {}),
         });
       }
-      const project = getProject(store.db, input.projectID);
-      return project ? projectOk(project) : projectError("projeto não encontrado após remover o workspace");
+      const initiative = getInitiative(store.db, input.initiativeID);
+      return initiative ? initiativeOk(initiative) : initiativeError("iniciativa não encontrado após remover o repositório");
     },
 
-    setProjectPrimary: async (input) => {
+    setInitiativePrimary: async (input) => {
       const store = await requireStore();
-      const result = setPrimaryLocation(store.db, input.projectID, input.locationID);
-      if (!result.ok) return projectError(result.error);
-      const project = getProject(store.db, input.projectID);
-      return project ? projectOk(project) : projectError("projeto não encontrado após trocar o primary");
+      const result = setInitiativePrimary(store.db, input.initiativeID, input.repoID);
+      if (!result.ok) return initiativeError(result.error);
+      const initiative = getInitiative(store.db, input.initiativeID);
+      return initiative ? initiativeOk(initiative) : initiativeError("iniciativa não encontrado após trocar o primary");
     },
 
     listWorkItems: async (input) => {
       const store = await requireStore();
       if (input.scope === "project") {
         if (!input.directory) return [];
-        const resolved = resolveProject(store.db, input.directory);
+        const resolved = resolveInitiative(store.db, input.directory);
         if (!resolved) return [];
         return [
           {
-            project: toProject(resolved.project),
-            items: sortWorkItems(listProjectWorkItems(store.db, resolved.project.id)).map(toWorkItem),
+            initiative: toInitiative(resolved.initiative),
+            items: sortWorkItems(listInitiativeWorkItems(store.db, resolved.initiative.id)).map(toWorkItem),
           },
         ];
       }
 
-      const projects = listProjects(store.db);
+      const initiatives = listInitiatives(store.db);
       const byProject = new Map<string, StoreWorkItemRow[]>();
       for (const item of listWorkItemsAll(store.db)) {
-        const bucket = byProject.get(item.project_id);
+        const bucket = byProject.get(item.initiative_id);
         if (bucket) bucket.push(item);
-        else byProject.set(item.project_id, [item]);
+        else byProject.set(item.initiative_id, [item]);
       }
-      return projects
-        .map((project) => ({ project, items: sortWorkItems(byProject.get(project.id) ?? []) }))
+      return initiatives
+        .map((initiative) => ({ initiative, items: sortWorkItems(byProject.get(initiative.id) ?? []) }))
         .filter((group) => group.items.length > 0)
-        .sort((a, b) => a.project.name.localeCompare(b.project.name))
-        .map((group) => ({ project: toProject(group.project), items: group.items.map(toWorkItem) }));
+        .sort((a, b) => a.initiative.name.localeCompare(b.initiative.name))
+        .map((group) => ({ initiative: toInitiative(group.initiative), items: group.items.map(toWorkItem) }));
     },
 
     getWorkItem: async (input) => {
       const store = await requireStore();
       const item = getWorkItemRow(store.db, input.id);
       if (!item) return null;
-      const project = getProject(store.db, item.project_id);
-      if (!project) return null;
+      const initiative = getInitiative(store.db, item.initiative_id);
+      if (!initiative) return null;
       const deps = workItemDeps(store.db, item.id);
       const parent = item.parent_id ? getWorkItemRow(store.db, item.parent_id) : undefined;
       const plan = getPlanByWorkItem(store.db, item.id);
       const progress = plan ? planProgress(plan) : undefined;
       return {
         item: toWorkItemFull(item),
-        project: toProject(project),
+        initiative: toInitiative(initiative),
         blockedBy: deps.blockedBy.map(toWorkItem),
         blocks: deps.blocks.map(toWorkItem),
         parent: parent ? toWorkItem(parent) : null,
@@ -576,6 +586,19 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       return result.ok ? { ok: true, item: toWorkItem(result.item) } : { ok: false, error: result.error };
     },
 
+    setWorkItemRepo: async (input) => {
+      const store = await requireStore();
+      const result = setWorkItemRepoRow(store.db, { id: input.id, repoID: input.repoID });
+      return result.ok ? { ok: true, item: toWorkItem(result.item) } : { ok: false, error: result.error };
+    },
+
+    ensureInitiativeRepo: async (input) => {
+      const store = await requireStore();
+      const result = ensureInitiativeRepoRow(store.db, input.initiativeID, input.directory);
+      if (!result.ok) return { ok: false, error: result.error };
+      return { ok: true, repo: toInitiativeRepo(result.repo), created: result.created };
+    },
+
     addWorkItemDep: async (input) => {
       const store = await requireStore();
       const result = addDepRow(store.db, { itemID: input.itemID, blocksID: input.blocksID });
@@ -595,7 +618,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
     },
     runPreflight: async (input) => {
       const store = await requireStore();
-      const result = await preflightRun(store.db, input.projectID, input.directory);
+      const result = await preflightRun(store.db, input.initiativeID, input.directory);
       if (!result.ok) return { ok: false, blockers: result.blockers, items: [] };
       return {
         ok: true,
@@ -614,12 +637,12 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
 
     runStart: async (input) => {
       const store = await requireStore();
-      return startProjectRun(ctx, store.db, { projectID: input.projectID, directory: input.directory });
+      return startProjectRun(ctx, store.db, { initiativeID: input.initiativeID, directory: input.directory });
     },
 
     runActive: async (input) => {
       const store = await requireStore();
-      const run = activeRun(store.db, input.projectID);
+      const run = activeRun(store.db, input.initiativeID);
       return run ? buildRunView(store.db, run) : null;
     },
 
@@ -641,12 +664,12 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
 
     runSettings: async (input) => {
       const store = await requireStore();
-      const result = setProjectRunSettings(store.db, input.projectID, {
+      const result = setInitiativeRunSettings(store.db, input.initiativeID, {
         baseBranch: input.baseBranch,
         maxParallel: input.maxParallel,
         verifyCommand: input.verifyCommand,
       });
-      return result.ok ? projectOk(result.project) : projectError(result.error);
+      return result.ok ? initiativeOk(result.initiative) : initiativeError(result.error);
     },
 
   };

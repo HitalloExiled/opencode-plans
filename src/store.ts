@@ -126,7 +126,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -155,29 +155,32 @@ const BASE_SCHEMA = [
     PRIMARY KEY (plan_id, position)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_plan_steps_plan ON plan_steps(plan_id, position)`,
-  // v3 — work items (US-01: a work item belongs to a user project that groups
-  // N workspaces). `work_items.project_id` is the USER project (`projects.id`),
-  // NOT the OpenCode project id stored in `plans.project_id`.
-  `CREATE TABLE IF NOT EXISTS projects (
+  // v3 — work items (US-01): a work item belongs to the user's INITIATIVE,
+  // which groups N repositories. `work_items.initiative_id` is ours, NOT the
+  // OpenCode project id stored in `plans.project_id`.
+  `CREATE TABLE IF NOT EXISTS initiatives (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
+    base_branch TEXT,
+    max_parallel INTEGER NOT NULL DEFAULT 2,
+    verify_command TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
-  `CREATE TABLE IF NOT EXISTS project_locations (
+  `CREATE TABLE IF NOT EXISTS initiative_repos (
     id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
+    initiative_id TEXT NOT NULL,
     directory TEXT NOT NULL UNIQUE,
     label TEXT NOT NULL,
     is_primary INTEGER NOT NULL DEFAULT 0,
     position INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_project_locations_project ON project_locations(project_id, position)`,
+  `CREATE INDEX IF NOT EXISTS idx_initiative_repos_initiative ON initiative_repos(initiative_id, position)`,
   `CREATE TABLE IF NOT EXISTS work_items (
     id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
-    location_id TEXT,
+    initiative_id TEXT NOT NULL,
+    repo_id TEXT,
     parent_id TEXT,
     title TEXT NOT NULL,
     body TEXT NOT NULL,
@@ -188,9 +191,9 @@ const BASE_SCHEMA = [
     updated_at TEXT NOT NULL,
     closed_at TEXT
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_work_items_project_status ON work_items(project_id, status, rank)`,
-  `CREATE INDEX IF NOT EXISTS idx_work_items_location ON work_items(location_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_work_items_initiative ON work_items(initiative_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_work_items_initiative_status ON work_items(initiative_id, status, rank)`,
+  `CREATE INDEX IF NOT EXISTS idx_work_items_repo ON work_items(repo_id)`,
   // v4 — dependencies: `item_id` is blocked by `blocks_id`. `kind`/`reason`
   // are ready for the implicit dependencies of the project runner (F4).
   `CREATE TABLE IF NOT EXISTS work_item_deps (
@@ -203,11 +206,11 @@ const BASE_SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_work_item_deps_item ON work_item_deps(item_id)`,
   `CREATE INDEX IF NOT EXISTS idx_work_item_deps_blocks ON work_item_deps(blocks_id)`,
-  // v6 — project runs (F4): a run executes a project graph in parallel, each
-  // item isolated in its own branch/worktree and merged by a single session.
+  // v6 — initiative runs (F4): a run executes an initiative graph in
+  // parallel, each item isolated in its own branch/worktree and merged once.
   `CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
+    initiative_id TEXT NOT NULL,
     base_ref TEXT NOT NULL,
     status TEXT NOT NULL,
     max_parallel INTEGER NOT NULL DEFAULT 2,
@@ -216,8 +219,8 @@ const BASE_SCHEMA = [
     finished_at TEXT,
     error TEXT
   )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_active ON runs(project_id) WHERE status IN ('running', 'interrupted')`,
-  `CREATE INDEX IF NOT EXISTS idx_runs_project ON runs(project_id, started_at DESC)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_active ON runs(initiative_id) WHERE status IN ('running', 'interrupted')`,
+  `CREATE INDEX IF NOT EXISTS idx_runs_initiative ON runs(initiative_id, started_at DESC)`,
   `CREATE TABLE IF NOT EXISTS run_items (
     run_id TEXT NOT NULL,
     work_item_id TEXT NOT NULL,
@@ -260,12 +263,52 @@ function apply(db: Db, statements: readonly string[]): void {
 // tool/UI status union has a single spelling.
 const MIGRATION_002 = [`UPDATE plans SET status = 'archived' WHERE status = 'abandoned'`];
 
+function hasTable(db: Db, table: string): boolean {
+  const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
+  return row !== undefined;
+}
+
 function hasColumn(db: Db, table: string, column: string): boolean {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all() as { name?: string }[];
   return rows.some((row) => row.name === column);
 }
 
 export function initSchema(db: Db): void {
+  // v7 — rename BEFORE applying BASE_SCHEMA: creating the new empty tables
+  // first would skip the rename and strand the old rows in `projects`.
+  if (hasTable(db, "projects")) {
+    if (hasTable(db, "initiatives")) {
+      // A previous aborted migration can leave empty new tables behind; they
+      // carry no data, so the old table wins.
+      const rows = (db.prepare("SELECT COUNT(*) AS c FROM initiatives").get() as { c?: number }).c ?? 0;
+      if (rows === 0) {
+        db.prepare("DROP TABLE initiatives").run();
+        if (hasTable(db, "initiative_repos")) {
+          const repos = (db.prepare("SELECT COUNT(*) AS c FROM initiative_repos").get() as { c?: number }).c ?? 0;
+          if (repos === 0) db.prepare("DROP TABLE initiative_repos").run();
+        }
+      }
+    }
+    if (!hasTable(db, "initiatives")) {
+      db.prepare("ALTER TABLE projects RENAME TO initiatives").run();
+    }
+  }
+  if (hasTable(db, "project_locations") && !hasTable(db, "initiative_repos")) {
+    db.prepare("ALTER TABLE project_locations RENAME TO initiative_repos").run();
+  }
+  if (hasTable(db, "initiative_repos") && hasColumn(db, "initiative_repos", "project_id")) {
+    db.prepare("ALTER TABLE initiative_repos RENAME COLUMN project_id TO initiative_id").run();
+  }
+  if (hasTable(db, "work_items") && hasColumn(db, "work_items", "project_id")) {
+    db.prepare("ALTER TABLE work_items RENAME COLUMN project_id TO initiative_id").run();
+  }
+  if (hasTable(db, "work_items") && hasColumn(db, "work_items", "location_id")) {
+    db.prepare("ALTER TABLE work_items RENAME COLUMN location_id TO repo_id").run();
+  }
+  if (hasTable(db, "runs") && hasColumn(db, "runs", "project_id")) {
+    db.prepare("ALTER TABLE runs RENAME COLUMN project_id TO initiative_id").run();
+  }
+
   apply(db, BASE_SCHEMA);
   const current = schemaVersion(db);
   if (current < 2) {
@@ -290,15 +333,34 @@ export function initSchema(db: Db): void {
   db.prepare(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_work_item ON plans(work_item_id) WHERE work_item_id IS NOT NULL",
   ).run();
-  // v6 — per-project run settings.
-  if (!hasColumn(db, "projects", "base_branch")) {
-    db.prepare("ALTER TABLE projects ADD COLUMN base_branch TEXT").run();
+
+  // Old index names follow the renamed table; replace them with the new ones.
+  db.prepare("DROP INDEX IF EXISTS idx_project_locations_project").run();
+  db.prepare("DROP INDEX IF EXISTS idx_work_items_project").run();
+  db.prepare("DROP INDEX IF EXISTS idx_work_items_project_status").run();
+  db.prepare("DROP INDEX IF EXISTS idx_work_items_location").run();
+  db.prepare("DROP INDEX IF EXISTS idx_runs_project").run();
+  db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_initiative_repos_initiative ON initiative_repos(initiative_id, position)",
+  ).run();
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_work_items_initiative ON work_items(initiative_id)").run();
+  db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_work_items_initiative_status ON work_items(initiative_id, status, rank)",
+  ).run();
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_work_items_repo ON work_items(repo_id)").run();
+  db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_runs_initiative ON runs(initiative_id, started_at DESC)",
+  ).run();
+
+  // v6 — per-initiative run settings (fresh databases already have them).
+  if (!hasColumn(db, "initiatives", "base_branch")) {
+    db.prepare("ALTER TABLE initiatives ADD COLUMN base_branch TEXT").run();
   }
-  if (!hasColumn(db, "projects", "max_parallel")) {
-    db.prepare("ALTER TABLE projects ADD COLUMN max_parallel INTEGER NOT NULL DEFAULT 2").run();
+  if (!hasColumn(db, "initiatives", "max_parallel")) {
+    db.prepare("ALTER TABLE initiatives ADD COLUMN max_parallel INTEGER NOT NULL DEFAULT 2").run();
   }
-  if (!hasColumn(db, "projects", "verify_command")) {
-    db.prepare("ALTER TABLE projects ADD COLUMN verify_command TEXT").run();
+  if (!hasColumn(db, "initiatives", "verify_command")) {
+    db.prepare("ALTER TABLE initiatives ADD COLUMN verify_command TEXT").run();
   }
   db.prepare(`PRAGMA user_version = ${SCHEMA_VERSION}`).run();
 }
@@ -905,13 +967,13 @@ export function renderDoctor(info: DoctorInfo): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* Work items — user projects and containment (US-01)                  */
+/* Work items — user initiatives and containment (US-01)                  */
 /* ------------------------------------------------------------------ */
 
 export type WorkItemStatus = "backlog" | "ready" | "doing" | "blocked" | "done" | "dropped";
 export type WorkOrigin = "user" | "agent";
 
-export type ProjectRow = {
+export type InitiativeRow = {
   id: string;
   name: string;
   /** Integration base for runs; null means the repo default branch. */
@@ -922,9 +984,9 @@ export type ProjectRow = {
   updated_at: string;
 };
 
-export type ProjectLocationRow = {
+export type InitiativeRepoRow = {
   id: string;
-  project_id: string;
+  initiative_id: string;
   directory: string;
   label: string;
   primary: boolean;
@@ -932,12 +994,12 @@ export type ProjectLocationRow = {
   created_at: string;
 };
 
-export type Project = ProjectRow & { locations: ProjectLocationRow[] };
+export type Initiative = InitiativeRow & { repos: InitiativeRepoRow[] };
 
 export type WorkItemRow = {
   id: string;
-  project_id: string;
-  location_id: string | null;
+  initiative_id: string;
+  repo_id: string | null;
   parent_id: string | null;
   title: string;
   body: string;
@@ -964,9 +1026,9 @@ export function normalizeWorkspaceDirectory(directory: string): string {
   return stripped || "/";
 }
 
-type LocationRow = {
+type RepoRow = {
   id: string;
-  project_id: string;
+  initiative_id: string;
   directory: string;
   label: string;
   is_primary: number;
@@ -974,10 +1036,10 @@ type LocationRow = {
   created_at: string;
 };
 
-function locationFrom(row: LocationRow): ProjectLocationRow {
+function repoFrom(row: RepoRow): InitiativeRepoRow {
   return {
     id: row.id,
-    project_id: row.project_id,
+    initiative_id: row.initiative_id,
     directory: row.directory,
     label: row.label,
     primary: row.is_primary === 1,
@@ -986,87 +1048,87 @@ function locationFrom(row: LocationRow): ProjectLocationRow {
   };
 }
 
-function locationsFor(db: Db, projectID: string): ProjectLocationRow[] {
+function reposFor(db: Db, initiativeID: string): InitiativeRepoRow[] {
   const rows = db
-    .prepare("SELECT * FROM project_locations WHERE project_id = ? ORDER BY position ASC, created_at ASC")
-    .all(projectID) as LocationRow[];
-  return rows.map(locationFrom);
+    .prepare("SELECT * FROM initiative_repos WHERE initiative_id = ? ORDER BY position ASC, created_at ASC")
+    .all(initiativeID) as RepoRow[];
+  return rows.map(repoFrom);
 }
 
-/** The project a workspace already belongs to, if any. */
-function directoryOwner(db: Db, directory: string): string | undefined {
-  const row = db.prepare("SELECT project_id FROM project_locations WHERE directory = ?").get(directory) as
-    | { project_id?: string }
+/** The initiative a repo already belongs to, if any. */
+function repoOwner(db: Db, directory: string): string | undefined {
+  const row = db.prepare("SELECT initiative_id FROM initiative_repos WHERE directory = ?").get(directory) as
+    | { initiative_id?: string }
     | undefined;
-  return row?.project_id;
+  return row?.initiative_id;
 }
 
-export function getProject(db: Db, id: string): Project | undefined {
-  const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as ProjectRow | undefined;
+export function getInitiative(db: Db, id: string): Initiative | undefined {
+  const row = db.prepare("SELECT * FROM initiatives WHERE id = ?").get(id) as InitiativeRow | undefined;
   if (!row) return undefined;
-  return { ...row, locations: locationsFor(db, id) };
+  return { ...row, repos: reposFor(db, id) };
 }
 
-export function listProjects(db: Db): Project[] {
-  const rows = db.prepare("SELECT * FROM projects ORDER BY updated_at DESC, name ASC").all() as ProjectRow[];
-  return rows.map((row) => ({ ...row, locations: locationsFor(db, row.id) }));
+export function listInitiatives(db: Db): Initiative[] {
+  const rows = db.prepare("SELECT * FROM initiatives ORDER BY updated_at DESC, name ASC").all() as InitiativeRow[];
+  return rows.map((row) => ({ ...row, repos: reposFor(db, row.id) }));
 }
 
-export function renameProject(db: Db, id: string, name: string): ProjectOk | WorkStoreError {
+export function renameInitiative(db: Db, id: string, name: string): InitiativeOk | WorkStoreError {
   const trimmed = name.trim();
-  if (!trimmed) return { ok: false, error: "o nome do projeto é obrigatório" };
-  if (!getProject(db, id)) return { ok: false, error: `projeto não encontrado: ${id}` };
+  if (!trimmed) return { ok: false, error: "o nome da iniciativa é obrigatório" };
+  if (!getInitiative(db, id)) return { ok: false, error: `iniciativa não encontrado: ${id}` };
   const now = nowTimestamp();
   try {
-    db.prepare("UPDATE projects SET name = ?, updated_at = ? WHERE id = ?").run(trimmed, now, id);
+    db.prepare("UPDATE initiatives SET name = ?, updated_at = ? WHERE id = ?").run(trimmed, now, id);
   } catch (error) {
     return { ok: false, error: reason(error) };
   }
-  const project = getProject(db, id);
-  if (!project) return { ok: false, error: "projeto não encontrado após a renomeação" };
-  return { ok: true, project };
+  const initiative = getInitiative(db, id);
+  if (!initiative) return { ok: false, error: "iniciativa não encontrado após a renomeação" };
+  return { ok: true, initiative };
 }
 
-export type ProjectLocationInput = {
+export type InitiativeRepoInput = {
   directory: string;
   label?: string | undefined;
 };
 
-export type CreateProjectInput = {
+export type CreateInitiativeInput = {
   name: string;
-  locations: readonly ProjectLocationInput[];
+  repos: readonly InitiativeRepoInput[];
 };
 
-export type ProjectOk = { ok: true; project: Project };
-export type LocationOk = { ok: true; location: ProjectLocationRow };
+export type InitiativeOk = { ok: true; initiative: Initiative };
+export type RepoOk = { ok: true; repo: InitiativeRepoRow };
 export type Ok = { ok: true };
 
 /**
- * A project is born with its workspaces: the first is `primary`, and a
- * directory can belong to one project only.
+ * A initiative is born with its repos: the first is `primary`, and a
+ * directory can belong to one initiative only.
  */
-export function createProject(db: Db, input: CreateProjectInput): ProjectOk | WorkStoreError {
+export function createInitiative(db: Db, input: CreateInitiativeInput): InitiativeOk | WorkStoreError {
   const name = input.name.trim();
-  if (!name) return { ok: false, error: "o nome do projeto é obrigatório" };
-  if (input.locations.length === 0) return { ok: false, error: "um projeto precisa de pelo menos um workspace" };
+  if (!name) return { ok: false, error: "o nome da iniciativa é obrigatório" };
+  if (input.repos.length === 0) return { ok: false, error: "uma iniciativa precisa de pelo menos um repositório" };
 
-  const locations = input.locations.map((location) => {
-    const directory = normalizeWorkspaceDirectory(location.directory);
+  const repos = input.repos.map((repo) => {
+    const directory = normalizeWorkspaceDirectory(repo.directory);
     if (!directory) return { directory: "", label: "" };
-    return { directory, label: location.label?.trim() || basename(directory) || directory };
+    return { directory, label: repo.label?.trim() || basename(directory) || directory };
   });
-  for (const location of locations) {
-    if (!location.directory) return { ok: false, error: "o diretório do workspace é obrigatório" };
+  for (const repo of repos) {
+    if (!repo.directory) return { ok: false, error: "o diretório do repositório é obrigatório" };
   }
   const seen = new Set<string>();
-  for (const location of locations) {
-    if (!isAbsolute(location.directory)) {
-      return { ok: false, error: `o workspace precisa de um caminho absoluto: ${location.directory}` };
+  for (const repo of repos) {
+    if (!isAbsolute(repo.directory)) {
+      return { ok: false, error: `o repositório precisa de um caminho absoluto: ${repo.directory}` };
     }
-    if (seen.has(location.directory)) return { ok: false, error: `workspace duplicado: ${location.directory}` };
-    seen.add(location.directory);
-    if (directoryOwner(db, location.directory) !== undefined) {
-      return { ok: false, error: `o workspace ${location.directory} já pertence a outro projeto` };
+    if (seen.has(repo.directory)) return { ok: false, error: `repositório duplicado: ${repo.directory}` };
+    seen.add(repo.directory);
+    if (repoOwner(db, repo.directory) !== undefined) {
+      return { ok: false, error: `o repositório ${repo.directory} já pertence a outra iniciativa` };
     }
   }
 
@@ -1074,38 +1136,38 @@ export function createProject(db: Db, input: CreateProjectInput): ProjectOk | Wo
   const now = nowTimestamp();
   try {
     transaction(db, () => {
-      db.prepare("INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)").run(
+      db.prepare("INSERT INTO initiatives (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)").run(
         id,
         name,
         now,
         now,
       );
-      locations.forEach((location, index) => {
+      repos.forEach((repo, index) => {
         db.prepare(
-          `INSERT INTO project_locations (id, project_id, directory, label, is_primary, position, created_at)
+          `INSERT INTO initiative_repos (id, initiative_id, directory, label, is_primary, position, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        ).run(crypto.randomUUID(), id, location.directory, location.label, index === 0 ? 1 : 0, index, now);
+        ).run(crypto.randomUUID(), id, repo.directory, repo.label, index === 0 ? 1 : 0, index, now);
       });
     });
   } catch (error) {
     return { ok: false, error: reason(error) };
   }
 
-  const project = getProject(db, id);
-  if (!project) return { ok: false, error: "projeto não encontrado após a criação" };
-  return { ok: true, project };
+  const initiative = getInitiative(db, id);
+  if (!initiative) return { ok: false, error: "iniciativa não encontrado após a criação" };
+  return { ok: true, initiative };
 }
 
-export function addProjectLocation(db: Db, projectID: string, input: ProjectLocationInput): LocationOk | WorkStoreError {
-  const project = getProject(db, projectID);
-  if (!project) return { ok: false, error: `projeto não encontrado: ${projectID}` };
+export function addInitiativeRepo(db: Db, initiativeID: string, input: InitiativeRepoInput): RepoOk | WorkStoreError {
+  const initiative = getInitiative(db, initiativeID);
+  if (!initiative) return { ok: false, error: `iniciativa não encontrado: ${initiativeID}` };
   const directory = normalizeWorkspaceDirectory(input.directory);
-  if (!directory) return { ok: false, error: "o diretório do workspace é obrigatório" };
+  if (!directory) return { ok: false, error: "o diretório do repositório é obrigatório" };
   if (!isAbsolute(directory)) {
-    return { ok: false, error: `o workspace precisa de um caminho absoluto: ${directory}` };
+    return { ok: false, error: `o repositório precisa de um caminho absoluto: ${directory}` };
   }
-  const owner = directoryOwner(db, directory);
-  if (owner !== undefined) return { ok: false, error: `o workspace ${directory} já pertence a outro projeto` };
+  const owner = repoOwner(db, directory);
+  if (owner !== undefined) return { ok: false, error: `o repositório ${directory} já pertence a outra iniciativa` };
 
   const id = crypto.randomUUID();
   const now = nowTimestamp();
@@ -1113,17 +1175,17 @@ export function addProjectLocation(db: Db, projectID: string, input: ProjectLoca
   try {
     transaction(db, () => {
       db.prepare(
-        `INSERT INTO project_locations (id, project_id, directory, label, is_primary, position, created_at)
+        `INSERT INTO initiative_repos (id, initiative_id, directory, label, is_primary, position, created_at)
          VALUES (?, ?, ?, ?, 0, ?, ?)`,
-      ).run(id, projectID, directory, label, project.locations.length, now);
-      db.prepare("UPDATE projects SET updated_at = ? WHERE id = ?").run(now, projectID);
+      ).run(id, initiativeID, directory, label, initiative.repos.length, now);
+      db.prepare("UPDATE initiatives SET updated_at = ? WHERE id = ?").run(now, initiativeID);
     });
   } catch (error) {
     return { ok: false, error: reason(error) };
   }
-  const row = db.prepare("SELECT * FROM project_locations WHERE id = ?").get(id) as LocationRow | undefined;
-  if (!row) return { ok: false, error: "workspace não encontrado após a criação" };
-  return { ok: true, location: locationFrom(row) };
+  const row = db.prepare("SELECT * FROM initiative_repos WHERE id = ?").get(id) as RepoRow | undefined;
+  if (!row) return { ok: false, error: "repositório não encontrado após a criação" };
+  return { ok: true, repo: repoFrom(row) };
 }
 
 export type RemoveLocationResult =
@@ -1131,30 +1193,30 @@ export type RemoveLocationResult =
   | { ok: false; error: string; needsConfirmation?: boolean; items?: number };
 
 /**
- * Removes a workspace. A workspace with work items asks for confirmation; with
- * it, those items lose their workspace (`location_id = NULL`, falling back to
- * the primary when a plan starts) and the workspace is removed.
+ * Removes a repo. A repo with work items asks for confirmation; with
+ * it, those items lose their repo (`repo_id = NULL`, falling back to
+ * the primary when a plan starts) and the repo is removed.
  */
-export function removeProjectLocation(
+export function removeInitiativeRepo(
   db: Db,
-  projectID: string,
-  locationID: string,
+  initiativeID: string,
+  repoID: string,
   options: { confirm?: boolean } = {},
 ): RemoveLocationResult {
-  const project = getProject(db, projectID);
-  if (!project) return { ok: false, error: `projeto não encontrado: ${projectID}` };
-  const location = project.locations.find((item) => item.id === locationID);
-  if (!location) return { ok: false, error: "workspace não encontrado neste projeto" };
-  if (project.locations.length === 1) return { ok: false, error: "o projeto precisa de pelo menos um workspace" };
+  const initiative = getInitiative(db, initiativeID);
+  if (!initiative) return { ok: false, error: `iniciativa não encontrado: ${initiativeID}` };
+  const repo = initiative.repos.find((item) => item.id === repoID);
+  if (!repo) return { ok: false, error: "repositório não encontrado neste iniciativa" };
+  if (initiative.repos.length === 1) return { ok: false, error: "a iniciativa precisa de pelo menos um repositório" };
 
-  const counted = db.prepare("SELECT COUNT(*) AS c FROM work_items WHERE location_id = ?").get(locationID) as
+  const counted = db.prepare("SELECT COUNT(*) AS c FROM work_items WHERE repo_id = ?").get(repoID) as
     | { c?: number }
     | undefined;
   const items = Number(counted?.c ?? 0);
   if (items > 0 && options.confirm !== true) {
     return {
       ok: false,
-      error: `há ${items} work item(ns) neste workspace; confirme para removê-lo e deixá-los sem workspace`,
+      error: `há ${items} work item(ns) neste repositório; confirme para removê-lo e deixá-los sem repositório`,
       needsConfirmation: true,
       items,
     };
@@ -1164,17 +1226,17 @@ export function removeProjectLocation(
   try {
     transaction(db, () => {
       if (items > 0) {
-        db.prepare("UPDATE work_items SET location_id = NULL, updated_at = ? WHERE location_id = ?").run(
+        db.prepare("UPDATE work_items SET repo_id = NULL, updated_at = ? WHERE repo_id = ?").run(
           now,
-          locationID,
+          repoID,
         );
       }
-      db.prepare("DELETE FROM project_locations WHERE id = ?").run(locationID);
-      if (location.primary) {
-        const next = project.locations.find((item) => item.id !== locationID);
-        if (next) db.prepare("UPDATE project_locations SET is_primary = 1 WHERE id = ?").run(next.id);
+      db.prepare("DELETE FROM initiative_repos WHERE id = ?").run(repoID);
+      if (repo.primary) {
+        const next = initiative.repos.find((item) => item.id !== repoID);
+        if (next) db.prepare("UPDATE initiative_repos SET is_primary = 1 WHERE id = ?").run(next.id);
       }
-      db.prepare("UPDATE projects SET updated_at = ? WHERE id = ?").run(now, projectID);
+      db.prepare("UPDATE initiatives SET updated_at = ? WHERE id = ?").run(now, initiativeID);
     });
   } catch (error) {
     return { ok: false, error: reason(error) };
@@ -1182,18 +1244,18 @@ export function removeProjectLocation(
   return { ok: true };
 }
 
-export function setPrimaryLocation(db: Db, projectID: string, locationID: string): Ok | WorkStoreError {
-  const project = getProject(db, projectID);
-  if (!project) return { ok: false, error: `projeto não encontrado: ${projectID}` };
-  if (!project.locations.some((item) => item.id === locationID)) {
-    return { ok: false, error: "workspace não encontrado neste projeto" };
+export function setInitiativePrimary(db: Db, initiativeID: string, repoID: string): Ok | WorkStoreError {
+  const initiative = getInitiative(db, initiativeID);
+  if (!initiative) return { ok: false, error: `iniciativa não encontrado: ${initiativeID}` };
+  if (!initiative.repos.some((item) => item.id === repoID)) {
+    return { ok: false, error: "repositório não encontrado neste iniciativa" };
   }
   const now = nowTimestamp();
   try {
     transaction(db, () => {
-      db.prepare("UPDATE project_locations SET is_primary = 0 WHERE project_id = ?").run(projectID);
-      db.prepare("UPDATE project_locations SET is_primary = 1 WHERE id = ?").run(locationID);
-      db.prepare("UPDATE projects SET updated_at = ? WHERE id = ?").run(now, projectID);
+      db.prepare("UPDATE initiative_repos SET is_primary = 0 WHERE initiative_id = ?").run(initiativeID);
+      db.prepare("UPDATE initiative_repos SET is_primary = 1 WHERE id = ?").run(repoID);
+      db.prepare("UPDATE initiatives SET updated_at = ? WHERE id = ?").run(now, initiativeID);
     });
   } catch (error) {
     return { ok: false, error: reason(error) };
@@ -1202,8 +1264,8 @@ export function setPrimaryLocation(db: Db, projectID: string, locationID: string
 }
 
 export type CreateWorkItemInput = {
-  projectID: string;
-  locationID?: string | undefined;
+  initiativeID: string;
+  repoID?: string | undefined;
   title: string;
   body?: string | undefined;
   origin?: WorkOrigin | undefined;
@@ -1211,34 +1273,34 @@ export type CreateWorkItemInput = {
 
 export type WorkItemOk = { ok: true; item: WorkItemRow };
 
-function nextRank(db: Db, projectID: string, status: WorkItemStatus): number {
-  const row = db.prepare("SELECT COALESCE(MAX(rank), 0) AS r FROM work_items WHERE project_id = ? AND status = ?").get(
-    projectID,
+function nextRank(db: Db, initiativeID: string, status: WorkItemStatus): number {
+  const row = db.prepare("SELECT COALESCE(MAX(rank), 0) AS r FROM work_items WHERE initiative_id = ? AND status = ?").get(
+    initiativeID,
     status,
   ) as { r?: number } | undefined;
   return (row?.r ?? 0) + 1;
 }
 
 /**
- * US-01 slice: the item belongs to a project and, optionally, to one of its
- * workspaces. Status/rank/parent/origin columns exist for the following USs;
+ * US-01 slice: the item belongs to a initiative and, optionally, to one of its
+ * repos. Status/rank/parent/origin columns exist for the following USs;
  * here only the containment is enforced.
  */
 export function createWorkItem(db: Db, input: CreateWorkItemInput): WorkItemOk | WorkStoreError {
   const title = input.title.trim();
   if (!title) return { ok: false, error: "o título do work item é obrigatório" };
-  if (!input.projectID) return { ok: false, error: "projectID é obrigatório" };
-  const project = db.prepare("SELECT id FROM projects WHERE id = ?").get(input.projectID) as
+  if (!input.initiativeID) return { ok: false, error: "initiativeID é obrigatório" };
+  const initiative = db.prepare("SELECT id FROM initiatives WHERE id = ?").get(input.initiativeID) as
     | { id?: string }
     | undefined;
-  if (!project?.id) return { ok: false, error: `projeto não encontrado: ${input.projectID}` };
-  if (input.locationID) {
-    const location = db.prepare("SELECT project_id FROM project_locations WHERE id = ?").get(input.locationID) as
-      | { project_id?: string }
+  if (!initiative?.id) return { ok: false, error: `iniciativa não encontrado: ${input.initiativeID}` };
+  if (input.repoID) {
+    const repo = db.prepare("SELECT initiative_id FROM initiative_repos WHERE id = ?").get(input.repoID) as
+      | { initiative_id?: string }
       | undefined;
-    if (!location?.project_id) return { ok: false, error: "workspace não encontrado" };
-    if (location.project_id !== input.projectID) {
-      return { ok: false, error: "o workspace não pertence a este projeto" };
+    if (!repo?.initiative_id) return { ok: false, error: "repositório não encontrado" };
+    if (repo.initiative_id !== input.initiativeID) {
+      return { ok: false, error: "o repositório não pertence a esta iniciativa" };
     }
   }
 
@@ -1248,16 +1310,16 @@ export function createWorkItem(db: Db, input: CreateWorkItemInput): WorkItemOk |
   try {
     db.prepare(
       `INSERT INTO work_items
-         (id, project_id, location_id, parent_id, title, body, status, rank, origin, created_at, updated_at, closed_at)
+         (id, initiative_id, repo_id, parent_id, title, body, status, rank, origin, created_at, updated_at, closed_at)
        VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, NULL)`,
     ).run(
       id,
-      input.projectID,
-      input.locationID ?? null,
+      input.initiativeID,
+      input.repoID ?? null,
       title,
       input.body?.trim() ?? "",
       status,
-      nextRank(db, input.projectID, status),
+      nextRank(db, input.initiativeID, status),
       input.origin ?? "user",
       now,
       now,
@@ -1314,7 +1376,7 @@ function dependsOn(db: Db, from: string, target: string): boolean {
   return false;
 }
 
-/** A depends on B. Same project only; cycles are rejected; duplicates are no-ops. */
+/** A depends on B. Same initiative only; cycles are rejected; duplicates are no-ops. */
 export function addWorkItemDep(db: Db, input: WorkItemDepInput): Ok | WorkStoreError {
   if (input.itemID === input.blocksID) {
     return { ok: false, error: "um work item não pode depender de si mesmo" };
@@ -1323,8 +1385,8 @@ export function addWorkItemDep(db: Db, input: WorkItemDepInput): Ok | WorkStoreE
   if (!item) return { ok: false, error: `work item não encontrado: ${input.itemID}` };
   const blocker = getWorkItem(db, input.blocksID);
   if (!blocker) return { ok: false, error: `work item não encontrado: ${input.blocksID}` };
-  if (item.project_id !== blocker.project_id) {
-    return { ok: false, error: "os itens precisam pertencer ao mesmo projeto" };
+  if (item.initiative_id !== blocker.initiative_id) {
+    return { ok: false, error: "os itens precisam pertencer à mesma iniciativa" };
   }
 
   const exists = db
@@ -1384,8 +1446,8 @@ export function setWorkItemParent(db: Db, input: SetWorkItemParentInput): WorkIt
     if (parentID === input.id) return { ok: false, error: "um work item não pode ser pai de si mesmo" };
     const parent = getWorkItem(db, parentID);
     if (!parent) return { ok: false, error: `work item não encontrado: ${parentID}` };
-    if (parent.project_id !== current.project_id) {
-      return { ok: false, error: "os itens precisam pertencer ao mesmo projeto" };
+    if (parent.initiative_id !== current.initiative_id) {
+      return { ok: false, error: "os itens precisam pertencer à mesma iniciativa" };
     }
     if (parent.parent_id) {
       return { ok: false, error: "profundidade máxima de 1: o pai escolhido já é filho de outro item" };
@@ -1426,7 +1488,7 @@ export function moveWorkItem(db: Db, input: MoveWorkItemInput): WorkItemOk | Wor
   const current = getWorkItem(db, input.id);
   if (!current) return { ok: false, error: `work item não encontrado: ${input.id}` };
 
-  const siblings = listWorkItems(db, current.project_id).filter((item) => item.status === current.status);
+  const siblings = listWorkItems(db, current.initiative_id).filter((item) => item.status === current.status);
   const index = siblings.findIndex((item) => item.id === current.id);
   if (index < 0) return { ok: false, error: "work item não encontrado na lista" };
 
@@ -1454,6 +1516,64 @@ export function moveWorkItem(db: Db, input: MoveWorkItemInput): WorkItemOk | Wor
   return { ok: true, item };
 }
 
+export function setWorkItemRepo(
+  db: Db,
+  input: { id: string; repoID: string },
+): WorkItemOk | WorkStoreError {
+  const item = getWorkItem(db, input.id);
+  if (!item) return { ok: false, error: `work item não encontrado: ${input.id}` };
+  const repo = db.prepare("SELECT id, initiative_id FROM initiative_repos WHERE id = ?").get(input.repoID) as
+    | { id?: string; initiative_id?: string }
+    | undefined;
+  if (!repo?.id) return { ok: false, error: "repositório não encontrado" };
+  if (repo.initiative_id !== item.initiative_id) {
+    return { ok: false, error: "o repositório não pertence a esta iniciativa" };
+  }
+  try {
+    db.prepare("UPDATE work_items SET repo_id = ?, updated_at = ? WHERE id = ?").run(
+      input.repoID,
+      nowTimestamp(),
+      input.id,
+    );
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  const updated = getWorkItem(db, input.id);
+  if (!updated) return { ok: false, error: "item não encontrado após trocar o repositório" };
+  return { ok: true, item: updated };
+}
+
+export type EnsureRepoResult =
+  | { ok: true; repo: InitiativeRepoRow; created: boolean }
+  | WorkStoreError;
+
+/** Reuses the repository when the initiative already has it, creates otherwise. */
+export function ensureInitiativeRepo(
+  db: Db,
+  initiativeID: string,
+  directory: string,
+): EnsureRepoResult {
+  const initiative = getInitiative(db, initiativeID);
+  if (!initiative) return { ok: false, error: `iniciativa não encontrada: ${initiativeID}` };
+  const normalized = normalizeWorkspaceDirectory(directory);
+  if (!normalized) return { ok: false, error: "o diretório do repositório é obrigatório" };
+  if (!isAbsolute(normalized)) {
+    return { ok: false, error: `o repositório precisa de um caminho absoluto: ${normalized}` };
+  }
+
+  const existing = initiative.repos.find((repo) => normalizeWorkspaceDirectory(repo.directory) === normalized);
+  if (existing) return { ok: true, repo: existing, created: false };
+
+  const owner = repoOwner(db, normalized);
+  if (owner !== undefined && owner !== initiativeID) {
+    return { ok: false, error: `o repositório ${normalized} já pertence a outra iniciativa` };
+  }
+
+  const added = addInitiativeRepo(db, initiativeID, { directory: normalized });
+  if (!added.ok) return added;
+  return { ok: true, repo: added.repo, created: true };
+}
+
 export type PlaceWorkItemInput = {
   id: string;
   status: WorkItemStatus;
@@ -1477,7 +1597,7 @@ export function placeWorkItem(db: Db, input: PlaceWorkItemInput): WorkItemOk | W
     }
   }
 
-  const siblings = listWorkItems(db, current.project_id).filter(
+  const siblings = listWorkItems(db, current.initiative_id).filter(
     (item) => item.status === input.status && item.id !== current.id,
   );
   const position = Math.max(0, Math.min(Math.trunc(input.position), siblings.length));
@@ -1535,7 +1655,7 @@ export function setWorkItemStatus(db: Db, input: SetWorkItemStatusInput): WorkIt
   const now = nowTimestamp();
   const closedAt = input.status === "done" || input.status === "dropped" ? now : null;
   // Land at the end of the destination section so the position is predictable.
-  const rank = nextRank(db, current.project_id, input.status);
+  const rank = nextRank(db, current.initiative_id, input.status);
   try {
     db.prepare("UPDATE work_items SET status = ?, rank = ?, updated_at = ?, closed_at = ? WHERE id = ?").run(
       input.status,
@@ -1584,20 +1704,20 @@ export function updateWorkItem(db: Db, input: UpdateWorkItemInput): WorkItemOk |
   return { ok: true, item };
 }
 
-export function listWorkItems(db: Db, projectID: string): WorkItemRow[] {
+export function listWorkItems(db: Db, initiativeID: string): WorkItemRow[] {
   return db
-    .prepare("SELECT * FROM work_items WHERE project_id = ? ORDER BY status ASC, rank ASC, created_at ASC")
-    .all(projectID) as WorkItemRow[];
+    .prepare("SELECT * FROM work_items WHERE initiative_id = ? ORDER BY status ASC, rank ASC, created_at ASC")
+    .all(initiativeID) as WorkItemRow[];
 }
 
-/** Every item, for the global surface; the caller groups by project. */
+/** Every item, for the global surface; the caller groups by initiative. */
 export function listWorkItemsAll(db: Db): WorkItemRow[] {
   return db.prepare("SELECT * FROM work_items ORDER BY created_at ASC, rank ASC").all() as WorkItemRow[];
 }
 
-export type ProjectResolution = {
-  project: Project;
-  location: ProjectLocationRow;
+export type InitiativeResolution = {
+  initiative: Initiative;
+  repo: InitiativeRepoRow;
   match: "exact" | "ancestor";
 };
 
@@ -1608,83 +1728,83 @@ export function isInsideWorkspace(directory: string, ancestor: string): boolean 
 }
 
 /**
- * The user project a session directory belongs to: an exact workspace match,
- * else the deepest ancestor (nested projects resolve by specificity), else
- * undefined ("no project").
+ * The user initiative a session directory belongs to: an exact repo match,
+ * else the deepest ancestor (nested initiatives resolve by specificity), else
+ * undefined ("no initiative").
  */
-export function resolveProject(db: Db, directory: string): ProjectResolution | undefined {
+export function resolveInitiative(db: Db, directory: string): InitiativeResolution | undefined {
   const target = normalizeWorkspaceDirectory(directory);
   if (!target) return undefined;
 
-  const rows = db.prepare("SELECT * FROM project_locations").all() as LocationRow[];
-  let exact: LocationRow | undefined;
-  let ancestor: { row: LocationRow; depth: number } | undefined;
+  const rows = db.prepare("SELECT * FROM initiative_repos").all() as RepoRow[];
+  let exact: RepoRow | undefined;
+  let ancestor: { row: RepoRow; depth: number } | undefined;
   for (const row of rows) {
-    const location = normalizeWorkspaceDirectory(row.directory);
-    if (location === target) {
+    const repo = normalizeWorkspaceDirectory(row.directory);
+    if (repo === target) {
       exact = row;
       break;
     }
-    if (!isInsideWorkspace(target, location)) continue;
-    if (ancestor === undefined || location.length > ancestor.depth) {
-      ancestor = { row, depth: location.length };
+    if (!isInsideWorkspace(target, repo)) continue;
+    if (ancestor === undefined || repo.length > ancestor.depth) {
+      ancestor = { row, depth: repo.length };
     }
   }
 
   const chosen = exact ?? ancestor?.row;
   if (!chosen) return undefined;
-  const project = getProject(db, chosen.project_id);
-  if (!project) return undefined;
-  return { project, location: locationFrom(chosen), match: exact ? "exact" : "ancestor" };
+  const initiative = getInitiative(db, chosen.initiative_id);
+  if (!initiative) return undefined;
+  return { initiative, repo: repoFrom(chosen), match: exact ? "exact" : "ancestor" };
 }
 
-/** A readable project name for an auto-created container. */
-export function projectNameForDirectory(directory: string): string {
+/** A readable initiative name for an auto-created container. */
+export function initiativeNameForDirectory(directory: string): string {
   return basename(normalizeWorkspaceDirectory(directory)) || "Workspace";
 }
 
-export type EnsureProjectResult =
-  | { ok: true; project: Project; location: ProjectLocationRow; created: boolean }
+export type EnsureInitiativeResult =
+  | { ok: true; initiative: Initiative; repo: InitiativeRepoRow; created: boolean }
   | WorkStoreError;
 
 /**
- * The project for a session workspace, created on first use. A subdirectory of
- * an existing workspace reuses that project; the creation is idempotent and
+ * The initiative for a session repo, created on first use. A subdirectory of
+ * an existing repo reuses that initiative; the creation is idempotent and
  * the UNIQUE(directory) index is the final guard against two writers.
  */
-export function ensureProjectForDirectory(db: Db, input: string): EnsureProjectResult {
+export function ensureInitiativeForDirectory(db: Db, input: string): EnsureInitiativeResult {
   const directory = normalizeWorkspaceDirectory(input);
-  if (!directory) return { ok: false, error: "o diretório do workspace é obrigatório" };
+  if (!directory) return { ok: false, error: "o diretório do repositório é obrigatório" };
   if (!isAbsolute(directory)) {
-    return { ok: false, error: `o workspace precisa de um caminho absoluto: ${directory}` };
+    return { ok: false, error: `o repositório precisa de um caminho absoluto: ${directory}` };
   }
 
-  const resolved = resolveProject(db, directory);
+  const resolved = resolveInitiative(db, directory);
   if (resolved) {
-    return { ok: true, project: resolved.project, location: resolved.location, created: false };
+    return { ok: true, initiative: resolved.initiative, repo: resolved.repo, created: false };
   }
 
-  const created = createProject(db, {
-    name: projectNameForDirectory(directory),
-    locations: [{ directory }],
+  const created = createInitiative(db, {
+    name: initiativeNameForDirectory(directory),
+    repos: [{ directory }],
   });
   if (created.ok) {
-    const location = created.project.locations[0];
-    if (!location) return { ok: false, error: "workspace não encontrado após a criação" };
-    return { ok: true, project: created.project, location, created: true };
+    const repo = created.initiative.repos[0];
+    if (!repo) return { ok: false, error: "repositório não encontrado após a criação" };
+    return { ok: true, initiative: created.initiative, repo, created: true };
   }
 
   // Another writer may have won the race between the resolve and the insert.
-  const raced = resolveProject(db, directory);
+  const raced = resolveInitiative(db, directory);
   if (raced) {
-    return { ok: true, project: raced.project, location: raced.location, created: false };
+    return { ok: true, initiative: raced.initiative, repo: raced.repo, created: false };
   }
   return created;
 }
 
 
 /* ------------------------------------------------------------------ */
-/* Project runs (F4)                                                   */
+/* Initiative runs (F4)                                                   */
 /* ------------------------------------------------------------------ */
 
 export type RunStatus = "running" | "done" | "failed" | "cancelled" | "interrupted";
@@ -1693,7 +1813,7 @@ export type MergeStatus = "queued" | "merging" | "merged" | "failed";
 
 export type RunRow = {
   id: string;
-  project_id: string;
+  initiative_id: string;
   base_ref: string;
   status: RunStatus;
   max_parallel: number;
@@ -1745,42 +1865,42 @@ export function getRun(db: Db, id: string): RunRow | undefined {
   return db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as RunRow | undefined;
 }
 
-export function listRuns(db: Db, projectID: string, limit = 20): RunRow[] {
+export function listRuns(db: Db, initiativeID: string, limit = 20): RunRow[] {
   return db
-    .prepare("SELECT * FROM runs WHERE project_id = ? ORDER BY started_at DESC LIMIT ?")
-    .all(projectID, limit) as RunRow[];
+    .prepare("SELECT * FROM runs WHERE initiative_id = ? ORDER BY started_at DESC LIMIT ?")
+    .all(initiativeID, limit) as RunRow[];
 }
 
-/** The run that blocks a new one: running or interrupted, one per project. */
-export function activeRun(db: Db, projectID: string): RunRow | undefined {
+/** The run that blocks a new one: running or interrupted, one per initiative. */
+export function activeRun(db: Db, initiativeID: string): RunRow | undefined {
   return db
-    .prepare("SELECT * FROM runs WHERE project_id = ? AND status IN ('running', 'interrupted')")
-    .get(projectID) as RunRow | undefined;
+    .prepare("SELECT * FROM runs WHERE initiative_id = ? AND status IN ('running', 'interrupted')")
+    .get(initiativeID) as RunRow | undefined;
 }
 
 export type CreateRunInput = {
-  projectID: string;
+  initiativeID: string;
   baseRef: string;
   maxParallel?: number | undefined;
 };
 
 export function createRun(db: Db, input: CreateRunInput): RunOk | WorkStoreError {
   const baseRef = input.baseRef.trim();
-  if (!baseRef) return { ok: false, error: "base_ref é obrigatório para executar o projeto" };
-  const project = db.prepare("SELECT max_parallel FROM projects WHERE id = ?").get(input.projectID) as
+  if (!baseRef) return { ok: false, error: "base_ref é obrigatório para executar a iniciativa" };
+  const initiative = db.prepare("SELECT max_parallel FROM initiatives WHERE id = ?").get(input.initiativeID) as
     | { max_parallel?: number }
     | undefined;
-  if (!project) return { ok: false, error: `projeto não encontrado: ${input.projectID}` };
-  if (activeRun(db, input.projectID)) {
-    return { ok: false, error: "já existe um run ativo neste projeto; cancele ou aguarde o término" };
+  if (!initiative) return { ok: false, error: `iniciativa não encontrado: ${input.initiativeID}` };
+  if (activeRun(db, input.initiativeID)) {
+    return { ok: false, error: "já existe um run ativo neste iniciativa; cancele ou aguarde o término" };
   }
 
   const id = crypto.randomUUID();
   try {
     db.prepare(
-      `INSERT INTO runs (id, project_id, base_ref, status, max_parallel, merge_session_id, started_at, finished_at, error)
+      `INSERT INTO runs (id, initiative_id, base_ref, status, max_parallel, merge_session_id, started_at, finished_at, error)
        VALUES (?, ?, ?, 'running', ?, NULL, ?, NULL, NULL)`,
-    ).run(id, input.projectID, baseRef, clampParallel(input.maxParallel, project.max_parallel ?? 2), nowTimestamp());
+    ).run(id, input.initiativeID, baseRef, clampParallel(input.maxParallel, initiative.max_parallel ?? 2), nowTimestamp());
   } catch (error) {
     return { ok: false, error: reason(error) };
   }
@@ -2065,34 +2185,34 @@ export function setPlanTouches(db: Db, planID: string, paths: readonly string[])
   return { ok: true };
 }
 
-export type ProjectRunSettings = {
+export type InitiativeRunSettings = {
   baseBranch?: string | null | undefined;
   maxParallel?: number | undefined;
   verifyCommand?: string | null | undefined;
 };
 
-export function setProjectRunSettings(
+export function setInitiativeRunSettings(
   db: Db,
-  projectID: string,
-  input: ProjectRunSettings,
-): ProjectOk | WorkStoreError {
-  const project = getProject(db, projectID);
-  if (!project) return { ok: false, error: `projeto não encontrado: ${projectID}` };
-  const baseBranch = input.baseBranch === undefined ? project.base_branch : input.baseBranch?.trim() || null;
+  initiativeID: string,
+  input: InitiativeRunSettings,
+): InitiativeOk | WorkStoreError {
+  const initiative = getInitiative(db, initiativeID);
+  if (!initiative) return { ok: false, error: `iniciativa não encontrado: ${initiativeID}` };
+  const baseBranch = input.baseBranch === undefined ? initiative.base_branch : input.baseBranch?.trim() || null;
   const maxParallel =
-    input.maxParallel === undefined ? project.max_parallel : clampParallel(input.maxParallel, project.max_parallel);
+    input.maxParallel === undefined ? initiative.max_parallel : clampParallel(input.maxParallel, initiative.max_parallel);
   const verifyCommand =
-    input.verifyCommand === undefined ? project.verify_command : input.verifyCommand?.trim() || null;
+    input.verifyCommand === undefined ? initiative.verify_command : input.verifyCommand?.trim() || null;
   try {
     db.prepare(
-      "UPDATE projects SET base_branch = ?, max_parallel = ?, verify_command = ?, updated_at = ? WHERE id = ?",
-    ).run(baseBranch, maxParallel, verifyCommand, nowTimestamp(), projectID);
+      "UPDATE initiatives SET base_branch = ?, max_parallel = ?, verify_command = ?, updated_at = ? WHERE id = ?",
+    ).run(baseBranch, maxParallel, verifyCommand, nowTimestamp(), initiativeID);
   } catch (error) {
     return { ok: false, error: reason(error) };
   }
-  const updated = getProject(db, projectID);
-  if (!updated) return { ok: false, error: "projeto não encontrado após atualizar as configurações" };
-  return { ok: true, project: updated };
+  const updated = getInitiative(db, initiativeID);
+  if (!updated) return { ok: false, error: "iniciativa não encontrado após atualizar as configurações" };
+  return { ok: true, initiative: updated };
 }
 
 
@@ -2101,16 +2221,16 @@ export type RecomputeImplicitResult =
   | WorkStoreError;
 
 /**
- * Rebuilds the implicit dependencies of a project from the current plans'
+ * Rebuilds the implicit dependencies of a initiative from the current plans'
  * footprints. Only items that can run (ready/doing/blocked) with a plan take
  * part; an unknown footprint conflicts with everything. Explicit edges are
  * never touched and already order the pairs they connect.
  */
-export function recomputeImplicitDeps(db: Db, projectID: string): RecomputeImplicitResult {
-  if (!getProject(db, projectID)) return { ok: false, error: `projeto não encontrado: ${projectID}` };
+export function recomputeImplicitDeps(db: Db, initiativeID: string): RecomputeImplicitResult {
+  if (!getInitiative(db, initiativeID)) return { ok: false, error: `iniciativa não encontrado: ${initiativeID}` };
 
   const entries: FootprintItem[] = [];
-  for (const item of listWorkItems(db, projectID)) {
+  for (const item of listWorkItems(db, initiativeID)) {
     if (item.status !== "ready" && item.status !== "doing" && item.status !== "blocked") continue;
     const plan = getPlanByWorkItem(db, item.id);
     if (!plan) continue;
@@ -2128,17 +2248,17 @@ export function recomputeImplicitDeps(db: Db, projectID: string): RecomputeImpli
         `SELECT d.item_id, d.blocks_id
            FROM work_item_deps d
            JOIN work_items w ON w.id = d.item_id
-          WHERE w.project_id = ? AND d.kind <> 'implicit'`,
+          WHERE w.initiative_id = ? AND d.kind <> 'implicit'`,
       )
-      .all(projectID) as { item_id: string; blocks_id: string }[]
+      .all(initiativeID) as { item_id: string; blocks_id: string }[]
   ).map((row) => ({ itemID: row.item_id, blocksID: row.blocks_id }));
 
   const edges = computeImplicitDeps(entries, explicit);
   try {
     transaction(db, () => {
       db.prepare(
-        "DELETE FROM work_item_deps WHERE kind = 'implicit' AND item_id IN (SELECT id FROM work_items WHERE project_id = ?)",
-      ).run(projectID);
+        "DELETE FROM work_item_deps WHERE kind = 'implicit' AND item_id IN (SELECT id FROM work_items WHERE initiative_id = ?)",
+      ).run(initiativeID);
       const insert = db.prepare(
         `INSERT OR IGNORE INTO work_item_deps (item_id, blocks_id, kind, reason, created_at)
          VALUES (?, ?, 'implicit', ?, ?)`,
@@ -2152,3 +2272,24 @@ export function recomputeImplicitDeps(db: Db, projectID: string): RecomputeImpli
 
   return { ok: true, added: edges.length, edges: edges.map((edge) => ({ itemID: edge.itemID, blocksID: edge.blocksID })) };
 }
+
+/* ------------------------------------------------------------------ */
+/* Rename compatibility (v7)                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The v7 rename is a one-way door for the source, but a hot-reloaded runtime
+ * can still hold a module from before it. These aliases let such a module
+ * link until the next full restart; nothing in the codebase uses them.
+ */
+export const getProject = getInitiative;
+export const listProjects = listInitiatives;
+export const createProject = createInitiative;
+export const renameProject = renameInitiative;
+export const addProjectLocation = addInitiativeRepo;
+export const removeProjectLocation = removeInitiativeRepo;
+export const setPrimaryLocation = setInitiativePrimary;
+export const resolveProject = resolveInitiative;
+export const projectNameForDirectory = initiativeNameForDirectory;
+export const ensureProjectForDirectory = ensureInitiativeForDirectory;
+export const setProjectRunSettings = setInitiativeRunSettings;

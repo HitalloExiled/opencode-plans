@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { locationForItem } from "../src/work-plan";
-import type { Project, ProjectLocation } from "../src/gui/contract";
+import { repoForItem } from "../src/work-plan";
+import type { Initiative, InitiativeRepo } from "../src/gui/contract";
 
-const location = (id: string, primary: boolean): ProjectLocation => ({
+const repo = (id: string, primary: boolean): InitiativeRepo => ({
   id,
   directory: `/work/${id}`,
   label: id,
@@ -10,30 +10,30 @@ const location = (id: string, primary: boolean): ProjectLocation => ({
   position: 0,
 });
 
-const project = (locations: ProjectLocation[]): Project => ({
+const initiative = (repos: InitiativeRepo[]): Initiative => ({
   id: "p1",
   name: "P",
   createdAt: "",
   updatedAt: "",
-  locations,
+  repos,
 });
 
-describe("locationForItem", () => {
-  test("prefers the item's own workspace", () => {
-    const p = project([location("a", true), location("b", false)]);
-    expect(locationForItem(p, "b")?.id).toBe("b");
+describe("repoForItem", () => {
+  test("prefers the item's own repository", () => {
+    const value = initiative([repo("a", true), repo("b", false)]);
+    expect(repoForItem(value, "b")?.id).toBe("b");
   });
 
   test("falls back to the primary, then the first", () => {
-    const p = project([location("a", false), location("b", true)]);
-    expect(locationForItem(p, null)?.id).toBe("b");
-    expect(locationForItem(p, "missing")?.id).toBe("b");
+    const value = initiative([repo("a", false), repo("b", true)]);
+    expect(repoForItem(value, null)?.id).toBe("b");
+    expect(repoForItem(value, "missing")?.id).toBe("b");
 
-    const noPrimary = project([location("a", false), location("b", false)]);
-    expect(locationForItem(noPrimary)?.id).toBe("a");
+    const noPrimary = initiative([repo("a", false), repo("b", false)]);
+    expect(repoForItem(noPrimary)?.id).toBe("a");
   });
 
-  test("is undefined without workspaces", () => {
-    expect(locationForItem(project([]))).toBeUndefined();
+  test("is undefined without repositories", () => {
+    expect(repoForItem(initiative([]))).toBeUndefined();
   });
 });

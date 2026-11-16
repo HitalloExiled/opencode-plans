@@ -20,6 +20,7 @@ import type { Context } from "@opencode/plugin/gui";
 import { PlansRpc } from "./contract";
 import { useT } from "./i18n";
 import { builtinServer, globalTarget } from "./page";
+import { closePlansOverlay, openPlansOverlay, plansOverlayOpen } from "./overlay-state";
 import type { PlansTarget } from "./view";
 import { PlansBody } from "./view";
 import { ViewSwitch, WorkBody, workBoardMode, type ViewMode } from "./work";
@@ -69,15 +70,11 @@ const CSS = `
 `;
 
 const [active, setActive] = createSignal(0);
-const [opened, setOpened] = createSignal(false);
 
 /** Active plans, for the titlebar pill. */
 export const activePlanCount = (): number => active();
-export const openPlansOverlay = (): void => {
-  setOpened(true);
-};
 const close = (): void => {
-  setOpened(false);
+  closePlansOverlay();
 };
 
 /**
@@ -121,7 +118,7 @@ export function PlansPill(props: { active: boolean }) {
   const ctx = usePlugin();
   const t = useT();
   const target = () => {
-    if (!opened()) return null;
+    if (!plansOverlayOpen()) return null;
     const server = builtinServer(ctx);
     return server ? globalTarget(server) : null;
   };

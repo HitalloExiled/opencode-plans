@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 const { DatabaseSync } = (await import("node:sqlite")) as any;
 
-import { createProject, initSchema, listProjects, type Db } from "../src/store";
+import { createInitiative, initSchema, listInitiatives, type Db } from "../src/store";
 import { captureWorkItem } from "../src/work-capture";
 
 const open = (): Db => {
@@ -18,7 +18,7 @@ describe("captureWorkItem", () => {
       ok: false,
       error: "o título do work item é obrigatório",
     });
-    expect(listProjects(db)).toHaveLength(0);
+    expect(listInitiatives(db)).toHaveLength(0);
   });
 
   test("creates the project on first use and starts the item in the backlog", () => {
@@ -31,38 +31,38 @@ describe("captureWorkItem", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.createdProject).toBe(true);
-    expect(result.project.name).toBe("new-repo");
-    expect(result.project.locations.map((location) => location.directory)).toEqual(["/work/new-repo"]);
+    expect(result.createdInitiative).toBe(true);
+    expect(result.initiative.name).toBe("new-repo");
+    expect(result.initiative.repos.map((repo) => repo.directory)).toEqual(["/work/new-repo"]);
     expect(result.item.title).toBe("First need");
     expect(result.item.body).toBe("what needs to exist");
     expect(result.item.status).toBe("backlog");
     expect(result.item.origin).toBe("user");
-    expect(result.item.project_id).toBe(result.project.id);
-    expect(result.item.location_id).toBe(result.project.locations[0]!.id);
+    expect(result.item.initiative_id).toBe(result.initiative.id);
+    expect(result.item.repo_id).toBe(result.initiative.repos[0]!.id);
   });
 
   test("reuses the project (and its workspace) for a subdirectory", () => {
     const db = open();
-    const created = createProject(db, { name: "App", locations: [{ directory: "/work/app" }] });
+    const created = createInitiative(db, { name: "App", repos: [{ directory: "/work/app" }] });
     if (!created.ok) throw new Error(created.error);
 
     const result = captureWorkItem(db, { directory: "/work/app/src", title: "Inside the repo" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.createdProject).toBe(false);
-    expect(result.project.id).toBe(created.project.id);
-    expect(result.item.location_id).toBe(created.project.locations[0]!.id);
-    expect(listProjects(db)).toHaveLength(1);
+    expect(result.createdInitiative).toBe(false);
+    expect(result.initiative.id).toBe(created.initiative.id);
+    expect(result.item.repo_id).toBe(created.initiative.repos[0]!.id);
+    expect(listInitiatives(db)).toHaveLength(1);
   });
 
   test("surfaces a workspace error without writing", () => {
     const db = open();
     expect(captureWorkItem(db, { directory: "relative", title: "Need" })).toEqual({
       ok: false,
-      error: "o workspace precisa de um caminho absoluto: relative",
+      error: "o repositório precisa de um caminho absoluto: relative",
     });
-    expect(listProjects(db)).toHaveLength(0);
+    expect(listInitiatives(db)).toHaveLength(0);
   });
 });

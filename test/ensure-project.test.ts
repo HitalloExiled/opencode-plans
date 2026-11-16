@@ -7,12 +7,12 @@ import { describe, expect, test } from "bun:test";
 const { DatabaseSync } = (await import("node:sqlite")) as any;
 
 import {
-  addProjectLocation,
-  createProject,
-  ensureProjectForDirectory,
+  addInitiativeRepo,
+  createInitiative,
+  ensureInitiativeForDirectory,
   initSchema,
-  listProjects,
-  projectNameForDirectory,
+  listInitiatives,
+  initiativeNameForDirectory,
   type Db,
 } from "../src/store";
 
@@ -22,95 +22,95 @@ const open = (): Db => {
   return db;
 };
 
-function project(db: Db, name: string, locations: string[]) {
-  const result = createProject(db, { name, locations: locations.map((directory) => ({ directory })) });
+function project(db: Db, name: string, repos: string[]) {
+  const result = createInitiative(db, { name, repos: repos.map((directory) => ({ directory })) });
   if (!result.ok) throw new Error(result.error);
-  return result.project;
+  return result.initiative;
 }
 
-describe("projectNameForDirectory", () => {
+describe("initiativeNameForDirectory", () => {
   test("uses the basename, falling back to a readable name", () => {
-    expect(projectNameForDirectory("/work/opencode-tools/")).toBe("opencode-tools");
-    expect(projectNameForDirectory("/")).toBe("Workspace");
+    expect(initiativeNameForDirectory("/work/opencode-tools/")).toBe("opencode-tools");
+    expect(initiativeNameForDirectory("/")).toBe("Workspace");
   });
 });
 
-describe("ensureProjectForDirectory", () => {
+describe("ensureInitiativeForDirectory", () => {
   test("creates a project named after the workspace on first use", () => {
     const db = open();
-    const result = ensureProjectForDirectory(db, "/work/new-repo");
+    const result = ensureInitiativeForDirectory(db, "/work/new-repo");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
     expect(result.created).toBe(true);
-    expect(result.project.name).toBe("new-repo");
-    expect(result.project.locations.map((location) => location.directory)).toEqual(["/work/new-repo"]);
-    expect(result.location.directory).toBe("/work/new-repo");
-    expect(listProjects(db)).toHaveLength(1);
+    expect(result.initiative.name).toBe("new-repo");
+    expect(result.initiative.repos.map((repo) => repo.directory)).toEqual(["/work/new-repo"]);
+    expect(result.repo.directory).toBe("/work/new-repo");
+    expect(listInitiatives(db)).toHaveLength(1);
   });
 
   test("is idempotent, including with a trailing slash", () => {
     const db = open();
-    const first = ensureProjectForDirectory(db, "/work/new-repo");
-    const second = ensureProjectForDirectory(db, "/work/new-repo/");
+    const first = ensureInitiativeForDirectory(db, "/work/new-repo");
+    const second = ensureInitiativeForDirectory(db, "/work/new-repo/");
     if (!first.ok || !second.ok) throw new Error("expected both calls to succeed");
 
     expect(first.created).toBe(true);
     expect(second.created).toBe(false);
-    expect(second.project.id).toBe(first.project.id);
-    expect(listProjects(db)).toHaveLength(1);
+    expect(second.initiative.id).toBe(first.initiative.id);
+    expect(listInitiatives(db)).toHaveLength(1);
   });
 
   test("reuses the ancestor project instead of creating one for a subdirectory", () => {
     const db = open();
     const work = project(db, "Work", ["/work"]);
-    const result = ensureProjectForDirectory(db, "/work/app/src");
+    const result = ensureInitiativeForDirectory(db, "/work/app/src");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
     expect(result.created).toBe(false);
-    expect(result.project.id).toBe(work.id);
-    expect(result.location.directory).toBe("/work");
-    expect(listProjects(db)).toHaveLength(1);
+    expect(result.initiative.id).toBe(work.id);
+    expect(result.repo.directory).toBe("/work");
+    expect(listInitiatives(db)).toHaveLength(1);
     // No new workspace was registered for the subdirectory.
-    expect(result.project.locations).toHaveLength(1);
+    expect(result.initiative.repos).toHaveLength(1);
   });
 
   test("reuses an exact workspace", () => {
     const db = open();
     const app = project(db, "App", ["/work/app"]);
-    const result = ensureProjectForDirectory(db, "/work/app");
-    expect(result.ok && result.created === false && result.project.id === app.id).toBe(true);
+    const result = ensureInitiativeForDirectory(db, "/work/app");
+    expect(result.ok && result.created === false && result.initiative.id === app.id).toBe(true);
   });
 
   test("fails on a relative or empty directory without writing", () => {
     const db = open();
-    expect(ensureProjectForDirectory(db, "work/app")).toEqual({
+    expect(ensureInitiativeForDirectory(db, "work/app")).toEqual({
       ok: false,
-      error: "o workspace precisa de um caminho absoluto: work/app",
+      error: "o repositório precisa de um caminho absoluto: work/app",
     });
-    expect(ensureProjectForDirectory(db, "   ")).toEqual({
+    expect(ensureInitiativeForDirectory(db, "   ")).toEqual({
       ok: false,
-      error: "o diretório do workspace é obrigatório",
+      error: "o diretório do repositório é obrigatório",
     });
-    expect(listProjects(db)).toHaveLength(0);
+    expect(listInitiatives(db)).toHaveLength(0);
   });
 
   test("a root workspace becomes a 'Workspace' project", () => {
     const db = open();
-    const result = ensureProjectForDirectory(db, "/");
+    const result = ensureInitiativeForDirectory(db, "/");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.created).toBe(true);
-    expect(result.project.name).toBe("Workspace");
-    expect(result.location.directory).toBe("/");
+    expect(result.initiative.name).toBe("Workspace");
+    expect(result.repo.directory).toBe("/");
   });
 
   test("does not touch an existing project's other workspaces", () => {
     const db = open();
     const app = project(db, "App", ["/work/app"]);
-    addProjectLocation(db, app.id, { directory: "/work/docs" });
-    const result = ensureProjectForDirectory(db, "/work/app/src");
-    expect(result.ok && result.project.locations.length === 2).toBe(true);
+    addInitiativeRepo(db, app.id, { directory: "/work/docs" });
+    const result = ensureInitiativeForDirectory(db, "/work/app/src");
+    expect(result.ok && result.initiative.repos.length === 2).toBe(true);
   });
 });

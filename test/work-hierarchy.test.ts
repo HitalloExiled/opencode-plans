@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 const { DatabaseSync } = (await import("node:sqlite")) as any;
 
 import {
-  createProject,
+  createInitiative,
   createWorkItem,
   getWorkItem,
   initSchema,
@@ -21,17 +21,17 @@ const open = (): Db => {
 
 function setup() {
   const db = open();
-  const project = createProject(db, { name: "App", locations: [{ directory: "/work/app" }] });
+  const project = createInitiative(db, { name: "App", repos: [{ directory: "/work/app" }] });
   if (!project.ok) throw new Error(project.error);
   const add = (title: string) => {
-    const result = createWorkItem(db, { projectID: project.project.id, title });
+    const result = createWorkItem(db, { initiativeID: project.initiative.id, title });
     if (!result.ok) throw new Error(result.error);
     return result.item;
   };
   const a = add("A");
   const b = add("B");
   const c = add("C");
-  return { db, projectID: project.project.id, a, b, c, add };
+  return { db, initiativeID: project.initiative.id, a, b, c, add };
 }
 
 const titles = (items: readonly { title: string }[]) => items.map((item) => item.title);
@@ -47,15 +47,15 @@ describe("work item hierarchy", () => {
   });
 
   test("rejects self, cross-project, depth and an item that already has children", () => {
-    const { db, projectID, a, b, add } = setup();
+    const { db, initiativeID, a, b, add } = setup();
     expect(setWorkItemParent(db, { id: a.id, parentID: a.id })).toEqual({
       ok: false,
       error: "um work item não pode ser pai de si mesmo",
     });
 
-    const other = createProject(db, { name: "Other", locations: [{ directory: "/work/other" }] });
+    const other = createInitiative(db, { name: "Other", repos: [{ directory: "/work/other" }] });
     if (!other.ok) throw new Error(other.error);
-    const d = createWorkItem(db, { projectID: other.project.id, title: "D" });
+    const d = createWorkItem(db, { initiativeID: other.initiative.id, title: "D" });
     if (!d.ok) throw new Error(d.error);
     expect(setWorkItemParent(db, { id: a.id, parentID: d.item.id }).ok).toBe(false);
 
@@ -70,7 +70,7 @@ describe("work item hierarchy", () => {
       ok: false,
       error: "um item com filhos não pode ter pai",
     });
-    expect(projectID).toBeTruthy();
+    expect(initiativeID).toBeTruthy();
   });
 
   test("clears and re-parents", () => {

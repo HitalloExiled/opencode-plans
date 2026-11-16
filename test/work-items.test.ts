@@ -1,5 +1,5 @@
 /**
- * US-01 — a work item belongs to a user project that groups N workspaces.
+ * US-01 — a work item belongs to an initiative that groups N repositories.
  *
  * There is no resolution, tools, RPC or UI in this slice: only the schema v3,
  * the containment invariants and the store API they are built on.
@@ -10,20 +10,22 @@ import { describe, expect, test } from "bun:test";
 const { DatabaseSync } = (await import("node:sqlite")) as any;
 
 import {
-  addProjectLocation,
-  createProject,
+  addInitiativeRepo,
+  createInitiative,
   createWorkItem,
-  getProject,
+  ensureInitiativeRepo,
+  getInitiative,
   getWorkItem,
   initSchema,
-  listProjects,
+  listInitiatives,
   listWorkItems,
   listWorkItemsAll,
-  removeProjectLocation,
-  renameProject,
+  removeInitiativeRepo,
+  renameInitiative,
+  setWorkItemRepo,
   SCHEMA_VERSION,
   schemaVersion,
-  setPrimaryLocation,
+  setInitiativePrimary,
   updateWorkItem,
   type Db,
 } from "../src/store";
@@ -34,13 +36,13 @@ const open = (): Db => {
   return db;
 };
 
-function project(db: Db, name = "OpenCode Tools", locations = ["/work/app", "/work/plugins"]) {
-  const result = createProject(db, {
+function project(db: Db, name = "OpenCode Tools", repos = ["/work/app", "/work/plugins"]) {
+  const result = createInitiative(db, {
     name,
-    locations: locations.map((directory) => ({ directory })),
+    repos: repos.map((directory) => ({ directory })),
   });
   if (!result.ok) throw new Error(result.error);
-  return result.project;
+  return result.initiative;
 }
 
 describe("schema migrations", () => {
@@ -57,8 +59,8 @@ describe("schema migrations", () => {
     // Simulate the v2 file: the work-item tables do not exist yet.
     db.prepare("DROP TABLE work_item_deps").run();
     db.prepare("DROP TABLE work_items").run();
-    db.prepare("DROP TABLE project_locations").run();
-    db.prepare("DROP TABLE projects").run();
+    db.prepare("DROP TABLE initiative_repos").run();
+    db.prepare("DROP TABLE initiatives").run();
     db.prepare("PRAGMA user_version = 2").run();
     expect(schemaVersion(db)).toBe(2);
 
@@ -67,7 +69,7 @@ describe("schema migrations", () => {
     expect((db.prepare("SELECT title FROM plans WHERE id = 'plan-1'").get() as { title: string }).title).toBe(
       "v2 plan",
     );
-    expect(listProjects(db)).toEqual([]);
+    expect(listInitiatives(db)).toEqual([]);
 
     // Re-running the migration is a no-op.
     initSchema(db);
@@ -75,116 +77,200 @@ describe("schema migrations", () => {
   });
 });
 
+describe("v7 migration repair", () => {
+  test("keeps the old rows when empty new tables exist (aborted migration)", () => {
+    const db = new DatabaseSync(":memory:") as Db;
+    db.prepare(
+      `CREATE TABLE projects (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        base_branch TEXT, max_parallel INTEGER NOT NULL DEFAULT 2, verify_command TEXT
+      )`,
+    ).run();
+    db.prepare(
+      `CREATE TABLE project_locations (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, directory TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL, is_primary INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      )`,
+    ).run();
+    db.prepare(
+      `CREATE TABLE initiatives (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, base_branch TEXT,
+        max_parallel INTEGER NOT NULL DEFAULT 2, verify_command TEXT,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      )`,
+    ).run();
+    db.prepare(
+      `CREATE TABLE initiative_repos (
+        id TEXT PRIMARY KEY, initiative_id TEXT NOT NULL, directory TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL, is_primary INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      )`,
+    ).run();
+    db.prepare("INSERT INTO projects (id, name, created_at, updated_at) VALUES ('old', 'Keep', 'a', 'a')").run();
+    db.prepare(
+      "INSERT INTO project_locations (id, project_id, directory, label, is_primary, position, created_at) VALUES ('loc', 'old', '/work/app', 'app', 1, 0, 'a')",
+    ).run();
+    db.prepare("PRAGMA user_version = 6").run();
+
+    initSchema(db);
+
+    expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
+    expect(getInitiative(db, "old")?.name).toBe("Keep");
+    expect(getInitiative(db, "old")?.repos.map((repo) => repo.directory)).toEqual(["/work/app"]);
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='projects'").get()).toBeUndefined();
+  });
+});
+
 describe("projects", () => {
-  test("is born with its workspaces, the first is primary", () => {
+  test("is born with its repositories, the first is primary", () => {
     const db = open();
     const app = project(db);
     expect(app.name).toBe("OpenCode Tools");
-    expect(app.locations.map((location) => location.directory)).toEqual(["/work/app", "/work/plugins"]);
-    expect(app.locations.map((location) => location.primary)).toEqual([true, false]);
-    expect(app.locations.map((location) => location.label)).toEqual(["app", "plugins"]);
+    expect(app.repos.map((repo) => repo.directory)).toEqual(["/work/app", "/work/plugins"]);
+    expect(app.repos.map((repo) => repo.primary)).toEqual([true, false]);
+    expect(app.repos.map((repo) => repo.label)).toEqual(["app", "plugins"]);
   });
 
-  test("requires at least one workspace", () => {
+  test("requires at least one repository", () => {
     const db = open();
-    expect(createProject(db, { name: "Empty", locations: [] })).toEqual({
+    expect(createInitiative(db, { name: "Empty", repos: [] })).toEqual({
       ok: false,
-      error: "um projeto precisa de pelo menos um workspace",
+      error: "uma iniciativa precisa de pelo menos um repositório",
     });
   });
 
-  test("requires an absolute workspace path", () => {
+  test("requires an absolute repository path", () => {
     const db = open();
-    expect(createProject(db, { name: "Relative", locations: [{ directory: "work/app" }] })).toEqual({
+    expect(createInitiative(db, { name: "Relative", repos: [{ directory: "work/app" }] })).toEqual({
       ok: false,
-      error: "o workspace precisa de um caminho absoluto: work/app",
+      error: "o repositório precisa de um caminho absoluto: work/app",
     });
   });
 
   test("rejects a repeated directory, with or without a trailing slash", () => {
     const db = open();
-    expect(createProject(db, { name: "Dup", locations: [{ directory: "/a" }, { directory: "/a/" }] }).ok).toBe(false);
+    expect(createInitiative(db, { name: "Dup", repos: [{ directory: "/a" }, { directory: "/a/" }] }).ok).toBe(false);
   });
 
   test("a directory belongs to a single project", () => {
     const db = open();
     project(db);
-    const second = createProject(db, { name: "Other", locations: [{ directory: "/work/app/" }] });
-    expect(second).toEqual({ ok: false, error: "o workspace /work/app já pertence a outro projeto" });
+    const second = createInitiative(db, { name: "Other", repos: [{ directory: "/work/app/" }] });
+    expect(second).toEqual({ ok: false, error: "o repositório /work/app já pertence a outra iniciativa" });
   });
 
-  test("adds a workspace at the end, not primary", () => {
+  test("adds a repository at the end, not primary", () => {
     const db = open();
     const app = project(db);
-    const added = addProjectLocation(db, app.id, { directory: "/work/docs/" });
+    const added = addInitiativeRepo(db, app.id, { directory: "/work/docs/" });
     expect(added.ok).toBe(true);
     if (!added.ok) return;
-    expect(added.location.directory).toBe("/work/docs");
-    expect(added.location.primary).toBe(false);
-    expect(added.location.position).toBe(2);
-    expect(getProject(db, app.id)!.locations).toHaveLength(3);
+    expect(added.repo.directory).toBe("/work/docs");
+    expect(added.repo.primary).toBe(false);
+    expect(added.repo.position).toBe(2);
+    expect(getInitiative(db, app.id)!.repos).toHaveLength(3);
   });
 
   test("switches the primary", () => {
     const db = open();
     const app = project(db);
-    const second = app.locations[1]!;
-    expect(setPrimaryLocation(db, app.id, second.id).ok).toBe(true);
-    expect(getProject(db, app.id)!.locations.map((location) => location.primary)).toEqual([false, true]);
-    expect(setPrimaryLocation(db, app.id, "missing").ok).toBe(false);
+    const second = app.repos[1]!;
+    expect(setInitiativePrimary(db, app.id, second.id).ok).toBe(true);
+    expect(getInitiative(db, app.id)!.repos.map((repo) => repo.primary)).toEqual([false, true]);
+    expect(setInitiativePrimary(db, app.id, "missing").ok).toBe(false);
   });
 
-  test("removes a workspace with items only after confirmation", () => {
+  test("removes a repository with items only after confirmation", () => {
     const db = open();
     const app = project(db);
-    const second = app.locations[1]!;
-    const item = createWorkItem(db, { projectID: app.id, locationID: second.id, title: "Need" });
+    const second = app.repos[1]!;
+    const item = createWorkItem(db, { initiativeID: app.id, repoID: second.id, title: "Need" });
     if (!item.ok) throw new Error(item.error);
 
-    expect(removeProjectLocation(db, app.id, second.id)).toEqual({
+    expect(removeInitiativeRepo(db, app.id, second.id)).toEqual({
       ok: false,
-      error: "há 1 work item(ns) neste workspace; confirme para removê-lo e deixá-los sem workspace",
+      error: "há 1 work item(ns) neste repositório; confirme para removê-lo e deixá-los sem repositório",
       needsConfirmation: true,
       items: 1,
     });
-    expect(getWorkItem(db, item.item.id)?.location_id).toBe(second.id);
+    expect(getWorkItem(db, item.item.id)?.repo_id).toBe(second.id);
 
-    expect(removeProjectLocation(db, app.id, second.id, { confirm: true }).ok).toBe(true);
-    expect(getWorkItem(db, item.item.id)?.location_id).toBeNull();
-    expect(getProject(db, app.id)!.locations.map((location) => location.id)).toEqual([app.locations[0]!.id]);
+    expect(removeInitiativeRepo(db, app.id, second.id, { confirm: true }).ok).toBe(true);
+    expect(getWorkItem(db, item.item.id)?.repo_id).toBeNull();
+    expect(getInitiative(db, app.id)!.repos.map((repo) => repo.id)).toEqual([app.repos[0]!.id]);
 
-    expect(removeProjectLocation(db, app.id, app.locations[0]!.id)).toEqual({
+    expect(removeInitiativeRepo(db, app.id, app.repos[0]!.id)).toEqual({
       ok: false,
-      error: "o projeto precisa de pelo menos um workspace",
+      error: "a iniciativa precisa de pelo menos um repositório",
     });
   });
 
   test("renames the project keeping ids and links", () => {
     const db = open();
     const app = project(db);
-    const item = createWorkItem(db, { projectID: app.id, title: "Need" });
+    const item = createWorkItem(db, { initiativeID: app.id, title: "Need" });
     if (!item.ok) throw new Error(item.error);
 
-    const renamed = renameProject(db, app.id, "  New name  ");
+    const renamed = renameInitiative(db, app.id, "  New name  ");
     expect(renamed.ok).toBe(true);
     if (!renamed.ok) return;
-    expect(renamed.project.name).toBe("New name");
-    expect(renamed.project.id).toBe(app.id);
-    expect(renamed.project.locations.map((location) => location.id)).toEqual(
-      app.locations.map((location) => location.id),
+    expect(renamed.initiative.name).toBe("New name");
+    expect(renamed.initiative.id).toBe(app.id);
+    expect(renamed.initiative.repos.map((repo) => repo.id)).toEqual(
+      app.repos.map((repo) => repo.id),
     );
-    expect(getWorkItem(db, item.item.id)?.project_id).toBe(app.id);
-    expect(renameProject(db, app.id, "   ")).toEqual({ ok: false, error: "o nome do projeto é obrigatório" });
-    expect(renameProject(db, "missing", "x").ok).toBe(false);
+    expect(getWorkItem(db, item.item.id)?.initiative_id).toBe(app.id);
+    expect(renameInitiative(db, app.id, "   ")).toEqual({ ok: false, error: "o nome da iniciativa é obrigatório" });
+    expect(renameInitiative(db, "missing", "x").ok).toBe(false);
   });
 
-  test("removing the primary promotes the next workspace", () => {
+  test("removing the primary promotes the next repository", () => {
     const db = open();
     const app = project(db);
-    const second = app.locations[1]!;
-    setPrimaryLocation(db, app.id, second.id);
-    expect(removeProjectLocation(db, app.id, second.id).ok).toBe(true);
-    expect(getProject(db, app.id)!.locations.map((location) => location.primary)).toEqual([true]);
+    const second = app.repos[1]!;
+    setInitiativePrimary(db, app.id, second.id);
+    expect(removeInitiativeRepo(db, app.id, second.id).ok).toBe(true);
+    expect(getInitiative(db, app.id)!.repos.map((repo) => repo.primary)).toEqual([true]);
+  });
+});
+
+describe("repo selection", () => {
+  test("ensureInitiativeRepo reuses an existing repo and creates a new one", () => {
+    const db = open();
+    const app = project(db);
+
+    const existing = ensureInitiativeRepo(db, app.id, "/work/app/");
+    expect(existing.ok).toBe(true);
+    if (!existing.ok) return;
+    expect(existing.created).toBe(false);
+    expect(existing.repo.id).toBe(app.repos[0]!.id);
+
+    const added = ensureInitiativeRepo(db, app.id, "/work/extra");
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    expect(added.created).toBe(true);
+    expect(getInitiative(db, app.id)!.repos.map((repo) => repo.directory)).toContain("/work/extra");
+
+    const other = project(db, "Other", ["/work/other"]);
+    expect(ensureInitiativeRepo(db, other.id, "/work/extra").ok).toBe(false);
+    expect(ensureInitiativeRepo(db, other.id, "relative").ok).toBe(false);
+  });
+
+  test("setWorkItemRepo moves the item inside its initiative only", () => {
+    const db = open();
+    const app = project(db);
+    const other = project(db, "Other", ["/work/other"]);
+    const item = createWorkItem(db, { initiativeID: app.id, title: "Need" });
+    if (!item.ok) throw new Error(item.error);
+
+    const moved = setWorkItemRepo(db, { id: item.item.id, repoID: app.repos[1]!.id });
+    expect(moved.ok).toBe(true);
+    if (!moved.ok) return;
+    expect(moved.item.repo_id).toBe(app.repos[1]!.id);
+
+    expect(setWorkItemRepo(db, { id: item.item.id, repoID: other.repos[0]!.id }).ok).toBe(false);
+    expect(setWorkItemRepo(db, { id: item.item.id, repoID: "nope" }).ok).toBe(false);
   });
 });
 
@@ -192,21 +278,21 @@ describe("work item containment", () => {
   test("requires a title and an existing project", () => {
     const db = open();
     const app = project(db);
-    expect(createWorkItem(db, { projectID: app.id, title: "   " }).ok).toBe(false);
-    expect(createWorkItem(db, { projectID: "missing", title: "Need" }).ok).toBe(false);
+    expect(createWorkItem(db, { initiativeID: app.id, title: "   " }).ok).toBe(false);
+    expect(createWorkItem(db, { initiativeID: "missing", title: "Need" }).ok).toBe(false);
   });
 
   test("belongs to the project and starts in the backlog, ranked", () => {
     const db = open();
     const app = project(db);
-    const first = createWorkItem(db, { projectID: app.id, title: "  First need  " });
-    const second = createWorkItem(db, { projectID: app.id, title: "Second need", origin: "agent" });
+    const first = createWorkItem(db, { initiativeID: app.id, title: "  First need  " });
+    const second = createWorkItem(db, { initiativeID: app.id, title: "Second need", origin: "agent" });
     expect(first.ok && second.ok).toBe(true);
     if (!first.ok || !second.ok) return;
 
     expect(first.item.title).toBe("First need");
-    expect(first.item.project_id).toBe(app.id);
-    expect(first.item.location_id).toBeNull();
+    expect(first.item.initiative_id).toBe(app.id);
+    expect(first.item.repo_id).toBeNull();
     expect(first.item.status).toBe("backlog");
     expect(first.item.rank).toBe(1);
     expect(first.item.origin).toBe("user");
@@ -220,17 +306,17 @@ describe("work item containment", () => {
     const app = project(db);
     const other = project(db, "Other", ["/work/other"]);
 
-    const ok = createWorkItem(db, { projectID: app.id, locationID: app.locations[1]!.id, title: "Need" });
+    const ok = createWorkItem(db, { initiativeID: app.id, repoID: app.repos[1]!.id, title: "Need" });
     expect(ok.ok).toBe(true);
 
-    const wrong = createWorkItem(db, { projectID: app.id, locationID: other.locations[0]!.id, title: "Need" });
-    expect(wrong).toEqual({ ok: false, error: "o workspace não pertence a este projeto" });
+    const wrong = createWorkItem(db, { initiativeID: app.id, repoID: other.repos[0]!.id, title: "Need" });
+    expect(wrong).toEqual({ ok: false, error: "o repositório não pertence a esta iniciativa" });
   });
 
   test("updates the need, preserving what is omitted", () => {
     const db = open();
     const app = project(db);
-    const created = createWorkItem(db, { projectID: app.id, title: "Need", body: "why" });
+    const created = createWorkItem(db, { initiativeID: app.id, title: "Need", body: "why" });
     if (!created.ok) throw new Error(created.error);
     const id = created.item.id;
 
@@ -254,15 +340,15 @@ describe("work item containment", () => {
     const db = open();
     const first = project(db, "First", ["/work/first"]);
     const second = project(db, "Second", ["/work/second"]);
-    createWorkItem(db, { projectID: first.id, title: "a1" });
-    createWorkItem(db, { projectID: second.id, title: "b1" });
+    createWorkItem(db, { initiativeID: first.id, title: "a1" });
+    createWorkItem(db, { initiativeID: second.id, title: "b1" });
     expect(listWorkItemsAll(db).map((item) => item.title).sort()).toEqual(["a1", "b1"]);
   });
 
   test("getWorkItem returns what was stored", () => {
     const db = open();
     const app = project(db);
-    const created = createWorkItem(db, { projectID: app.id, title: "Need", body: "  why  " });
+    const created = createWorkItem(db, { initiativeID: app.id, title: "Need", body: "  why  " });
     if (!created.ok) throw new Error(created.error);
     expect(getWorkItem(db, created.item.id)?.body).toBe("why");
     expect(getWorkItem(db, "missing")).toBeUndefined();

@@ -1,7 +1,7 @@
 /**
- * Work — the global surface (overlay): the user's work items across projects.
+ * Work — the global surface (overlay): the user's work items across initiatives.
  *
- * Work items are global because a project spans sessions and workspaces; the
+ * Work items are global because an initiative spans sessions and workspaces; the
  * session side panel owns plans. The overlay offers Work and Plans (Global ->
  * Work -> Plan and Global -> Plan); a plan is also reached from its item.
  */
@@ -27,7 +27,7 @@ import {
   type Plan,
   type PlanSummary,
   type PreflightView,
-  type Project,
+  type Initiative,
   type RunView,
   type WorkGroup,
   type WorkItemDetail,
@@ -38,6 +38,8 @@ import { executionFor, planTarget } from "./execution";
 import { filterWorkGroups } from "../work-filter";
 import { planProgressOf } from "../work-progress";
 import { planWorkItem } from "./plan-item";
+import { openPlanDialog } from "./plan-dialog";
+import { closePlansOverlay } from "./overlay-state";
 
 export type ViewMode = "work" | "plans";
 
@@ -73,9 +75,9 @@ const WORK_CSS = `
 .work-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .work-body.is-hidden { display: none; }
 .work-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; padding-bottom: 24px; overscroll-behavior: contain; }
-.work-project { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
-.work-project:last-child { margin-bottom: 0; }
-.work-project-name {
+.work-initiative { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.work-initiative:last-child { margin-bottom: 0; }
+.work-initiative-name {
   margin: 0;
   display: flex;
   align-items: baseline;
@@ -84,7 +86,7 @@ const WORK_CSS = `
   font-weight: 600;
   color: var(--v2-text-text-base);
 }
-.work-project-count { font-size: 10.5px; font-weight: 500; color: var(--v2-text-text-faint); }
+.work-initiative-count { font-size: 10.5px; font-weight: 500; color: var(--v2-text-text-faint); }
 .work-section { display: flex; flex-direction: column; gap: 6px; }
 .work-section-head {
   margin: 0;
@@ -200,7 +202,7 @@ const WORK_CSS = `
 .work-board-card { cursor: grab; align-items: flex-start; }
 .work-board-card:active { cursor: grabbing; }
 .work-board-card.is-drop { box-shadow: inset 0 2px 0 var(--v2-border-border-focus); }
-.work-card-project { font-size: 10px; color: var(--v2-text-text-faint); }
+.work-card-initiative { font-size: 10px; color: var(--v2-text-text-faint); }
 .work-card-actions { display: flex; align-items: center; gap: 4px; }
 .work-run-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .work-run-panel {
@@ -283,13 +285,13 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const ctx = usePlugin();
   const t = useT();
   const [groups, setGroups] = createSignal<WorkGroup[]>([]);
-  const [projects, setProjects] = createSignal<Project[]>([]);
+  const [initiatives, setInitiatives] = createSignal<Initiative[]>([]);
   const [activePlans, setActivePlans] = createSignal<Plan[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [reload, setReload] = createSignal(0);
 
-  const [projectFilter, setProjectFilter] = createSignal<string>("all");
+  const [initiativeFilter, setInitiativeFilter] = createSignal<string>("all");
   const [selectedID, setSelectedID] = createSignal<string | undefined>(undefined);
   const [detail, setDetail] = createSignal<WorkItemDetail | null>(null);
   const [fullPlan, setFullPlan] = createSignal<Plan | null>(null);
@@ -336,13 +338,13 @@ export function WorkBody(props: { target: () => WorkTarget }) {
 
     void Promise.all([
       target.server.client.rpc(PlansRpc).listWorkItems({ scope: "all" }),
-      target.server.client.rpc(PlansRpc).listProjects({}),
+      target.server.client.rpc(PlansRpc).listInitiatives({}),
       target.server.client.rpc(PlansRpc).list({ scope: "all", status: "active" }),
     ])
       .then(([itemGroups, projectList, plans]) => {
         if (current !== generation) return;
         setGroups(itemGroups as WorkGroup[]);
-        setProjects(projectList as Project[]);
+        setInitiatives(projectList as Initiative[]);
         setActivePlans(plans as Plan[]);
         setLoading(false);
       })
@@ -409,19 +411,19 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       });
   });
 
-  const selectedProject = createMemo(() => projects().find((project) => project.id === projectFilter()));
+  const selectedInitiative = createMemo(() => initiatives().find((initiative) => initiative.id === initiativeFilter()));
 
   /** Run settings and monitor are per selected project. */
   createEffect(() => {
-    const project = selectedProject();
+    const initiative = selectedInitiative();
     void reload();
-    if (!project) {
+    if (!initiative) {
       setRun(null);
       return;
     }
     void props.target()
       .server.client.rpc(PlansRpc)
-      .runActive({ projectID: project.id })
+      .runActive({ initiativeID: initiative.id })
       .then((value) => setRun(value as RunView | null))
       .catch(() => setRun(null));
   });
@@ -433,43 +435,43 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     return map;
   });
 
-  const directoryOf = (project: Project): string =>
-    project.locations.find((location) => location.primary)?.directory ?? project.locations[0]?.directory ?? "";
+  const directoryOf = (initiative: Initiative): string =>
+    initiative.repos.find((repo) => repo.primary)?.directory ?? initiative.repos[0]?.directory ?? "";
 
   const openSession = (id: string) => {
     ctx.tabs.open({ server: props.target().server.id, id }, { focus: true });
   };
 
-  const loadRun = (projectID: string) => {
+  const loadRun = (initiativeID: string) => {
     void props.target()
       .server.client.rpc(PlansRpc)
-      .runActive({ projectID })
+      .runActive({ initiativeID })
       .then((value) => setRun(value as RunView | null))
       .catch(() => undefined);
   };
 
   const openPreflight = () => {
-    const project = selectedProject();
-    if (!project) return;
+    const initiative = selectedInitiative();
+    if (!initiative) return;
     setPreflightBusy(true);
     setRunError(null);
     setPreflight(null);
     void props.target()
       .server.client.rpc(PlansRpc)
-      .runPreflight({ projectID: project.id, directory: directoryOf(project) })
+      .runPreflight({ initiativeID: initiative.id, directory: directoryOf(initiative) })
       .then((value) => setPreflight(value as PreflightView))
       .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setPreflightBusy(false));
   };
 
   const startRun = () => {
-    const project = selectedProject();
-    if (!project) return;
+    const initiative = selectedInitiative();
+    if (!initiative) return;
     setRunBusy(true);
     setRunError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
-      .runStart({ projectID: project.id, directory: directoryOf(project) })
+      .runStart({ initiativeID: initiative.id, directory: directoryOf(initiative) })
       .then((result) => {
         if (!result.ok) {
           setRunError(result.error ?? t("work.run.startError"));
@@ -489,8 +491,8 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   };
 
   const cancelRun = (runID: string) => {
-    const project = selectedProject();
-    if (!project || runBusy()) return;
+    const initiative = selectedInitiative();
+    if (!initiative || runBusy()) return;
     setRunBusy(true);
     setRunError(null);
     void props.target()
@@ -501,7 +503,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
           setRunError(result.error ?? t("work.run.cancelError"));
           return;
         }
-        loadRun(project.id);
+        loadRun(initiative.id);
       })
       .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setRunBusy(false));
@@ -529,22 +531,22 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   };
 
   const syncSettings = () => {
-    const project = selectedProject();
-    if (!project) return;
-    setBaseInput(project.baseBranch ?? "");
-    setParallelInput(String(project.maxParallel ?? 2));
-    setVerifyInput(project.verifyCommand ?? "");
+    const initiative = selectedInitiative();
+    if (!initiative) return;
+    setBaseInput(initiative.baseBranch ?? "");
+    setParallelInput(String(initiative.maxParallel ?? 2));
+    setVerifyInput(initiative.verifyCommand ?? "");
   };
 
   const saveSettings = () => {
-    const project = selectedProject();
-    if (!project || runBusy()) return;
+    const initiative = selectedInitiative();
+    if (!initiative || runBusy()) return;
     setRunBusy(true);
     setRunError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
       .runSettings({
-        projectID: project.id,
+        initiativeID: initiative.id,
         baseBranch: baseInput().trim() || null,
         maxParallel: Number(parallelInput()) || 2,
         verifyCommand: verifyInput().trim() || null,
@@ -554,9 +556,9 @@ export function WorkBody(props: { target: () => WorkTarget }) {
           setRunError(result.error ?? t("work.run.settingsError"));
           return;
         }
-        if (result.project) {
-          const updated = result.project;
-          setProjects((list) => list.map((entry) => (entry.id === updated.id ? updated : entry)));
+        if (result.initiative) {
+          const updated = result.initiative;
+          setInitiatives((list) => list.map((entry) => (entry.id === updated.id ? updated : entry)));
         }
         setSettingsOpen(false);
         ctx.toast.show({ title: t("work.run.settingsSaved"), variant: "success" });
@@ -574,20 +576,20 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     return map;
   });
 
-  const projectGroups = createMemo(() => {
-    const id = projectFilter();
-    return id === "all" ? groups() : groups().filter((group) => group.project.id === id);
+  const initiativeGroups = createMemo(() => {
+    const id = initiativeFilter();
+    return id === "all" ? groups() : groups().filter((group) => group.initiative.id === id);
   });
 
   const visibleGroups = createMemo(() =>
-    filterWorkGroups(projectGroups(), { agentOnly: agentOnly(), showDropped: showDropped() }),
+    filterWorkGroups(initiativeGroups(), { agentOnly: agentOnly(), showDropped: showDropped() }),
   );
   const total = createMemo(() => visibleGroups().reduce((sum, group) => sum + group.items.length, 0));
   const hasAgentItems = createMemo(() =>
-    projectGroups().some((group) => group.items.some((item) => item.origin === "agent")),
+    initiativeGroups().some((group) => group.items.some((item) => item.origin === "agent")),
   );
   const hasDropped = createMemo(() =>
-    projectGroups().some((group) => group.items.some((item) => item.status === "dropped")),
+    initiativeGroups().some((group) => group.items.some((item) => item.status === "dropped")),
   );
 
   const nav = createScrollNav({
@@ -616,7 +618,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       items: groups.flatMap((group) =>
         group.items
           .filter((item) => item.status === status)
-          .map((item) => ({ item, project: group.project.name })),
+          .map((item) => ({ item, initiative: group.initiative.name })),
       ),
     }));
   });
@@ -656,8 +658,8 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     if (agentOnly()) {
       return { title: t("work.empty.agent.title"), hint: t("work.empty.agent.hint") };
     }
-    if (projectFilter() !== "all") {
-      return { title: t("work.project.empty.title"), hint: t("work.project.empty.hint") };
+    if (initiativeFilter() !== "all") {
+      return { title: t("work.initiative.empty.title"), hint: t("work.initiative.empty.hint") };
     }
     return { title: t("work.empty.title"), hint: t("work.empty.hint") };
   };
@@ -708,11 +710,11 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   };
 
   const createItem = () => {
-    const project = selectedProject();
+    const initiative = selectedInitiative();
     const title = newTitle().trim();
-    if (!project || !title || creating()) return;
-    const location = project.locations.find((entry) => entry.primary) ?? project.locations[0];
-    if (!location) {
+    if (!initiative || !title || creating()) return;
+    const repo = initiative.repos.find((entry) => entry.primary) ?? initiative.repos[0];
+    if (!repo) {
       setActionError(t("work.create.error"));
       return;
     }
@@ -720,7 +722,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     setActionError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
-      .saveWorkItem({ directory: location.directory, title })
+      .saveWorkItem({ directory: repo.directory, title })
       .then((result) => {
         if (!result.ok) {
           setActionError(result.error ?? t("work.create.error"));
@@ -736,7 +738,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const depCandidates = createMemo(() => {
     const current = detail();
     if (!current) return [];
-    const group = groups().find((entry) => entry.project.id === current.item.projectID);
+    const group = groups().find((entry) => entry.initiative.id === current.item.initiativeID);
     if (!group) return [];
     const existing = new Set(current.blockedBy.map((item) => item.id));
     return group.items.filter((item) => item.id !== current.item.id && !existing.has(item.id));
@@ -808,28 +810,43 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     }
   };
 
-  const planDetail = (current: WorkItemDetail) => {
+  /** With a plan it reopens the plan's session; without one, it asks where. */
+  const startPlanning = (current: WorkItemDetail) => {
     if (planning()) return;
-    setPlanning(true);
     setActionError(null);
-    void planWorkItem({ ctx, target: props.target(), detail: current, t })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => setPlanning(false));
+    if (current.plan) {
+      setPlanning(true);
+      void planWorkItem({ ctx, target: props.target(), detail: current, t })
+        .then(() => closePlansOverlay())
+        .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+        .finally(() => setPlanning(false));
+      return;
+    }
+    openPlanDialog({
+      ctx,
+      server: props.target().server,
+      detail: current,
+      onPlanned: () => {
+        closePlansOverlay();
+        setReload((n) => n + 1);
+        setDetailReload((n) => n + 1);
+      },
+    });
   };
+
+  const planDetail = (current: WorkItemDetail) => startPlanning(current);
 
   const planFromCard = (id: string) => {
     if (planning()) return;
-    setPlanning(true);
     setActionError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
       .getWorkItem({ id })
       .then((current) => {
         if (!current) throw new Error(t("work.plan.error"));
-        return planWorkItem({ ctx, target: props.target(), detail: current as WorkItemDetail, t });
+        startPlanning(current as WorkItemDetail);
       })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => setPlanning(false));
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)));
   };
 
   const openPlan = (plan: PlanSummary) => {
@@ -839,7 +856,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const parentCandidates = createMemo(() => {
     const current = detail();
     if (!current || current.children.length > 0) return [];
-    const group = groups().find((entry) => entry.project.id === current.item.projectID);
+    const group = groups().find((entry) => entry.initiative.id === current.item.initiativeID);
     if (!group) return [];
     return group.items.filter(
       (item) => item.id !== current.item.id && item.parentID === undefined && item.id !== current.parent?.id,
@@ -869,7 +886,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const statusPosition = createMemo(() => {
     const current = detail();
     if (!current) return undefined;
-    const group = groups().find((entry) => entry.project.id === current.item.projectID);
+    const group = groups().find((entry) => entry.initiative.id === current.item.initiativeID);
     if (!group) return undefined;
     const same = group.items.filter((item) => item.status === current.item.status);
     const index = same.findIndex((item) => item.id === current.item.id);
@@ -935,7 +952,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       <style>{SHARED_CSS + WORK_CSS}</style>
       <div class="work">
         <Show when={!selectedID()}>
-          <Show when={projects().length > 0}>
+          <Show when={initiatives().length > 0}>
             <div class="work-toolbar">
               <div class="work-view-switch" role="group" aria-label={t("work.view.label")}>
                 <ctx.ui.Button
@@ -958,12 +975,12 @@ export function WorkBody(props: { target: () => WorkTarget }) {
               <ctx.ui.Menu
                 trigger="button"
                 icon="workspace"
-                label={selectedProject()?.name ?? t("work.projects.all")}
+                label={selectedInitiative()?.name ?? t("work.initiatives.all")}
                 items={[
-                  { label: t("work.projects.all"), onSelect: () => setProjectFilter("all") },
-                  ...projects().map((project) => ({
-                    label: project.name,
-                    onSelect: () => setProjectFilter(project.id),
+                  { label: t("work.initiatives.all"), onSelect: () => setInitiativeFilter("all") },
+                  ...initiatives().map((initiative) => ({
+                    label: initiative.name,
+                    onSelect: () => setInitiativeFilter(initiative.id),
                   })),
                 ]}
               />
@@ -990,7 +1007,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
             </div>
           </Show>
 
-          <Show when={selectedProject()}>
+          <Show when={selectedInitiative()}>
             <div class="work-new">
               <ctx.ui.TextInput
                 value={newTitle()}
@@ -1012,7 +1029,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
             </div>
           </Show>
 
-          <Show when={selectedProject()}>
+          <Show when={selectedInitiative()}>
             <div class="work-run-bar">
               <ctx.ui.Button
                 size="small"
@@ -1233,10 +1250,10 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                 >
                   <For each={visibleGroups()}>
                     {(group) => (
-                      <div class="work-project">
-                        <h3 class="work-project-name">
-                          {group.project.name}
-                          <span class="work-project-count">{group.items.length}</span>
+                      <div class="work-initiative">
+                        <h3 class="work-initiative-name">
+                          {group.initiative.name}
+                          <span class="work-initiative-count">{group.items.length}</span>
                         </h3>
                         <For each={sectionsFor(group)}>
                           {(section) => (
@@ -1376,8 +1393,8 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                               >
                                 <div class="work-card-main">
                                   <span class="work-card-title">{entry.item.title}</span>
-                                  <Show when={projectFilter() === "all"}>
-                                    <span class="work-card-project">{entry.project}</span>
+                                  <Show when={initiativeFilter() === "all"}>
+                                    <span class="work-card-initiative">{entry.initiative}</span>
                                   </Show>
                                   <Show when={plansByItem().get(entry.item.id)}>
                                     {(plan) => (
@@ -1409,19 +1426,6 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                                   <Show when={entry.item.origin === "agent"}>
                                     <StatusChip label={t("work.agent")} tone="info" />
                                   </Show>
-                                  <ctx.ui.Menu
-                                    trigger="button"
-                                    icon="status"
-                                    label={t("work.board.move")}
-                                    disabled={placing()}
-                                    items={boardStatuses().map((status) => ({
-                                      label: t(statusLabelKey(status)),
-                                      disabled:
-                                        status === entry.item.status ||
-                                        !WORK_ITEM_TRANSITIONS[entry.item.status].includes(status),
-                                      onSelect: () => place(entry.item.id, status, 9999),
-                                    }))}
-                                  />
                                 </span>
                               </div>
                             )}
@@ -1508,7 +1512,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                     <StatusChip label={t("work.agent")} tone="info" />
                   </Show>
                   <span>
-                    {t("work.detail.project")}: {current().project.name}
+                    {t("work.detail.initiative")}: {current().initiative.name}
                   </span>
                   <ctx.ui.Menu
                     trigger="button"

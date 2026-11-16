@@ -12,8 +12,8 @@ import type { WorkItemRow } from "../src/store";
 
 const item = (id: string, overrides: Partial<WorkItemRow> = {}): WorkItemRow => ({
   id,
-  project_id: "p1",
-  location_id: null,
+  initiative_id: "p1",
+  repo_id: null,
   parent_id: null,
   title: `Item ${id}`,
   body: "",

@@ -13,15 +13,15 @@ import { z } from "zod";
 import {
   addWorkItemDep,
   createWorkItem,
-  ensureProjectForDirectory,
+  ensureInitiativeForDirectory,
   getPlanByWorkItem,
-  getProject,
+  getInitiative,
   getWorkItem,
   listWorkItems,
   moveWorkItem,
   removeWorkItemDep,
   requireStore,
-  resolveProject,
+  resolveInitiative,
   setWorkItemParent,
   setWorkItemStatus,
   updateWorkItem,
@@ -77,7 +77,7 @@ export function listWorkTool(ctx: Ctx) {
     async execute(input: z.infer<typeof listInput>): Promise<ToolResult> {
       try {
         const store = await requireStore();
-        const resolved = resolveProject(store.db, workspaceDirectory(ctx));
+        const resolved = resolveInitiative(store.db, workspaceDirectory(ctx));
         if (!resolved) {
           return {
             content:
@@ -88,7 +88,7 @@ export function listWorkTool(ctx: Ctx) {
 
         const status = input.status ?? "all";
         const limit = input.limit ?? 50;
-        const items = listWorkItems(store.db, resolved.project.id)
+        const items = listWorkItems(store.db, resolved.initiative.id)
           .filter((item) => (status === "all" ? item.status !== "dropped" : item.status === status))
           .slice(0, limit);
 
@@ -105,12 +105,12 @@ export function listWorkTool(ctx: Ctx) {
 
         return {
           content: renderWorkItemList({
-            projectName: resolved.project.name,
+            initiativeName: resolved.initiative.name,
             status,
             items,
             extras,
           }),
-          metadata: { count: items.length, projectID: resolved.project.id, itemIDs: items.map((item) => item.id) },
+          metadata: { count: items.length, initiativeID: resolved.initiative.id, itemIDs: items.map((item) => item.id) },
         };
       } catch (error) {
         return fail(error instanceof Error ? error.message : String(error));
@@ -129,8 +129,8 @@ export function getWorkTool(ctx: Ctx) {
         const store = await requireStore();
         const item = getWorkItem(store.db, input.id);
         if (!item) return fail(`work item não encontrado: ${input.id}`);
-        const project = getProject(store.db, item.project_id);
-        if (!project) return fail(`projeto não encontrado: ${item.project_id}`);
+        const initiative = getInitiative(store.db, item.initiative_id);
+        if (!initiative) return fail(`iniciativa não encontrada: ${item.initiative_id}`);
         const deps = workItemDeps(store.db, item.id);
         const parent = item.parent_id ? getWorkItem(store.db, item.parent_id) : undefined;
         const plan = getPlanByWorkItem(store.db, item.id);
@@ -138,7 +138,7 @@ export function getWorkTool(ctx: Ctx) {
         return {
           content: renderWorkItemDetail({
             item,
-            projectName: project.name,
+            initiativeName: initiative.name,
             blockedBy: deps.blockedBy,
             blocks: deps.blocks,
             parent,
@@ -147,7 +147,7 @@ export function getWorkTool(ctx: Ctx) {
           }),
           metadata: {
             itemID: item.id,
-            projectID: project.id,
+            initiativeID: initiative.id,
             status: item.status as WorkItemStatus,
             planID: plan?.id ?? null,
           },
@@ -208,8 +208,8 @@ export function saveWorkTool(ctx: Ctx) {
           );
         }
 
-        const project = ensureProjectForDirectory(store.db, workspaceDirectory(ctx));
-        if (!project.ok) return fail(project.error);
+        const ensured = ensureInitiativeForDirectory(store.db, workspaceDirectory(ctx));
+        if (!ensured.ok) return fail(ensured.error);
 
         const results: { id: string; title: string; status: WorkItemStatus; existing: boolean }[] = [];
         for (const entry of input.items) {
@@ -217,15 +217,15 @@ export function saveWorkTool(ctx: Ctx) {
           if (parentID) {
             const parent = getWorkItem(store.db, parentID);
             if (!parent) return fail(`work item não encontrado: ${parentID}`);
-            if (parent.project_id !== project.project.id) {
-              return fail("os itens precisam pertencer ao mesmo projeto");
+            if (parent.initiative_id !== ensured.initiative.id) {
+              return fail("os itens precisam pertencer à mesma iniciativa");
             }
             if (parent.parent_id) {
               return fail("profundidade máxima de 1: o pai escolhido já é filho de outro item");
             }
           }
 
-          const duplicate = findDuplicateItem(listWorkItems(store.db, project.project.id), {
+          const duplicate = findDuplicateItem(listWorkItems(store.db, ensured.initiative.id), {
             title: entry.title,
             parentID,
           });
@@ -240,8 +240,8 @@ export function saveWorkTool(ctx: Ctx) {
           }
 
           const created = createWorkItem(store.db, {
-            projectID: project.project.id,
-            locationID: project.location.id,
+            initiativeID: ensured.initiative.id,
+            repoID: ensured.repo.id,
             title: entry.title,
             body: entry.body,
             // The agent never writes as the user.
@@ -264,7 +264,7 @@ export function saveWorkTool(ctx: Ctx) {
         const createdCount = results.filter((item) => !item.existing).length;
         return {
           content: [
-            `Work items (projeto "${project.project.name}"): ${createdCount} criados, ${results.length - createdCount} existentes`,
+            `Work items (iniciativa "${ensured.initiative.name}"): ${createdCount} criados, ${results.length - createdCount} existentes`,
             ...results.map(
               (item) =>
                 `- ${item.existing ? "existente" : "criado"}: ${item.title} (id=${item.id}, status=${item.status})`,
@@ -273,7 +273,7 @@ export function saveWorkTool(ctx: Ctx) {
             "Use work.update para mudar status, ordem, pai ou dependências.",
           ].join("\n"),
           metadata: {
-            projectID: project.project.id,
+            initiativeID: ensured.initiative.id,
             created: createdCount,
             existing: results.length - createdCount,
             itemIDs: results.map((item) => item.id),

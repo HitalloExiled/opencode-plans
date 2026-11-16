@@ -4,12 +4,12 @@ const { DatabaseSync } = (await import("node:sqlite")) as any;
 
 import {
   claimNextMerge,
-  createProject,
+  createInitiative,
   createRun,
   createRunItem,
   enqueueMerge,
   finishMerge,
-  getProject,
+  getInitiative,
   getRun,
   getRunItem,
   initSchema,
@@ -17,7 +17,7 @@ import {
   listRunItems,
   planTouches,
   setPlanTouches,
-  setProjectRunSettings,
+  setInitiativeRunSettings,
   setRunItemStatus,
   setRunMergeSession,
   setRunStatus,
@@ -32,45 +32,45 @@ const open = (): Db => {
 
 function setup() {
   const db = open();
-  const project = createProject(db, { name: "App", locations: [{ directory: "/work/app" }] });
+  const project = createInitiative(db, { name: "App", repos: [{ directory: "/work/app" }] });
   if (!project.ok) throw new Error(project.error);
-  return { db, projectID: project.project.id };
+  return { db, initiativeID: project.initiative.id };
 }
 
-const newRun = (db: Db, projectID: string) => {
-  const run = createRun(db, { projectID, baseRef: "main" });
+const newRun = (db: Db, initiativeID: string) => {
+  const run = createRun(db, { initiativeID, baseRef: "main" });
   if (!run.ok) throw new Error(run.error);
   return run.run;
 };
 
 describe("runs", () => {
   test("one active run per project, defaulting the parallelism", () => {
-    const { db, projectID } = setup();
-    const run = newRun(db, projectID);
+    const { db, initiativeID } = setup();
+    const run = newRun(db, initiativeID);
     expect(run.status).toBe("running");
     expect(run.max_parallel).toBe(2);
 
-    const second = createRun(db, { projectID, baseRef: "main" });
+    const second = createRun(db, { initiativeID, baseRef: "main" });
     expect(second.ok).toBe(false);
   });
 
   test("an interrupted run keeps blocking until it resumes or is cancelled", () => {
-    const { db, projectID } = setup();
-    const run = newRun(db, projectID);
+    const { db, initiativeID } = setup();
+    const run = newRun(db, initiativeID);
 
     expect(setRunStatus(db, { id: run.id, status: "interrupted" }).ok).toBe(true);
-    expect(createRun(db, { projectID, baseRef: "main" }).ok).toBe(false);
+    expect(createRun(db, { initiativeID, baseRef: "main" }).ok).toBe(false);
 
     expect(setRunStatus(db, { id: run.id, status: "running" }).ok).toBe(true);
     expect(getRun(db, run.id)?.finished_at).toBeNull();
 
     expect(setRunStatus(db, { id: run.id, status: "cancelled" }).ok).toBe(true);
-    expect(createRun(db, { projectID, baseRef: "main" }).ok).toBe(true);
+    expect(createRun(db, { initiativeID, baseRef: "main" }).ok).toBe(true);
   });
 
   test("a failed run records the error and the finish time; terminal runs freeze", () => {
-    const { db, projectID } = setup();
-    const run = newRun(db, projectID);
+    const { db, initiativeID } = setup();
+    const run = newRun(db, initiativeID);
     const failed = setRunStatus(db, { id: run.id, status: "failed", error: "boom" });
     expect(failed.ok).toBe(true);
     if (!failed.ok) return;
@@ -81,8 +81,8 @@ describe("runs", () => {
   });
 
   test("links the merge session", () => {
-    const { db, projectID } = setup();
-    const run = newRun(db, projectID);
+    const { db, initiativeID } = setup();
+    const run = newRun(db, initiativeID);
     const linked = setRunMergeSession(db, run.id, "ses_merge");
     expect(linked.ok).toBe(true);
     if (!linked.ok) return;
@@ -92,8 +92,8 @@ describe("runs", () => {
 
 describe("run items", () => {
   test("tracks queued -> running -> merged with timestamps and sha", () => {
-    const { db, projectID } = setup();
-    const run = newRun(db, projectID);
+    const { db, initiativeID } = setup();
+    const run = newRun(db, initiativeID);
     const created = createRunItem(db, { runID: run.id, workItemID: "item-1", planID: "plan-1" });
     expect(created.ok).toBe(true);
     if (!created.ok) return;
@@ -120,8 +120,8 @@ describe("run items", () => {
   });
 
   test("a failure keeps the reason", () => {
-    const { db, projectID } = setup();
-    const run = newRun(db, projectID);
+    const { db, initiativeID } = setup();
+    const run = newRun(db, initiativeID);
     createRunItem(db, { runID: run.id, workItemID: "item-1" });
     setRunItemStatus(db, { runID: run.id, workItemID: "item-1", status: "failed", error: "nope" });
     expect(getRunItem(db, run.id, "item-1")?.error).toBe("nope");
@@ -130,8 +130,8 @@ describe("run items", () => {
 
 describe("merge queue", () => {
   test("enqueues once and claims FIFO, one at a time", () => {
-    const { db, projectID } = setup();
-    const run = newRun(db, projectID);
+    const { db, initiativeID } = setup();
+    const run = newRun(db, initiativeID);
     enqueueMerge(db, { runID: run.id, workItemID: "a" });
     enqueueMerge(db, { runID: run.id, workItemID: "a" });
     enqueueMerge(db, { runID: run.id, workItemID: "b" });
@@ -156,8 +156,8 @@ describe("merge queue", () => {
   });
 
   test("a finish requires a claimed entry", () => {
-    const { db, projectID } = setup();
-    const run = newRun(db, projectID);
+    const { db, initiativeID } = setup();
+    const run = newRun(db, initiativeID);
     enqueueMerge(db, { runID: run.id, workItemID: "a" });
     const entry = listMergeQueue(db, run.id)[0]!;
     expect(finishMerge(db, { id: entry.id, status: "merged" }).ok).toBe(false);
@@ -176,19 +176,19 @@ describe("footprint and settings", () => {
   });
 
   test("stores the run settings, clamping the parallelism", () => {
-    const { db, projectID } = setup();
-    const result = setProjectRunSettings(db, projectID, {
+    const { db, initiativeID } = setup();
+    const result = setInitiativeRunSettings(db, initiativeID, {
       baseBranch: " develop ",
       maxParallel: 42,
       verifyCommand: "bun test",
     });
     expect(result.ok).toBe(true);
-    const project = getProject(db, projectID)!;
+    const project = getInitiative(db, initiativeID)!;
     expect(project.base_branch).toBe("develop");
     expect(project.max_parallel).toBe(8);
     expect(project.verify_command).toBe("bun test");
 
-    const run = newRun(db, projectID);
+    const run = newRun(db, initiativeID);
     expect(run.max_parallel).toBe(8);
   });
 });

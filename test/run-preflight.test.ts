@@ -12,13 +12,13 @@ const temp = () => {
   roots.push(dir);
   return dir;
 };
-// runPaths() reads the database location; point it at a throwaway file.
+// runPaths() reads the database repo; point it at a throwaway file.
 process.env.PLANS_DB = join(temp(), "plans.db");
 
 const store = await import("../src/store");
 const {
   claimNextMerge,
-  createProject,
+  createInitiative,
   createRun,
   createRunItem,
   createWorkItem,
@@ -53,16 +53,16 @@ const open = (): Db => {
 };
 
 function project(db: Db, directory: string, extra: string[] = []) {
-  const created = createProject(db, {
+  const created = createInitiative(db, {
     name: "App",
-    locations: [{ directory }, ...extra.map((entry) => ({ directory: entry }))],
+    repos: [{ directory }, ...extra.map((entry) => ({ directory: entry }))],
   });
   if (!created.ok) throw new Error(created.error);
-  return created.project;
+  return created.initiative;
 }
 
-function item(db: Db, projectID: string, title: string, options: { locationID?: string; ready?: boolean } = {}) {
-  const created = createWorkItem(db, { projectID, title, locationID: options.locationID });
+function item(db: Db, initiativeID: string, title: string, options: { repoID?: string; ready?: boolean } = {}) {
+  const created = createWorkItem(db, { initiativeID, title, repoID: options.repoID });
   if (!created.ok) throw new Error(created.error);
   if (options.ready !== false) setWorkItemStatus(db, { id: created.item.id, status: "ready" });
   return created.item.id;
@@ -143,15 +143,15 @@ describe("preflightRun", () => {
     const dir = repo();
     const other = repo();
     const app = project(db, dir, [other]);
-    const elsewhere = app.locations.find((entry) => entry.directory === other);
+    const elsewhere = app.repos.find((entry) => entry.directory === other);
     if (!elsewhere) throw new Error("second workspace missing");
-    const id = item(db, app.id, "Elsewhere", { locationID: elsewhere.id });
+    const id = item(db, app.id, "Elsewhere", { repoID: elsewhere.id });
     plan(db, id);
 
     const result = await preflightRun(db, app.id, dir);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.blockers.join(" ")).toContain("outro workspace");
+    expect(result.blockers.join(" ")).toContain("outro repositório");
   });
 
   test("an active run blocks a new one", async () => {
@@ -160,7 +160,7 @@ describe("preflightRun", () => {
     const app = project(db, dir);
     const id = item(db, app.id, "Build it");
     plan(db, id);
-    createRun(db, { projectID: app.id, baseRef: "main" });
+    createRun(db, { initiativeID: app.id, baseRef: "main" });
 
     const result = await preflightRun(db, app.id, dir);
     expect(result.ok).toBe(false);
@@ -194,7 +194,7 @@ describe("recoverRuns", () => {
     const db = open();
     const dir = repo();
     const app = project(db, dir);
-    const run = createRun(db, { projectID: app.id, baseRef: "main" });
+    const run = createRun(db, { initiativeID: app.id, baseRef: "main" });
     if (!run.ok) throw new Error(run.error);
     const row = createRunItem(db, { runID: run.run.id, workItemID: "item-1" });
     if (!row.ok) throw new Error(row.error);

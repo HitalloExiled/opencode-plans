@@ -1,5 +1,5 @@
 /**
- * Project run engine (F4). The pure decisions live in `run-scheduler.ts`; this
+ * Initiative run engine (F4). The pure decisions live in `run-scheduler.ts`; this
  * module owns the side effects: preflight, the integration branch, one
  * worktree/branch and one executor session per item, the wait for the plan to
  * finish, and the hand-off to the merge queue.
@@ -32,7 +32,7 @@ import {
   enqueueMerge,
   getPlan,
   getPlanByWorkItem,
-  getProject,
+  getInitiative,
   getRun,
   getRunItem,
   getWorkItem,
@@ -47,7 +47,7 @@ import {
   workItemDeps,
   type Db,
   type Plan,
-  type Project,
+  type Initiative,
   type RunItemRow,
   type RunItemStatus,
   type RunRow,
@@ -69,7 +69,7 @@ type Ctx = Plugin.Context;
 export type PreflightItem = { item: WorkItemRow; plan: Plan; deps: string[] };
 
 export type Preflight = {
-  project: Project;
+  initiative: Initiative;
   repo: string;
   baseRef: string;
   maxParallel: number;
@@ -78,47 +78,47 @@ export type Preflight = {
 
 export type PreflightResult = { ok: true; value: Preflight } | { ok: false; blockers: string[] };
 
-/** The workspace the run operates on: the session's location when it is one. */
-function runLocation(project: Project, directory: string): Project["locations"][number] | undefined {
+/** The repositório the run operates on: the session's repo when it is one. */
+function runLocation(initiative: Initiative, directory: string): Initiative["repos"][number] | undefined {
   const target = normalizeWorkspaceDirectory(directory);
   return (
-    project.locations
-      .filter((location) => {
-        const base = normalizeWorkspaceDirectory(location.directory);
+    initiative.repos
+      .filter((repo) => {
+        const base = normalizeWorkspaceDirectory(repo.directory);
         return target === base || target.startsWith(base === "/" ? "/" : `${base}/`);
       })
-      .sort((a, b) => b.directory.length - a.directory.length)[0] ?? project.locations.find((entry) => entry.primary)
+      .sort((a, b) => b.directory.length - a.directory.length)[0] ?? initiative.repos.find((entry) => entry.primary)
   );
 }
 
 /**
  * Everything a run needs before touching anything: a git repo, a base ref, no
  * active run, at least one ready item with an active plan, all items in the
- * same workspace and a graph without cycles. Ready items without a plan are
+ * same repositório and a graph without cycles. Ready items without a plan are
  * simply not part of this run.
  */
-export async function preflightRun(db: Db, projectID: string, directory: string): Promise<PreflightResult> {
+export async function preflightRun(db: Db, initiativeID: string, directory: string): Promise<PreflightResult> {
   const blockers: string[] = [];
-  const project = getProject(db, projectID);
-  if (!project) return { ok: false, blockers: [`projeto não encontrado: ${projectID}`] };
+  const initiative = getInitiative(db, initiativeID);
+  if (!initiative) return { ok: false, blockers: [`iniciativa não encontrada: ${initiativeID}`] };
 
-  const location = runLocation(project, directory);
-  const repo = normalizeWorkspaceDirectory(location?.directory ?? directory);
-  if (!location) blockers.push(`o diretório não é um workspace do projeto: ${directory}`);
+  const repoEntry = runLocation(initiative, directory);
+  const repo = normalizeWorkspaceDirectory(repoEntry?.directory ?? directory);
+  if (!repoEntry) blockers.push(`o diretório não é um repositório da iniciativa: ${directory}`);
 
   if (!(await isGitRepo(repo))) blockers.push(`não é um repositório git: ${repo}`);
-  const baseRef = project.base_branch?.trim() || (await defaultBranch(repo));
+  const baseRef = initiative.base_branch?.trim() || (await defaultBranch(repo));
   if (!baseRef) blockers.push("base_ref não definido e nenhuma branch padrão encontrada");
   else if (!(await refExists(repo, baseRef))) blockers.push(`base_ref não existe: ${baseRef}`);
 
-  const active = activeRun(db, projectID);
+  const active = activeRun(db, initiativeID);
   if (active) blockers.push(`já existe um run ativo: ${active.id}`);
 
   // The footprint may have changed since the last plan save; the scheduler
   // depends on it being current.
-  recomputeImplicitDeps(db, projectID);
+  recomputeImplicitDeps(db, initiativeID);
 
-  const ready = listWorkItems(db, projectID).filter((item) => item.status === "ready");
+  const ready = listWorkItems(db, initiativeID).filter((item) => item.status === "ready");
   const readyIDs = new Set(ready.map((item) => item.id));
   const selected: PreflightItem[] = [];
   for (const item of ready) {
@@ -128,11 +128,9 @@ export async function preflightRun(db: Db, projectID: string, directory: string)
       blockers.push(`plano sem passos: ${item.title}`);
       continue;
     }
-    const itemLocation = item.location_id
-      ? project.locations.find((entry) => entry.id === item.location_id)
-      : location;
-    if (itemLocation && normalizeWorkspaceDirectory(itemLocation.directory) !== repo) {
-      blockers.push(`item em outro workspace: ${item.title}`);
+    const itemRepo = item.repo_id ? initiative.repos.find((entry) => entry.id === item.repo_id) : repoEntry;
+    if (itemRepo && normalizeWorkspaceDirectory(itemRepo.directory) !== repo) {
+      blockers.push(`item em outro repositório: ${item.title}`);
       continue;
     }
 
@@ -158,10 +156,10 @@ export async function preflightRun(db: Db, projectID: string, directory: string)
   return {
     ok: true,
     value: {
-      project,
+      initiative,
       repo,
       baseRef: baseRef!,
-      maxParallel: project.max_parallel,
+      maxParallel: initiative.max_parallel,
       items: selected,
     },
   };
@@ -179,27 +177,27 @@ function notifyChange(sessionID?: string | null): void {
   emitPlanChange({ sessionID: sessionID ?? "" });
 }
 
-/** The repo of a run: the project's primary workspace (preflight enforces one). */
+/** The repo of a run: the initiative's primary repositório (preflight enforces one). */
 function runRepo(db: Db, run: RunRow): string {
-  const project = getProject(db, run.project_id);
-  const location = project?.locations.find((entry) => entry.primary) ?? project?.locations[0];
-  return location?.directory ?? "";
+  const initiative = getInitiative(db, run.initiative_id);
+  const repo = initiative?.repos.find((entry) => entry.primary) ?? initiative?.repos[0];
+  return repo?.directory ?? "";
 }
 
-export type StartRunInput = { projectID: string; directory: string };
+export type StartRunInput = { initiativeID: string; directory: string };
 export type StartRunResult = { ok: true; runID: string } | { ok: false; error: string };
 
 /**
- * Starts a project run: preflight, the run row, the integration worktree and
+ * Starts a initiative run: preflight, the run row, the integration worktree and
  * the item rows, then the first scheduling pass. The call returns as soon as
  * the run is launched; items execute in the background.
  */
 export async function startProjectRun(ctx: Ctx, db: Db, input: StartRunInput): Promise<StartRunResult> {
-  const pre = await preflightRun(db, input.projectID, input.directory);
+  const pre = await preflightRun(db, input.initiativeID, input.directory);
   if (!pre.ok) return { ok: false, error: pre.blockers.join("; ") };
 
   const created = createRun(db, {
-    projectID: input.projectID,
+    initiativeID: input.initiativeID,
     baseRef: pre.value.baseRef,
     maxParallel: pre.value.maxParallel,
   });

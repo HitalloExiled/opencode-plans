@@ -19,7 +19,7 @@ import {
   claimNextMerge,
   finishMerge,
   getMergeEntry,
-  getProject,
+  getInitiative,
   getWorkItem,
   listMergeQueue,
   requireStore,
@@ -109,7 +109,7 @@ export function mergeNextTool(ctx: Ctx) {
 
         const item = getWorkItem(store.db, claimed.entry.work_item_id);
         const branch = itemBranch(claimed.entry.work_item_id);
-        const project = getProject(store.db, found.run.project_id);
+        const project = getInitiative(store.db, found.run.initiative_id);
         const verify = project?.verify_command?.trim();
         return {
           content: [

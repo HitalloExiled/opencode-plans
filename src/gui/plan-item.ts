@@ -9,7 +9,7 @@ import type { Location } from "@opencode/schema/location";
 import { PlansRpc, type WorkItemDetail } from "./contract";
 import type { Translate } from "./execute";
 import { pauseAgent } from "../flow-rules.js";
-import { locationForItem } from "../work-plan.js";
+import { repoForItem } from "../work-plan.js";
 
 export type PlanItemTarget = {
   server: ServerRef;
@@ -20,6 +20,8 @@ export async function planWorkItem(input: {
   target: PlanItemTarget;
   detail: WorkItemDetail;
   t: Translate;
+  /** The chosen OpenCode project directory; defaults to the item's repo. */
+  directory?: string | undefined;
 }): Promise<string> {
   const { ctx, target, detail, t } = input;
   const body = detail.item.body.trim() || t("work.detail.noBody");
@@ -43,8 +45,9 @@ export async function planWorkItem(input: {
     }
   }
 
-  const location = locationForItem(detail.project, detail.item.locationID ?? null);
-  if (!location) throw new Error(t("work.plan.error"));
+  const repo = repoForItem(detail.initiative, detail.item.repoID ?? null);
+  const directory = input.directory?.trim() || repo?.directory;
+  if (!directory) throw new Error(t("work.plan.error"));
 
   const flow = await target.server.client.rpc(PlansRpc).getFlow({});
   const agent = pauseAgent(flow);
@@ -55,7 +58,7 @@ export async function planWorkItem(input: {
       ? t("work.replan.title", detail.item.title)
       : t("work.plan.title", detail.item.title),
     // The client type brands the path; the value is the workspace directory.
-    location: { directory: location.directory as Location.PublicRef["directory"] },
+    location: { directory: directory as Location.PublicRef["directory"] },
   });
 
   await target.server.client.session.prompt({ sessionID: session.id, text: seed });

@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 const { DatabaseSync } = (await import("node:sqlite")) as any;
 
 import {
-  createProject,
+  createInitiative,
   createWorkItem,
   getWorkItem,
   initSchema,
@@ -18,9 +18,9 @@ const open = (): Db => {
 };
 
 function item(db: Db) {
-  const project = createProject(db, { name: "App", locations: [{ directory: "/work/app" }] });
+  const project = createInitiative(db, { name: "App", repos: [{ directory: "/work/app" }] });
   if (!project.ok) throw new Error(project.error);
-  const created = createWorkItem(db, { projectID: project.project.id, title: "Need" });
+  const created = createWorkItem(db, { initiativeID: project.initiative.id, title: "Need" });
   if (!created.ok) throw new Error(created.error);
   return created.item;
 }
