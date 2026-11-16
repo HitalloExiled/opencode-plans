@@ -31,6 +31,7 @@ import {
 } from "./contract";
 import { useT } from "./i18n";
 import { filterWorkGroups } from "../work-filter";
+import { planWorkItem } from "./plan-item";
 
 export type ViewMode = "work" | "plans";
 
@@ -201,10 +202,12 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const [moving, setMoving] = createSignal(false);
   const [depSaving, setDepSaving] = createSignal(false);
   const [parentSaving, setParentSaving] = createSignal(false);
+  const [planning, setPlanning] = createSignal(false);
   const [newTitle, setNewTitle] = createSignal("");
   const [creating, setCreating] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
   const [agentOnly, setAgentOnly] = createSignal(false);
+  const [showDropped, setShowDropped] = createSignal(false);
 
   const scope = () => (props.target().mode === "panel" && props.target().session ? "project" : "all");
   const directory = () => props.target().session?.directory;
@@ -279,11 +282,16 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       });
   });
 
-  const visibleGroups = createMemo(() => filterWorkGroups(groups(), agentOnly()));
+  const visibleGroups = createMemo(() =>
+    filterWorkGroups(groups(), { agentOnly: agentOnly(), showDropped: showDropped() }),
+  );
   const total = createMemo(() => visibleGroups().reduce((sum, group) => sum + group.items.length, 0));
   const projectMissing = createMemo(() => scope() === "project" && groups().length === 0);
   const hasAgentItems = createMemo(() =>
     groups().some((group) => group.items.some((item) => item.origin === "agent")),
+  );
+  const hasDropped = createMemo(() =>
+    groups().some((group) => group.items.some((item) => item.status === "dropped")),
   );
 
   const nav = createScrollNav({
@@ -415,6 +423,30 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     );
   });
 
+  const planDetail = (current: WorkItemDetail) => {
+    if (planning()) return;
+    setPlanning(true);
+    setActionError(null);
+    void planWorkItem({ ctx, target: props.target(), detail: current, t })
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setPlanning(false));
+  };
+
+  const planFromCard = (id: string) => {
+    if (planning()) return;
+    setPlanning(true);
+    setActionError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .getWorkItem({ id }, rpcOptions())
+      .then((current) => {
+        if (!current) throw new Error(t("work.plan.error"));
+        return planWorkItem({ ctx, target: props.target(), detail: current as WorkItemDetail, t });
+      })
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setPlanning(false));
+  };
+
   const setParent = (parentID: string | null) => {
     const id = selectedID();
     if (!id || parentSaving()) return;
@@ -466,9 +498,22 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       .finally(() => setMoving(false));
   };
 
-  const changeStatus = (status: WorkItemStatus) => {
+  const changeStatus = async (status: WorkItemStatus) => {
     const id = selectedID();
     if (!id || statusSaving()) return;
+
+    if (status === "dropped") {
+      const current = detail();
+      const confirmed = await ctx.dialogs.confirm({
+        title: t("work.drop.title"),
+        description: t("work.drop.message", current?.item.title ?? ""),
+        confirm: t("work.drop.confirm"),
+        cancel: t("cancel"),
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+
     setStatusSaving(true);
     setActionError(null);
     void props.target()
@@ -512,16 +557,28 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       <style>{SHARED_CSS + WORK_CSS}</style>
       <div class="work" classList={{ "is-modal": isModal() }}>
         <Show when={!selectedID()}>
-          <Show when={hasAgentItems()}>
+          <Show when={hasAgentItems() || hasDropped()}>
             <div class="work-toolbar">
-              <ctx.ui.Button
-                size="small"
-                variant={agentOnly() ? "neutral" : "ghost"}
-                icon="review"
-                onClick={() => setAgentOnly((value) => !value)}
-              >
-                {t("work.filter.agent")}
-              </ctx.ui.Button>
+              <Show when={hasAgentItems()}>
+                <ctx.ui.Button
+                  size="small"
+                  variant={agentOnly() ? "neutral" : "ghost"}
+                  icon="review"
+                  onClick={() => setAgentOnly((value) => !value)}
+                >
+                  {t("work.filter.agent")}
+                </ctx.ui.Button>
+              </Show>
+              <Show when={hasDropped()}>
+                <ctx.ui.Button
+                  size="small"
+                  variant={showDropped() ? "neutral" : "ghost"}
+                  icon="archive"
+                  onClick={() => setShowDropped((value) => !value)}
+                >
+                  {t("work.filter.dropped")}
+                </ctx.ui.Button>
+              </Show>
             </div>
           </Show>
 
@@ -608,6 +665,15 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                                     <Show when={item.origin === "agent"}>
                                       <StatusChip label={t("work.agent")} tone="info" />
                                     </Show>
+                                    <ctx.ui.IconButton
+                                      icon="brain"
+                                      label={t("work.plan")}
+                                      disabled={planning()}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        planFromCard(item.id);
+                                      }}
+                                    />
                                   </div>
                                 )}
                               </For>
@@ -641,6 +707,15 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                 <div class="work-detail-head">
                   <ctx.ui.IconButton icon="arrow-left" label={t("work.back")} onClick={closeDetail} />
                   <h2 class="work-detail-title">{current().item.title}</h2>
+                  <ctx.ui.Button
+                    size="small"
+                    variant="contrast"
+                    icon="brain"
+                    busy={planning()}
+                    onClick={() => planDetail(current())}
+                  >
+                    {t("work.plan")}
+                  </ctx.ui.Button>
                   <ctx.ui.Button size="small" variant="neutral" icon="pencil-line" onClick={startEdit}>
                     {t("work.edit")}
                   </ctx.ui.Button>
@@ -667,7 +742,9 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                       disabled:
                         status === current().item.status ||
                         !WORK_ITEM_TRANSITIONS[current().item.status].includes(status),
-                      onSelect: () => changeStatus(status),
+                      onSelect: () => {
+                        void changeStatus(status);
+                      },
                     }))}
                   />
                   <ctx.ui.IconButton

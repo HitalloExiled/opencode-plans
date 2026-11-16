@@ -10,11 +10,16 @@ const project = (id: string): Project => ({
   locations: [],
 });
 
-const item = (id: string, origin: "user" | "agent", projectID = "p1"): WorkItem => ({
+const item = (
+  id: string,
+  origin: "user" | "agent",
+  projectID = "p1",
+  status: WorkItem["status"] = "backlog",
+): WorkItem => ({
   id,
   projectID,
   title: id,
-  status: "backlog",
+  status,
   rank: 1,
   origin,
   createdAt: "",
@@ -23,24 +28,32 @@ const item = (id: string, origin: "user" | "agent", projectID = "p1"): WorkItem 
 
 const group = (id: string, items: WorkItem[]): WorkGroup => ({ project: project(id), items });
 
+const ids = (groups: WorkGroup[]) => groups.flatMap((entry) => entry.items.map((item) => item.id));
+
 describe("filterWorkGroups", () => {
-  test("returns everything when the filter is off", () => {
-    const groups = [group("p1", [item("a", "user"), item("b", "agent")]), group("p2", [item("c", "user", "p2")])];
-    expect(filterWorkGroups(groups, false)).toEqual(groups);
+  test("hides dropped items by default and keeps the rest", () => {
+    const groups = [group("p1", [item("a", "user"), item("b", "user", "p1", "dropped")])];
+    expect(ids(filterWorkGroups(groups, { agentOnly: false, showDropped: false }))).toEqual(["a"]);
+    expect(ids(filterWorkGroups(groups, { agentOnly: false, showDropped: true }))).toEqual(["a", "b"]);
   });
 
-  test("keeps only agent items and drops empty groups", () => {
+  test("keeps only agent items", () => {
+    const groups = [group("p1", [item("a", "user"), item("b", "agent")])];
+    expect(ids(filterWorkGroups(groups, { agentOnly: true, showDropped: true }))).toEqual(["b"]);
+  });
+
+  test("composes origin and status and drops empty groups", () => {
     const groups = [
-      group("p1", [item("a", "user"), item("b", "agent")]),
-      group("p2", [item("c", "user", "p2"), item("d", "user", "p2")]),
+      group("p1", [item("a", "user"), item("b", "agent"), item("c", "agent", "p1", "dropped")]),
+      group("p2", [item("d", "user", "p2")]),
     ];
-    const filtered = filterWorkGroups(groups, true);
+    const filtered = filterWorkGroups(groups, { agentOnly: true, showDropped: false });
     expect(filtered).toHaveLength(1);
     expect(filtered[0]!.project.id).toBe("p1");
-    expect(filtered[0]!.items.map((entry) => entry.id)).toEqual(["b"]);
-  });
+    expect(ids(filtered)).toEqual(["b"]);
 
-  test("can end up empty", () => {
-    expect(filterWorkGroups([group("p1", [item("a", "user")])], true)).toEqual([]);
+    expect(filterWorkGroups([group("p1", [item("a", "user")])], { agentOnly: true, showDropped: true })).toEqual(
+      [],
+    );
   });
 });
