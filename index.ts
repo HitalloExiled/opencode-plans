@@ -25,6 +25,7 @@ import {
   type InjectMessage,
 } from "./src/inject.js";
 import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
+import { WORK_NAMESPACE, getWorkTool, listWorkTool } from "./work.js";
 import { registerAgents } from "./src/agents.js";
 import { getFlow } from "./src/flow.js";
 import { planMessageAgents } from "./src/flow-rules.js";
@@ -80,6 +81,12 @@ export async function registerTools(ctx: Ctx) {
     editor.add({ ...updateTool(ctx), options: { namespace: "plans", pinned: true } });
     editor.add({ ...deleteTool(ctx), options: { namespace: "plans" } });
     editor.add({ ...doctorTool(ctx), options: { namespace: "plans" } });
+
+    // Work items are the needs; plans are the how. A separate group keeps the
+    // backlog tools out of the plan catalog budget.
+    editor.namespace(WORK_NAMESPACE);
+    editor.add({ ...listWorkTool(ctx), options: { namespace: "work", pinned: true } });
+    editor.add({ ...getWorkTool(ctx), options: { namespace: "work", pinned: true } });
   });
 }
 

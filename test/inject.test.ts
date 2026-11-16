@@ -26,6 +26,7 @@ import {
   saveTool,
   updateTool,
 } from "../plans";
+import { WORK_NAMESPACE, getWorkTool, listWorkTool } from "../work";
 
 const user = (text: string): InjectMessage => ({ role: "user", content: [{ type: "text", text }] });
 const assistant = (text: string): InjectMessage => ({
@@ -272,6 +273,8 @@ describe("catalog budget", () => {
     updateTool({} as never),
     deleteTool({} as never),
     doctorTool({} as never),
+    listWorkTool({} as never),
+    getWorkTool({} as never),
   ];
 
   function shapeOf(input: unknown): Record<string, { description?: string }> {
@@ -284,6 +287,7 @@ describe("catalog budget", () => {
 
   test("every tool and the namespace fit the budget", () => {
     expect(PLANS_NAMESPACE.description.length).toBeLessThanOrEqual(BUDGET);
+    expect(WORK_NAMESPACE.description.length).toBeLessThanOrEqual(BUDGET);
     for (const tool of allTools()) {
       expect(tool.description.length, tool.name).toBeLessThanOrEqual(BUDGET);
     }

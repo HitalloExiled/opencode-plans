@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { registerTools } from "../index";
 
-type AddedTool = { name: string; options?: { pinned?: boolean } };
+type AddedTool = { name: string; options?: { pinned?: boolean; namespace?: string } };
 
 describe("plans tool registration", () => {
   test("pins the essential tools in the Code Mode catalog", async () => {
@@ -25,7 +25,11 @@ describe("plans tool registration", () => {
 
     await registerTools(ctx);
 
-    const pinned = added.filter((tool) => tool.options?.pinned).map((tool) => tool.name);
-    expect(pinned).toEqual(["save", "list", "get", "update"]);
+    const pinned = (namespace: string) =>
+      added
+        .filter((tool) => tool.options?.pinned && tool.options?.namespace === namespace)
+        .map((tool) => tool.name);
+    expect(pinned("plans")).toEqual(["save", "list", "get", "update"]);
+    expect(pinned("work")).toEqual(["list", "get"]);
   });
 });
