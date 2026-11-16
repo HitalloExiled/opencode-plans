@@ -7,6 +7,9 @@ describe("planner agent", () => {
     expect(PLANNER_AGENT.system).toContain("call plans.save in the same turn");
     expect(PLANNER_AGENT.system).toContain("Never wait for the user to ask");
     expect(PLANNER_AGENT.system).toContain("Every requirement the user states belongs");
+    expect(PLANNER_AGENT.system).toContain("Save at most one plan per request");
+    expect(PLANNER_AGENT.system).toContain("Only save when you are presenting a plan");
+    expect(PLANNER_AGENT.system).toContain("keep shell commands read-only");
     expect(PLANNER_AGENT.permissions).toContainEqual({
       action: "edit",
       resource: "*",
@@ -17,6 +20,9 @@ describe("planner agent", () => {
       resource: "*",
       effect: "allow",
     });
+    // Mirrors the native Plan agent: shell stays available (read-only by
+    // instruction), so no shell permission rule is added.
+    expect(PLANNER_AGENT.permissions.some((rule) => rule.action === "shell")).toBe(false);
   });
 });
 

@@ -77,9 +77,11 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   `test/inject.test.ts` enforces all three (`plans.save` keeps the Plan-mode
   permission, `plans.update` the call shape).
 - **The plugin owns two primary agents** (`src/agents.ts`, registered with
-  `ctx.agent.transform`; `update` upserts, so a new id is created). `planner` is
-  read-only (denies `edit`) and saves the plan with `plans.save` in the same
-  turn; `executor` works the plan step by step with `plans.update`. Executing
+  `ctx.agent.transform`; `update` upserts, so a new id is created). `planner`
+  mirrors the native Plan agent: `edit` denied, **shell allowed** (read-only by
+  instruction), and its system saves the plan with `plans.save` in the same
+  turn, at most one plan per request (else `plans.update`), only when presenting
+  it. `executor` works the plan step by step with `plans.update`. Executing
   from the panel/pill switches the session to `executor`; pausing returns it to
   `planner`. `/save-plan` captures the last message of `plan` **or** `planner`.
 - **Saving is the expected behavior, not a permission.** The routing rule says
