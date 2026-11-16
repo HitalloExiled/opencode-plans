@@ -2288,24 +2288,3 @@ export function recomputeImplicitDeps(db: Db, initiativeID: string): RecomputeIm
 
   return { ok: true, added: edges.length, edges: edges.map((edge) => ({ itemID: edge.itemID, blocksID: edge.blocksID })) };
 }
-
-/* ------------------------------------------------------------------ */
-/* Rename compatibility (v7)                                           */
-/* ------------------------------------------------------------------ */
-
-/**
- * The v7 rename is a one-way door for the source, but a hot-reloaded runtime
- * can still hold a module from before it. These aliases let such a module
- * link until the next full restart; nothing in the codebase uses them.
- */
-export const getProject = getInitiative;
-export const listProjects = listInitiatives;
-export const createProject = createInitiative;
-export const renameProject = renameInitiative;
-export const addProjectLocation = addInitiativeRepo;
-export const removeProjectLocation = removeInitiativeRepo;
-export const setPrimaryLocation = setInitiativePrimary;
-export const resolveProject = resolveInitiative;
-export const projectNameForDirectory = initiativeNameForDirectory;
-export const ensureProjectForDirectory = ensureInitiativeForDirectory;
-export const setProjectRunSettings = setInitiativeRunSettings;
