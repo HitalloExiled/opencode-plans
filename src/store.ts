@@ -1133,6 +1133,47 @@ export function getWorkItem(db: Db, id: string): WorkItemRow | undefined {
   return db.prepare("SELECT * FROM work_items WHERE id = ?").get(id) as WorkItemRow | undefined;
 }
 
+export type MoveWorkItemInput = {
+  id: string;
+  direction: "up" | "down";
+};
+
+/**
+ * Moves the item one place inside its status and renumbers the group 1..N.
+ * At the edges it is a no-op; the caller decides whether to disable the action.
+ */
+export function moveWorkItem(db: Db, input: MoveWorkItemInput): WorkItemOk | WorkStoreError {
+  const current = getWorkItem(db, input.id);
+  if (!current) return { ok: false, error: `work item não encontrado: ${input.id}` };
+
+  const siblings = listWorkItems(db, current.project_id).filter((item) => item.status === current.status);
+  const index = siblings.findIndex((item) => item.id === current.id);
+  if (index < 0) return { ok: false, error: "work item não encontrado na lista" };
+
+  const target = input.direction === "up" ? index - 1 : index + 1;
+  if (target < 0 || target >= siblings.length) return { ok: true, item: current };
+
+  const reordered = [...siblings];
+  const moved = reordered.splice(index, 1)[0];
+  if (!moved) return { ok: false, error: "work item não encontrado na lista" };
+  reordered.splice(target, 0, moved);
+
+  const now = nowTimestamp();
+  try {
+    transaction(db, () => {
+      reordered.forEach((item, position) => {
+        db.prepare("UPDATE work_items SET rank = ?, updated_at = ? WHERE id = ?").run(position + 1, now, item.id);
+      });
+    });
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+
+  const item = getWorkItem(db, input.id);
+  if (!item) return { ok: false, error: "item não encontrado após a reordenação" };
+  return { ok: true, item };
+}
+
 export type SetWorkItemStatusInput = {
   id: string;
   status: WorkItemStatus;
@@ -1154,9 +1195,12 @@ export function setWorkItemStatus(db: Db, input: SetWorkItemStatusInput): WorkIt
 
   const now = nowTimestamp();
   const closedAt = input.status === "done" || input.status === "dropped" ? now : null;
+  // Land at the end of the destination section so the position is predictable.
+  const rank = nextRank(db, current.project_id, input.status);
   try {
-    db.prepare("UPDATE work_items SET status = ?, updated_at = ?, closed_at = ? WHERE id = ?").run(
+    db.prepare("UPDATE work_items SET status = ?, rank = ?, updated_at = ?, closed_at = ? WHERE id = ?").run(
       input.status,
+      rank,
       now,
       closedAt,
       input.id,

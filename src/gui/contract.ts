@@ -196,6 +196,11 @@ export type WorkItemResult = {
   item?: WorkItem | undefined;
 };
 
+export type MoveWorkItemInput = {
+  id: string;
+  direction: "up" | "down";
+};
+
 /* ------------------------------------------------------------------ */
 /* Schemas                                                             */
 /* ------------------------------------------------------------------ */
@@ -370,6 +375,11 @@ export const setWorkItemStatusInputSchema = Schema.Struct({
   status: workStatusSchema,
 });
 
+export const moveWorkItemInputSchema = Schema.Struct({
+  id: Schema.String,
+  direction: Schema.Union([Schema.Literal("up"), Schema.Literal("down")]),
+});
+
 export const listOptionsSchema = Schema.Struct({
   scope: Schema.optional(planScopeSchema),
   sessionID: optString,
@@ -537,6 +547,10 @@ export const PlansRpc = Rpc.define({
     },
     setWorkItemStatus: {
       input: Schema.toStandardSchemaV1(setWorkItemStatusInputSchema),
+      output: Schema.toStandardSchemaV1(workItemResultSchema),
+    },
+    moveWorkItem: {
+      input: Schema.toStandardSchemaV1(moveWorkItemInputSchema),
       output: Schema.toStandardSchemaV1(workItemResultSchema),
     },
   },

@@ -39,6 +39,7 @@ import {
   listWorkItems as listProjectWorkItems,
   listWorkItemsAll,
   movePlan,
+  moveWorkItem as moveWorkItemRow,
   planProgress,
   plansDbPath,
   removeProjectLocation,
@@ -465,6 +466,12 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
     setWorkItemStatus: async (input) => {
       const store = await requireStore();
       const result = setStatusRow(store.db, { id: input.id, status: input.status });
+      return result.ok ? { ok: true, item: toWorkItem(result.item) } : { ok: false, error: result.error };
+    },
+
+    moveWorkItem: async (input) => {
+      const store = await requireStore();
+      const result = moveWorkItemRow(store.db, { id: input.id, direction: input.direction });
       return result.ok ? { ok: true, item: toWorkItem(result.item) } : { ok: false, error: result.error };
     },
   };

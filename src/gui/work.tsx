@@ -182,6 +182,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const [editBody, setEditBody] = createSignal("");
   const [saving, setSaving] = createSignal(false);
   const [statusSaving, setStatusSaving] = createSignal(false);
+  const [moving, setMoving] = createSignal(false);
   const [newTitle, setNewTitle] = createSignal("");
   const [creating, setCreating] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
@@ -329,6 +330,37 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       })
       .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setSaving(false));
+  };
+
+  const statusPosition = createMemo(() => {
+    const current = detail();
+    if (!current) return undefined;
+    const group = groups().find((entry) => entry.project.id === current.item.projectID);
+    if (!group) return undefined;
+    const same = group.items.filter((item) => item.status === current.item.status);
+    const index = same.findIndex((item) => item.id === current.item.id);
+    if (index < 0) return undefined;
+    return { index, total: same.length };
+  });
+
+  const move = (direction: "up" | "down") => {
+    const id = selectedID();
+    if (!id || moving()) return;
+    setMoving(true);
+    setActionError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .moveWorkItem({ id, direction }, rpcOptions())
+      .then((result) => {
+        if (!result.ok) {
+          setActionError(result.error ?? t("work.move.error"));
+          return;
+        }
+        setDetailReload((n) => n + 1);
+        setReload((n) => n + 1);
+      })
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setMoving(false));
   };
 
   const changeStatus = (status: WorkItemStatus) => {
@@ -521,6 +553,18 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                         !WORK_ITEM_TRANSITIONS[current().item.status].includes(status),
                       onSelect: () => changeStatus(status),
                     }))}
+                  />
+                  <ctx.ui.IconButton
+                    icon="arrow-up"
+                    label={t("work.moveUp")}
+                    disabled={moving() || !(statusPosition()?.index ?? 0)}
+                    onClick={() => move("up")}
+                  />
+                  <ctx.ui.IconButton
+                    icon="arrow-down-to-line"
+                    label={t("work.moveDown")}
+                    disabled={moving() || (statusPosition()?.index ?? 0) >= (statusPosition()?.total ?? 1) - 1}
+                    onClick={() => move("down")}
                   />
                 </div>
 
