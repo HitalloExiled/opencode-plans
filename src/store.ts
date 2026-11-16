@@ -1229,6 +1229,56 @@ export function removeWorkItemDep(db: Db, input: WorkItemDepInput): Ok | WorkSto
   return { ok: true };
 }
 
+export type SetWorkItemParentInput = {
+  id: string;
+  /** null clears the parent. */
+  parentID?: string | null | undefined;
+};
+
+export function workItemChildren(db: Db, parentID: string): WorkItemRow[] {
+  return db
+    .prepare("SELECT * FROM work_items WHERE parent_id = ? ORDER BY rank ASC, created_at ASC")
+    .all(parentID) as WorkItemRow[];
+}
+
+/**
+ * Groups an item under a root parent. One level only: the parent cannot have a
+ * parent and the item cannot have children. Dropping/closing the parent does
+ * not touch the children.
+ */
+export function setWorkItemParent(db: Db, input: SetWorkItemParentInput): WorkItemOk | WorkStoreError {
+  const current = getWorkItem(db, input.id);
+  if (!current) return { ok: false, error: `work item não encontrado: ${input.id}` };
+  const parentID = input.parentID ?? null;
+
+  if (parentID !== null) {
+    if (parentID === input.id) return { ok: false, error: "um work item não pode ser pai de si mesmo" };
+    const parent = getWorkItem(db, parentID);
+    if (!parent) return { ok: false, error: `work item não encontrado: ${parentID}` };
+    if (parent.project_id !== current.project_id) {
+      return { ok: false, error: "os itens precisam pertencer ao mesmo projeto" };
+    }
+    if (parent.parent_id) {
+      return { ok: false, error: "profundidade máxima de 1: o pai escolhido já é filho de outro item" };
+    }
+    const child = db
+      .prepare("SELECT 1 AS one FROM work_items WHERE parent_id = ? LIMIT 1")
+      .get(input.id) as { one?: number } | undefined;
+    if (child) return { ok: false, error: "um item com filhos não pode ter pai" };
+  }
+
+  const now = nowTimestamp();
+  try {
+    db.prepare("UPDATE work_items SET parent_id = ?, updated_at = ? WHERE id = ?").run(parentID, now, input.id);
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+
+  const item = getWorkItem(db, input.id);
+  if (!item) return { ok: false, error: "item não encontrado após a mudança de pai" };
+  return { ok: true, item };
+}
+
 export function workItemDeps(db: Db, itemID: string): WorkItemDeps {
   const blockedBy = db
     .prepare(

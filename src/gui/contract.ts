@@ -184,6 +184,10 @@ export type WorkItemDetail = {
   blockedBy: readonly WorkItem[];
   /** Items that depend on this one. */
   blocks: readonly WorkItem[];
+  /** Root parent, when this item is a child. */
+  parent?: WorkItem | null | undefined;
+  /** Direct children when this item is a root. */
+  children: readonly WorkItem[];
 };
 
 export type SaveWorkItemInput = {
@@ -208,6 +212,12 @@ export type MoveWorkItemInput = {
 export type WorkItemDepInput = {
   itemID: string;
   blocksID: string;
+};
+
+export type SetWorkItemParentInput = {
+  id: string;
+  /** null clears the parent. */
+  parentID?: string | null | undefined;
 };
 
 /* ------------------------------------------------------------------ */
@@ -362,6 +372,8 @@ export const workItemDetailSchema = Schema.Struct({
   project: projectSchema,
   blockedBy: Schema.Array(workItemSchema),
   blocks: Schema.Array(workItemSchema),
+  parent: Schema.optional(Schema.NullOr(workItemSchema)),
+  children: Schema.Array(workItemSchema),
 });
 
 export const opResultSchema = Schema.Struct({
@@ -399,6 +411,11 @@ export const moveWorkItemInputSchema = Schema.Struct({
 export const workItemDepInputSchema = Schema.Struct({
   itemID: Schema.String,
   blocksID: Schema.String,
+});
+
+export const setWorkItemParentInputSchema = Schema.Struct({
+  id: Schema.String,
+  parentID: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 export const listOptionsSchema = Schema.Struct({
@@ -576,6 +593,10 @@ export const PlansRpc = Rpc.define({
     },
     addWorkItemDep: {
       input: Schema.toStandardSchemaV1(workItemDepInputSchema),
+      output: Schema.toStandardSchemaV1(opResultSchema),
+    },
+    setWorkItemParent: {
+      input: Schema.toStandardSchemaV1(setWorkItemParentInputSchema),
       output: Schema.toStandardSchemaV1(opResultSchema),
     },
     removeWorkItemDep: {

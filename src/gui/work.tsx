@@ -198,6 +198,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const [statusSaving, setStatusSaving] = createSignal(false);
   const [moving, setMoving] = createSignal(false);
   const [depSaving, setDepSaving] = createSignal(false);
+  const [parentSaving, setParentSaving] = createSignal(false);
   const [newTitle, setNewTitle] = createSignal("");
   const [creating, setCreating] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
@@ -392,6 +393,36 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       })
       .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setDepSaving(false));
+  };
+
+  const parentCandidates = createMemo(() => {
+    const current = detail();
+    if (!current || current.children.length > 0) return [];
+    const group = groups().find((entry) => entry.project.id === current.item.projectID);
+    if (!group) return [];
+    return group.items.filter(
+      (item) => item.id !== current.item.id && item.parentID === undefined && item.id !== current.parent?.id,
+    );
+  });
+
+  const setParent = (parentID: string | null) => {
+    const id = selectedID();
+    if (!id || parentSaving()) return;
+    setParentSaving(true);
+    setActionError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .setWorkItemParent({ id, parentID }, rpcOptions())
+      .then((result) => {
+        if (!result.ok) {
+          setActionError(result.error ?? t("work.hier.error"));
+          return;
+        }
+        setDetailReload((n) => n + 1);
+        setReload((n) => n + 1);
+      })
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setParentSaving(false));
   };
 
   const statusPosition = createMemo(() => {
@@ -678,6 +709,65 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                           <span class={`work-dot is-${dep.status}`} />
                           <ctx.ui.Button size="small" variant="ghost" onClick={() => openItem(dep.id)}>
                             {dep.title}
+                          </ctx.ui.Button>
+                        </div>
+                      )}
+                    </For>
+                  </Show>
+                </div>
+
+                <div class="work-deps">
+                  <div class="work-deps-head">
+                    <h3 class="work-deps-title">{t("work.hier.title")}</h3>
+                    <Show when={parentCandidates().length > 0}>
+                      <ctx.ui.Menu
+                        trigger="button"
+                        icon="plus"
+                        label={t("work.hier.set")}
+                        disabled={parentSaving()}
+                        items={parentCandidates().map((item) => ({
+                          label: item.title,
+                          onSelect: () => setParent(item.id),
+                        }))}
+                      />
+                    </Show>
+                  </div>
+
+                  <Show when={current().parent}>
+                    {(parent) => (
+                      <>
+                        <span class="work-dep-label">{t("work.hier.parent")}</span>
+                        <div class="work-dep-row">
+                          <span class={`work-dot is-${parent().status}`} />
+                          <ctx.ui.Button size="small" variant="ghost" onClick={() => openItem(parent().id)}>
+                            {parent().title}
+                          </ctx.ui.Button>
+                          <ctx.ui.IconButton
+                            icon="close-small"
+                            label={t("work.hier.clear")}
+                            disabled={parentSaving()}
+                            onClick={() => setParent(null)}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </Show>
+
+                  <Show
+                    when={current().children.length > 0}
+                    fallback={
+                      <Show when={!current().parent}>
+                        <div class="work-deps-empty">{t("work.hier.none")}</div>
+                      </Show>
+                    }
+                  >
+                    <span class="work-dep-label">{t("work.hier.children")}</span>
+                    <For each={current().children}>
+                      {(child) => (
+                        <div class="work-dep-row">
+                          <span class={`work-dot is-${child.status}`} />
+                          <ctx.ui.Button size="small" variant="ghost" onClick={() => openItem(child.id)}>
+                            {child.title}
                           </ctx.ui.Button>
                         </div>
                       )}

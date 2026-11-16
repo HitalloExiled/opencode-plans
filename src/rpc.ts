@@ -52,9 +52,11 @@ import {
   schemaVersion,
   setPrimaryLocation,
   setStep,
+  setWorkItemParent as setParentRow,
   setWorkItemStatus as setStatusRow,
   updatePlan,
   updateWorkItem,
+  workItemChildren,
   workItemDeps,
   type Plan as StorePlan,
   type Project as StoreProject,
@@ -447,11 +449,14 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const project = getProject(store.db, item.project_id);
       if (!project) return null;
       const deps = workItemDeps(store.db, item.id);
+      const parent = item.parent_id ? getWorkItemRow(store.db, item.parent_id) : undefined;
       return {
         item: toWorkItemFull(item),
         project: toProject(project),
         blockedBy: deps.blockedBy.map(toWorkItem),
         blocks: deps.blocks.map(toWorkItem),
+        parent: parent ? toWorkItem(parent) : null,
+        children: workItemChildren(store.db, item.id).map(toWorkItem),
       };
     },
 
@@ -493,6 +498,12 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
     removeWorkItemDep: async (input) => {
       const store = await requireStore();
       const result = removeDepRow(store.db, { itemID: input.itemID, blocksID: input.blocksID });
+      return result.ok ? { ok: true } : { ok: false, error: result.error };
+    },
+
+    setWorkItemParent: async (input) => {
+      const store = await requireStore();
+      const result = setParentRow(store.db, { id: input.id, parentID: input.parentID ?? null });
       return result.ok ? { ok: true } : { ok: false, error: result.error };
     },
   };
