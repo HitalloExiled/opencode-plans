@@ -421,6 +421,63 @@ export const workItemResultSchema = Schema.Struct({
   item: Schema.optional(workItemSchema),
 });
 
+export type WorkGraphPlan = {
+  id: string;
+  title: string;
+  status: string;
+  done: number;
+  total: number;
+};
+
+export type WorkGraphNode = {
+  id: string;
+  title: string;
+  status: string;
+  rank: number;
+  createdAt: string;
+  plan?: WorkGraphPlan | undefined;
+};
+
+export type WorkGraphEdge = {
+  itemID: string;
+  blocksID: string;
+  kind: "explicit" | "implicit";
+  reason?: string | undefined;
+};
+
+export type WorkGraph = { nodes: WorkGraphNode[]; edges: WorkGraphEdge[] };
+
+export const workGraphPlanSchema = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  status: Schema.String,
+  done: Schema.Number,
+  total: Schema.Number,
+});
+
+export const workGraphNodeSchema = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  status: Schema.String,
+  rank: Schema.Number,
+  createdAt: Schema.String,
+  plan: Schema.optional(workGraphPlanSchema),
+});
+
+export const workGraphEdgeSchema = Schema.Struct({
+  itemID: Schema.String,
+  blocksID: Schema.String,
+  kind: Schema.Union([Schema.Literal("explicit"), Schema.Literal("implicit")]),
+  reason: optString,
+});
+
+export const workGraphSchema = Schema.Struct({
+  nodes: Schema.Array(workGraphNodeSchema),
+  edges: Schema.Array(workGraphEdgeSchema),
+});
+
+export const workGraphInputSchema = Schema.Struct({ initiativeID: Schema.String });
+
 export const setWorkItemRepoInputSchema = Schema.Struct({
   id: Schema.String,
   repoID: Schema.String,
@@ -789,6 +846,10 @@ export const PlansRpc = Rpc.define({
     placeWorkItem: {
       input: Schema.toStandardSchemaV1(placeWorkItemInputSchema),
       output: Schema.toStandardSchemaV1(workItemResultSchema),
+    },
+    getWorkGraph: {
+      input: Schema.toStandardSchemaV1(workGraphInputSchema),
+      output: Schema.toStandardSchemaV1(workGraphSchema),
     },
     setWorkItemRepo: {
       input: Schema.toStandardSchemaV1(setWorkItemRepoInputSchema),

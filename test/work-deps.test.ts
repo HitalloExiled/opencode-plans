@@ -6,6 +6,7 @@ import {
   addWorkItemDep,
   createInitiative,
   createWorkItem,
+  depEdges,
   initSchema,
   removeWorkItemDep,
   workItemDeps,
@@ -30,10 +31,22 @@ function setup() {
   const a = add("A");
   const b = add("B");
   const c = add("C");
-  return { db, a, b, c };
+  return { db, initiativeID: project.initiative.id, a, b, c };
 }
 
 const titles = (items: readonly { title: string }[]) => items.map((item) => item.title);
+
+describe("depEdges", () => {
+  test("returns the edges of the initiative with their kind", () => {
+    const { db, initiativeID, a, b } = setup();
+    addWorkItemDep(db, { itemID: b.id, blocksID: a.id });
+
+    expect(depEdges(db, initiativeID)).toEqual([
+      { itemID: b.id, blocksID: a.id, kind: "explicit", reason: null },
+    ]);
+    expect(depEdges(db, "unknown")).toEqual([]);
+  });
+});
 
 describe("work item dependencies", () => {
   test("adds a dependency and lists both sides", () => {

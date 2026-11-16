@@ -39,13 +39,17 @@ import { filterWorkGroups } from "../work-filter";
 import { planProgressOf } from "../work-progress";
 import { planWorkItem } from "./plan-item";
 import { openPlanDialog } from "./plan-dialog";
+import { WorkGraph } from "./graph";
 import { closePlansOverlay } from "./overlay-state";
 
 export type ViewMode = "work" | "plans";
 
-/** Lista | Quadro. Module state so the overlay can widen while the board is on. */
-const [boardMode, setBoardMode] = createSignal(false);
-export const workBoardMode = boardMode;
+export type WorkViewMode = "list" | "board" | "graph";
+
+/** Lista | Quadro | Grafo. Module state so the overlay can widen with the board/graph. */
+const [viewMode, setViewMode] = createSignal<WorkViewMode>("list");
+export const workView = viewMode;
+export const workWideMode = (): boolean => viewMode() !== "list";
 
 export type WorkTarget = {
   server: ServerRef;
@@ -957,19 +961,27 @@ export function WorkBody(props: { target: () => WorkTarget }) {
               <div class="work-view-switch" role="group" aria-label={t("work.view.label")}>
                 <ctx.ui.Button
                   size="small"
-                  variant={boardMode() ? "ghost" : "neutral"}
+                  variant={viewMode() === "list" ? "neutral" : "ghost"}
                   icon="checklist"
-                  onClick={() => setBoardMode(false)}
+                  onClick={() => setViewMode("list")}
                 >
                   {t("work.view.list")}
                 </ctx.ui.Button>
                 <ctx.ui.Button
                   size="small"
-                  variant={boardMode() ? "neutral" : "ghost"}
+                  variant={viewMode() === "board" ? "neutral" : "ghost"}
                   icon="workspace"
-                  onClick={() => setBoardMode(true)}
+                  onClick={() => setViewMode("board")}
                 >
                   {t("work.view.board")}
+                </ctx.ui.Button>
+                <ctx.ui.Button
+                  size="small"
+                  variant={viewMode() === "graph" ? "neutral" : "ghost"}
+                  icon="branch"
+                  onClick={() => setViewMode("graph")}
+                >
+                  {t("work.view.graph")}
                 </ctx.ui.Button>
               </div>
               <ctx.ui.Menu
@@ -1239,7 +1251,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
               when={visibleGroups().length > 0 && total() > 0}
               fallback={<EmptyState icon="checklist" title={empty().title} hint={empty().hint} />}
             >
-              <div class="work-body" classList={{ "is-hidden": boardMode() }}>
+              <div class="work-body" classList={{ "is-hidden": viewMode() !== "list" }}>
                 <div
                   class="work-scroll os-scroll"
                   ref={nav.ref}
@@ -1334,7 +1346,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                 </div>
                 <ScrollNav nav={nav} topLabel={t("scroll.top")} bottomLabel={t("scroll.bottom")} />
               </div>
-              <Show when={boardMode()}>
+              <Show when={viewMode() === "board"}>
                 <div class="work-board">
                   <For each={boardColumns()}>
                     {(column) => (
@@ -1438,6 +1450,14 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                     )}
                   </For>
                 </div>
+              </Show>
+              <Show when={viewMode() === "graph"}>
+                <WorkGraph
+                  server={props.target().server}
+                  initiativeID={selectedInitiative()?.id}
+                  revision={reload()}
+                  onOpen={openItem}
+                />
               </Show>
             </Show>
           </Show>

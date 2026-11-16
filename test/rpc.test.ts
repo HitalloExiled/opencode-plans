@@ -14,7 +14,7 @@ const dir = mkdtempSync(join(tmpdir(), "plans-rpc-"));
 process.env.PLANS_DB = join(dir, "plans.db");
 
 const { createRpcHandlers } = await import("../src/rpc");
-const { requireStore, savePlan } = await import("../src/store");
+const { addWorkItemDep, createInitiative, createWorkItem, requireStore, savePlan } = await import("../src/store");
 const { bodyWithoutSteps } = await import("../src/plan-body");
 const { onPlanChange } = await import("../src/plan-events");
 const { saveTool, updateTool, getTool } = await import("../plans");
@@ -465,5 +465,37 @@ describe("plan change events", () => {
     } finally {
       off();
     }
+  });
+});
+
+describe("work graph RPC", () => {
+  test("returns nodes with plan progress and the edges with their kind", async () => {
+    const store = await requireStore();
+    const initiative = createInitiative(store.db, { name: "Graph", repos: [{ directory: "/tmp/graph" }] });
+    if (!initiative.ok) throw new Error(initiative.error);
+    const a = createWorkItem(store.db, { initiativeID: initiative.initiative.id, title: "A" });
+    const b = createWorkItem(store.db, { initiativeID: initiative.initiative.id, title: "B" });
+    if (!a.ok || !b.ok) throw new Error("items");
+    addWorkItemDep(store.db, { itemID: b.item.id, blocksID: a.item.id });
+    const plan = savePlan(store.db, {
+      body: "# B plan\n\n- [ ] one",
+      projectID: "p1",
+      projectDirectory: "/tmp/graph",
+      sessionID: "s1",
+      workItemID: b.item.id,
+    });
+    if (!plan.ok) throw new Error(plan.error);
+
+    const graph = await h.getWorkGraph({ initiativeID: initiative.initiative.id });
+    expect(graph.nodes.map((node) => node.id).sort()).toEqual([a.item.id, b.item.id].sort());
+    const nodeB = graph.nodes.find((node) => node.id === b.item.id);
+    expect(nodeB?.plan).toEqual({
+      id: plan.plan.id,
+      title: "B plan",
+      status: "active",
+      done: 0,
+      total: 1,
+    });
+    expect(graph.edges).toEqual([{ itemID: b.item.id, blocksID: a.item.id, kind: "explicit" }]);
   });
 });

@@ -1332,6 +1332,22 @@ export function createWorkItem(db: Db, input: CreateWorkItemInput): WorkItemOk |
   return { ok: true, item };
 }
 
+export type DepEdgeRow = { itemID: string; blocksID: string; kind: string; reason: string | null };
+
+/** Every dependency edge inside an initiative, with its kind and reason. */
+export function depEdges(db: Db, initiativeID: string): DepEdgeRow[] {
+  return (
+    db
+      .prepare(
+        `SELECT d.item_id AS itemID, d.blocks_id AS blocksID, d.kind AS kind, d.reason AS reason
+           FROM work_item_deps d
+           JOIN work_items w ON w.id = d.item_id
+          WHERE w.initiative_id = ?`,
+      )
+      .all(initiativeID) as DepEdgeRow[]
+  ).map((row) => ({ itemID: row.itemID, blocksID: row.blocksID, kind: row.kind, reason: row.reason }));
+}
+
 export function getWorkItem(db: Db, id: string): WorkItemRow | undefined {
   return db.prepare("SELECT * FROM work_items WHERE id = ?").get(id) as WorkItemRow | undefined;
 }

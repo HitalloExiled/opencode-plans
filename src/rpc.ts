@@ -36,6 +36,7 @@ import {
   countPlans,
   createInitiative,
   deletePlan,
+  depEdges,
   getPlan,
   getPlanByWorkItem,
   getInitiative,
@@ -584,6 +585,40 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         position: input.position,
       });
       return result.ok ? { ok: true, item: toWorkItem(result.item) } : { ok: false, error: result.error };
+    },
+
+    getWorkGraph: async (input) => {
+      const store = await requireStore();
+      const items = listInitiativeWorkItems(store.db, input.initiativeID);
+      const nodes = items.map((item) => {
+        const plan = getPlanByWorkItem(store.db, item.id);
+        const progress = plan ? planProgress(plan) : undefined;
+        return {
+          id: item.id,
+          title: item.title,
+          status: item.status,
+          rank: item.rank,
+          createdAt: item.created_at,
+          ...(plan && progress
+            ? {
+                plan: {
+                  id: plan.id,
+                  title: plan.title,
+                  status: plan.status,
+                  done: progress.done,
+                  total: progress.total,
+                },
+              }
+            : {}),
+        };
+      });
+      const edges = depEdges(store.db, input.initiativeID).map((edge) => ({
+        itemID: edge.itemID,
+        blocksID: edge.blocksID,
+        kind: edge.kind === "implicit" ? ("implicit" as const) : ("explicit" as const),
+        ...(edge.reason ? { reason: edge.reason } : {}),
+      }));
+      return { nodes, edges };
     },
 
     setWorkItemRepo: async (input) => {

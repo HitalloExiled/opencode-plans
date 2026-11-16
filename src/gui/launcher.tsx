@@ -23,7 +23,7 @@ import { builtinServer, globalTarget } from "./page";
 import { closePlansOverlay, openPlansOverlay, plansOverlayOpen } from "./overlay-state";
 import type { PlansTarget } from "./view";
 import { PlansBody } from "./view";
-import { ViewSwitch, WorkBody, workBoardMode, type ViewMode } from "./work";
+import { ViewSwitch, WorkBody, workWideMode, type ViewMode } from "./work";
 
 const CSS = `
 .plans-modal-scrim {
@@ -200,7 +200,7 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
       <div
         ref={panel}
         class="plans-modal"
-        classList={{ "is-board": workBoardMode() }}
+        classList={{ "is-board": workWideMode() }}
         role="dialog"
         aria-modal="true"
         aria-label={t("page.title")}
