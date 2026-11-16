@@ -45,6 +45,7 @@ import {
   placeWorkItem as placeWorkItemRow,
   planProgress,
   plansDbPath,
+  recomputeImplicitDeps,
   removeProjectLocation,
   removeWorkItemDep as removeDepRow,
   renameProject,
@@ -82,6 +83,7 @@ const toPlan = (plan: StorePlan): Plan => ({
   updatedAt: plan.updated_at,
   ...(plan.completed_at ? { completedAt: plan.completed_at } : {}),
   ...(plan.work_item_id ? { workItemID: plan.work_item_id } : {}),
+  ...(plan.touches && plan.touches.length > 0 ? { touches: plan.touches } : {}),
   steps: plan.steps.map((step) => ({
     id: step.step_id,
     position: step.position,
@@ -226,8 +228,15 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         projectDirectory: String(ctx.location.project.canonical ?? ctx.location.directory),
         sessionID: input.sessionID,
         workItemID: input.workItemID ?? null,
+        touches: input.touches,
       });
-      if (result.ok) emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
+      if (result.ok) {
+        emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
+        if (result.plan.work_item_id) {
+          const item = getWorkItemRow(store.db, result.plan.work_item_id);
+          if (item) recomputeImplicitDeps(store.db, item.project_id);
+        }
+      }
       return fromWrite(result);
     },
 

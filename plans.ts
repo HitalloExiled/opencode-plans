@@ -17,7 +17,9 @@ import {
   deletePlan,
   doctorInfo,
   getPlan,
+  getWorkItem,
   listPlans,
+  recomputeImplicitDeps,
   parseSteps,
   renderDoctor,
   renderPlanFull,
@@ -76,6 +78,10 @@ const saveInput = z.object({
     .string()
     .optional()
     .describe("Link to a work item"),
+  touches: z
+    .array(z.string())
+    .optional()
+    .describe("Files/globs the plan touches."),
 });
 
 const listInput = z.object({
@@ -155,9 +161,15 @@ export function saveTool(ctx: Ctx) {
           messageID: String(toolCtx.messageID),
           steps: input.steps?.map((text) => ({ text })),
           workItemID: input.workItemID,
+          touches: input.touches,
         });
         if (!result.ok) return fail(result.error);
         emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
+        // The footprint decides the implicit dependencies of the project run.
+        if (result.plan.work_item_id) {
+          const item = getWorkItem(store.db, result.plan.work_item_id);
+          if (item) recomputeImplicitDeps(store.db, item.project_id);
+        }
         const checklist =
           result.plan.steps.length > 0
             ? result.plan.steps
@@ -168,6 +180,7 @@ export function saveTool(ctx: Ctx) {
           content: [
             `Plano salvo: ${result.plan.title}`,
             renderPlanSummary(result.plan),
+            `touches: ${result.plan.touches && result.plan.touches.length > 0 ? result.plan.touches.join(", ") : "none (conflicts with everything)"}`,
             checklist,
             "O checklist acima já está atualizado; não chame plans.get para confirmar. Use plans.get apenas se precisar do body completo.",
           ].join("\n"),

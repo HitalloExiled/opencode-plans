@@ -271,6 +271,7 @@ export const planSchema = Schema.Struct({
   updatedAt: Schema.String,
   completedAt: optString,
   workItemID: optString,
+  touches: Schema.optional(Schema.Array(Schema.String)),
   steps: Schema.Array(planStepSchema),
 });
 
@@ -481,6 +482,7 @@ export const saveInputSchema = Schema.Struct({
   steps: Schema.optional(Schema.Array(Schema.String)),
   sessionID: Schema.String,
   workItemID: optString,
+  touches: Schema.optional(Schema.Array(Schema.String)),
   locale: optString,
 });
 

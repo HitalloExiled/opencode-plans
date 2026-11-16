@@ -17,6 +17,7 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
 import { WORK_ITEM_TRANSITIONS } from "./gui/contract.js";
+import { computeImplicitDeps, type FootprintItem } from "./work-footprint.js";
 
 import {
   buildTemplate,
@@ -386,7 +387,7 @@ export type StepRow = {
   status: StepStatus;
 };
 
-export type Plan = PlanRow & { steps: StepRow[] };
+export type Plan = PlanRow & { steps: StepRow[]; /** Files/globs the plan touches (F4). */ touches?: string[] };
 
 export type ParsedStep = { text: string; status: StepStatus };
 
@@ -548,13 +549,17 @@ export function countPlans(db: Db, opts: ListOptions = {}): number {
 export function getPlan(db: Db, id: string): Plan | undefined {
   const row = db.prepare("SELECT * FROM plans WHERE id = ?").get(id) as PlanRow | undefined;
   if (!row) return undefined;
-  return { ...row, steps: stepsForPlans(db, [id]).get(id) ?? [] };
+  return { ...row, steps: stepsForPlans(db, [id]).get(id) ?? [], touches: planTouches(db, id) };
 }
 
 export function getPlanByWorkItem(db: Db, workItemID: string): Plan | undefined {
   const row = db.prepare("SELECT * FROM plans WHERE work_item_id = ?").get(workItemID) as PlanRow | undefined;
   if (!row) return undefined;
-  return { ...row, steps: stepsForPlans(db, [row.id]).get(row.id) ?? [] };
+  return {
+    ...row,
+    steps: stepsForPlans(db, [row.id]).get(row.id) ?? [],
+    touches: planTouches(db, row.id),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -573,6 +578,8 @@ export type SavePlanInput = {
   status?: PlanStatus | undefined;
   /** Links the plan to a work item; one plan per item. */
   workItemID?: string | null | undefined;
+  /** Declared footprint: undefined keeps it, [] clears it. */
+  touches?: readonly string[] | undefined;
 };
 
 function transaction<T>(db: Db, fn: () => T): T {
@@ -684,6 +691,12 @@ export function savePlan(db: Db, input: SavePlanInput): SaveOk | WriteError {
          VALUES (?, ?, ?, ?, ?)`,
       );
       steps.forEach((step, index) => insert.run(id, index, `s${index + 1}`, step.text, step.status));
+      if (input.touches !== undefined) {
+        db.prepare("DELETE FROM plan_touches WHERE plan_id = ?").run(id);
+        for (const path of new Set(input.touches.map((entry) => entry.trim()).filter(Boolean))) {
+          db.prepare("INSERT INTO plan_touches (plan_id, path) VALUES (?, ?)").run(id, path);
+        }
+      }
     });
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -802,6 +815,7 @@ export function deletePlan(db: Db, id: string): DeleteOk | WriteError {
   try {
     transaction(db, () => {
       db.prepare("DELETE FROM plan_steps WHERE plan_id = ?").run(id);
+      db.prepare("DELETE FROM plan_touches WHERE plan_id = ?").run(id);
       db.prepare("DELETE FROM plans WHERE id = ?").run(id);
     });
   } catch (error) {
@@ -829,6 +843,11 @@ export function renderPlanSummary(plan: Plan): string {
 }
 
 export function renderPlanFull(plan: Plan): string {
+  const touches = plan.touches ?? [];
+  const touchesLine =
+    touches.length > 0
+      ? `touches: ${touches.join(", ")}`
+      : "touches: none (an empty footprint conflicts with everything and serializes)";
   const { done, doing, total } = planProgress(plan);
   const body = renderPlanBody(
     plan.body,
@@ -842,6 +861,7 @@ export function renderPlanFull(plan: Plan): string {
     `session: ${plan.session_id}`,
     `created: ${plan.created_at}`,
     `updated: ${plan.updated_at}`,
+    touchesLine,
   ];
   if (plan.completed_at) lines.push(`completed: ${plan.completed_at}`);
   lines.push("", body);
@@ -2050,4 +2070,62 @@ export function setProjectRunSettings(
   const updated = getProject(db, projectID);
   if (!updated) return { ok: false, error: "projeto não encontrado após atualizar as configurações" };
   return { ok: true, project: updated };
+}
+
+
+export type RecomputeImplicitResult =
+  | { ok: true; added: number; edges: { itemID: string; blocksID: string }[] }
+  | WorkStoreError;
+
+/**
+ * Rebuilds the implicit dependencies of a project from the current plans'
+ * footprints. Only items that can run (ready/doing/blocked) with a plan take
+ * part; an unknown footprint conflicts with everything. Explicit edges are
+ * never touched and already order the pairs they connect.
+ */
+export function recomputeImplicitDeps(db: Db, projectID: string): RecomputeImplicitResult {
+  if (!getProject(db, projectID)) return { ok: false, error: `projeto não encontrado: ${projectID}` };
+
+  const entries: FootprintItem[] = [];
+  for (const item of listWorkItems(db, projectID)) {
+    if (item.status !== "ready" && item.status !== "doing" && item.status !== "blocked") continue;
+    const plan = getPlanByWorkItem(db, item.id);
+    if (!plan) continue;
+    entries.push({
+      id: item.id,
+      rank: item.rank,
+      createdAt: item.created_at,
+      touches: plan.touches ?? planTouches(db, plan.id),
+    });
+  }
+
+  const explicit = (
+    db
+      .prepare(
+        `SELECT d.item_id, d.blocks_id
+           FROM work_item_deps d
+           JOIN work_items w ON w.id = d.item_id
+          WHERE w.project_id = ? AND d.kind <> 'implicit'`,
+      )
+      .all(projectID) as { item_id: string; blocks_id: string }[]
+  ).map((row) => ({ itemID: row.item_id, blocksID: row.blocks_id }));
+
+  const edges = computeImplicitDeps(entries, explicit);
+  try {
+    transaction(db, () => {
+      db.prepare(
+        "DELETE FROM work_item_deps WHERE kind = 'implicit' AND item_id IN (SELECT id FROM work_items WHERE project_id = ?)",
+      ).run(projectID);
+      const insert = db.prepare(
+        `INSERT OR IGNORE INTO work_item_deps (item_id, blocks_id, kind, reason, created_at)
+         VALUES (?, ?, 'implicit', ?, ?)`,
+      );
+      const now = nowTimestamp();
+      for (const edge of edges) insert.run(edge.itemID, edge.blocksID, edge.reason, now);
+    });
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+
+  return { ok: true, added: edges.length, edges: edges.map((edge) => ({ itemID: edge.itemID, blocksID: edge.blocksID })) };
 }
