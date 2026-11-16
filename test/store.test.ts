@@ -18,6 +18,7 @@ import {
   getPlan,
   initSchema,
   listPlans,
+  SCHEMA_VERSION,
   movePlan,
   parseSteps,
   planProgress,
@@ -123,7 +124,7 @@ describe("deriveStatus", () => {
 
 describe("plan lifecycle", () => {
   test("schema version is current", () => {
-    expect(schemaVersion(open())).toBe(2);
+    expect(schemaVersion(open())).toBe(SCHEMA_VERSION);
   });
 
   test("migrates legacy 'abandoned' status to 'archived'", () => {
@@ -150,7 +151,7 @@ describe("plan lifecycle", () => {
 
     initSchema(db);
 
-    expect(schemaVersion(db)).toBe(2);
+    expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
     expect(getPlan(db, "legacy")?.status).toBe("archived");
   });
 

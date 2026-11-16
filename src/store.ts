@@ -15,7 +15,7 @@
 
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 
 import {
   buildTemplate,
@@ -124,7 +124,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -152,6 +152,42 @@ const BASE_SCHEMA = [
     PRIMARY KEY (plan_id, position)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_plan_steps_plan ON plan_steps(plan_id, position)`,
+  // v3 — work items (US-01: a work item belongs to a user project that groups
+  // N workspaces). `work_items.project_id` is the USER project (`projects.id`),
+  // NOT the OpenCode project id stored in `plans.project_id`.
+  `CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS project_locations (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    directory TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL,
+    is_primary INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_project_locations_project ON project_locations(project_id, position)`,
+  `CREATE TABLE IF NOT EXISTS work_items (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    location_id TEXT,
+    parent_id TEXT,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    status TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    origin TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    closed_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_work_items_project_status ON work_items(project_id, status, rank)`,
+  `CREATE INDEX IF NOT EXISTS idx_work_items_location ON work_items(location_id)`,
 ];
 
 function apply(db: Db, statements: readonly string[]): void {
@@ -728,4 +764,329 @@ export function renderDoctor(info: DoctorInfo): string {
     `  plans:   ${info.plans}`,
     `  steps:   ${info.steps}`,
   ].join("\n");
+}
+
+/* ------------------------------------------------------------------ */
+/* Work items — user projects and containment (US-01)                  */
+/* ------------------------------------------------------------------ */
+
+export type WorkItemStatus = "backlog" | "ready" | "doing" | "blocked" | "done" | "dropped";
+export type WorkOrigin = "user" | "agent";
+
+export type ProjectRow = {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectLocationRow = {
+  id: string;
+  project_id: string;
+  directory: string;
+  label: string;
+  primary: boolean;
+  position: number;
+  created_at: string;
+};
+
+export type Project = ProjectRow & { locations: ProjectLocationRow[] };
+
+export type WorkItemRow = {
+  id: string;
+  project_id: string;
+  location_id: string | null;
+  parent_id: string | null;
+  title: string;
+  body: string;
+  status: WorkItemStatus;
+  rank: number;
+  origin: WorkOrigin;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+};
+
+export type WorkStoreError = { ok: false; error: string };
+
+function reason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Absolute path, no trailing slash (the root stays "/"). */
+export function normalizeWorkspaceDirectory(directory: string): string {
+  const trimmed = directory.trim().replace(/\/+$/, "");
+  return trimmed || "/";
+}
+
+type LocationRow = {
+  id: string;
+  project_id: string;
+  directory: string;
+  label: string;
+  is_primary: number;
+  position: number;
+  created_at: string;
+};
+
+function locationFrom(row: LocationRow): ProjectLocationRow {
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    directory: row.directory,
+    label: row.label,
+    primary: row.is_primary === 1,
+    position: row.position,
+    created_at: row.created_at,
+  };
+}
+
+function locationsFor(db: Db, projectID: string): ProjectLocationRow[] {
+  const rows = db
+    .prepare("SELECT * FROM project_locations WHERE project_id = ? ORDER BY position ASC, created_at ASC")
+    .all(projectID) as LocationRow[];
+  return rows.map(locationFrom);
+}
+
+/** The project a workspace already belongs to, if any. */
+function directoryOwner(db: Db, directory: string): string | undefined {
+  const row = db.prepare("SELECT project_id FROM project_locations WHERE directory = ?").get(directory) as
+    | { project_id?: string }
+    | undefined;
+  return row?.project_id;
+}
+
+export function getProject(db: Db, id: string): Project | undefined {
+  const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as ProjectRow | undefined;
+  if (!row) return undefined;
+  return { ...row, locations: locationsFor(db, id) };
+}
+
+export function listProjects(db: Db): Project[] {
+  const rows = db.prepare("SELECT * FROM projects ORDER BY updated_at DESC, name ASC").all() as ProjectRow[];
+  return rows.map((row) => ({ ...row, locations: locationsFor(db, row.id) }));
+}
+
+export type ProjectLocationInput = {
+  directory: string;
+  label?: string | undefined;
+};
+
+export type CreateProjectInput = {
+  name: string;
+  locations: readonly ProjectLocationInput[];
+};
+
+export type ProjectOk = { ok: true; project: Project };
+export type LocationOk = { ok: true; location: ProjectLocationRow };
+export type Ok = { ok: true };
+
+/**
+ * A project is born with its workspaces: the first is `primary`, and a
+ * directory can belong to one project only.
+ */
+export function createProject(db: Db, input: CreateProjectInput): ProjectOk | WorkStoreError {
+  const name = input.name.trim();
+  if (!name) return { ok: false, error: "o nome do projeto é obrigatório" };
+  if (input.locations.length === 0) return { ok: false, error: "um projeto precisa de pelo menos um workspace" };
+
+  const locations = input.locations.map((location) => {
+    const directory = normalizeWorkspaceDirectory(location.directory);
+    if (!directory) return { directory: "", label: "" };
+    return { directory, label: location.label?.trim() || basename(directory) || directory };
+  });
+  for (const location of locations) {
+    if (!location.directory) return { ok: false, error: "o diretório do workspace é obrigatório" };
+  }
+  const seen = new Set<string>();
+  for (const location of locations) {
+    if (!isAbsolute(location.directory)) {
+      return { ok: false, error: `o workspace precisa de um caminho absoluto: ${location.directory}` };
+    }
+    if (seen.has(location.directory)) return { ok: false, error: `workspace duplicado: ${location.directory}` };
+    seen.add(location.directory);
+    if (directoryOwner(db, location.directory) !== undefined) {
+      return { ok: false, error: `o workspace ${location.directory} já pertence a outro projeto` };
+    }
+  }
+
+  const id = crypto.randomUUID();
+  const now = nowTimestamp();
+  try {
+    transaction(db, () => {
+      db.prepare("INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)").run(
+        id,
+        name,
+        now,
+        now,
+      );
+      locations.forEach((location, index) => {
+        db.prepare(
+          `INSERT INTO project_locations (id, project_id, directory, label, is_primary, position, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(crypto.randomUUID(), id, location.directory, location.label, index === 0 ? 1 : 0, index, now);
+      });
+    });
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+
+  const project = getProject(db, id);
+  if (!project) return { ok: false, error: "projeto não encontrado após a criação" };
+  return { ok: true, project };
+}
+
+export function addProjectLocation(db: Db, projectID: string, input: ProjectLocationInput): LocationOk | WorkStoreError {
+  const project = getProject(db, projectID);
+  if (!project) return { ok: false, error: `projeto não encontrado: ${projectID}` };
+  const directory = normalizeWorkspaceDirectory(input.directory);
+  if (!directory) return { ok: false, error: "o diretório do workspace é obrigatório" };
+  if (!isAbsolute(directory)) {
+    return { ok: false, error: `o workspace precisa de um caminho absoluto: ${directory}` };
+  }
+  const owner = directoryOwner(db, directory);
+  if (owner !== undefined) return { ok: false, error: `o workspace ${directory} já pertence a outro projeto` };
+
+  const id = crypto.randomUUID();
+  const now = nowTimestamp();
+  const label = input.label?.trim() || basename(directory) || directory;
+  try {
+    transaction(db, () => {
+      db.prepare(
+        `INSERT INTO project_locations (id, project_id, directory, label, is_primary, position, created_at)
+         VALUES (?, ?, ?, ?, 0, ?, ?)`,
+      ).run(id, projectID, directory, label, project.locations.length, now);
+      db.prepare("UPDATE projects SET updated_at = ? WHERE id = ?").run(now, projectID);
+    });
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  const row = db.prepare("SELECT * FROM project_locations WHERE id = ?").get(id) as LocationRow | undefined;
+  if (!row) return { ok: false, error: "workspace não encontrado após a criação" };
+  return { ok: true, location: locationFrom(row) };
+}
+
+export function removeProjectLocation(db: Db, projectID: string, locationID: string): Ok | WorkStoreError {
+  const project = getProject(db, projectID);
+  if (!project) return { ok: false, error: `projeto não encontrado: ${projectID}` };
+  const location = project.locations.find((item) => item.id === locationID);
+  if (!location) return { ok: false, error: "workspace não encontrado neste projeto" };
+  if (project.locations.length === 1) return { ok: false, error: "o projeto precisa de pelo menos um workspace" };
+  const used = db.prepare("SELECT id FROM work_items WHERE location_id = ? LIMIT 1").get(locationID) as
+    | { id?: string }
+    | undefined;
+  if (used?.id) return { ok: false, error: "há work items neste workspace; mova-os antes de remover" };
+
+  const now = nowTimestamp();
+  try {
+    transaction(db, () => {
+      db.prepare("DELETE FROM project_locations WHERE id = ?").run(locationID);
+      if (location.primary) {
+        const next = project.locations.find((item) => item.id !== locationID);
+        if (next) db.prepare("UPDATE project_locations SET is_primary = 1 WHERE id = ?").run(next.id);
+      }
+      db.prepare("UPDATE projects SET updated_at = ? WHERE id = ?").run(now, projectID);
+    });
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
+export function setPrimaryLocation(db: Db, projectID: string, locationID: string): Ok | WorkStoreError {
+  const project = getProject(db, projectID);
+  if (!project) return { ok: false, error: `projeto não encontrado: ${projectID}` };
+  if (!project.locations.some((item) => item.id === locationID)) {
+    return { ok: false, error: "workspace não encontrado neste projeto" };
+  }
+  const now = nowTimestamp();
+  try {
+    transaction(db, () => {
+      db.prepare("UPDATE project_locations SET is_primary = 0 WHERE project_id = ?").run(projectID);
+      db.prepare("UPDATE project_locations SET is_primary = 1 WHERE id = ?").run(locationID);
+      db.prepare("UPDATE projects SET updated_at = ? WHERE id = ?").run(now, projectID);
+    });
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
+export type CreateWorkItemInput = {
+  projectID: string;
+  locationID?: string | undefined;
+  title: string;
+  body?: string | undefined;
+  origin?: WorkOrigin | undefined;
+};
+
+export type WorkItemOk = { ok: true; item: WorkItemRow };
+
+function nextRank(db: Db, projectID: string, status: WorkItemStatus): number {
+  const row = db.prepare("SELECT COALESCE(MAX(rank), 0) AS r FROM work_items WHERE project_id = ? AND status = ?").get(
+    projectID,
+    status,
+  ) as { r?: number } | undefined;
+  return (row?.r ?? 0) + 1;
+}
+
+/**
+ * US-01 slice: the item belongs to a project and, optionally, to one of its
+ * workspaces. Status/rank/parent/origin columns exist for the following USs;
+ * here only the containment is enforced.
+ */
+export function createWorkItem(db: Db, input: CreateWorkItemInput): WorkItemOk | WorkStoreError {
+  const title = input.title.trim();
+  if (!title) return { ok: false, error: "o título do item é obrigatório" };
+  if (!input.projectID) return { ok: false, error: "projectID é obrigatório" };
+  const project = db.prepare("SELECT id FROM projects WHERE id = ?").get(input.projectID) as
+    | { id?: string }
+    | undefined;
+  if (!project?.id) return { ok: false, error: `projeto não encontrado: ${input.projectID}` };
+  if (input.locationID) {
+    const location = db.prepare("SELECT project_id FROM project_locations WHERE id = ?").get(input.locationID) as
+      | { project_id?: string }
+      | undefined;
+    if (!location?.project_id) return { ok: false, error: "workspace não encontrado" };
+    if (location.project_id !== input.projectID) {
+      return { ok: false, error: "o workspace não pertence a este projeto" };
+    }
+  }
+
+  const id = crypto.randomUUID();
+  const now = nowTimestamp();
+  const status: WorkItemStatus = "backlog";
+  try {
+    db.prepare(
+      `INSERT INTO work_items
+         (id, project_id, location_id, parent_id, title, body, status, rank, origin, created_at, updated_at, closed_at)
+       VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    ).run(
+      id,
+      input.projectID,
+      input.locationID ?? null,
+      title,
+      input.body?.trim() ?? "",
+      status,
+      nextRank(db, input.projectID, status),
+      input.origin ?? "user",
+      now,
+      now,
+    );
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  const item = getWorkItem(db, id);
+  if (!item) return { ok: false, error: "item não encontrado após a criação" };
+  return { ok: true, item };
+}
+
+export function getWorkItem(db: Db, id: string): WorkItemRow | undefined {
+  return db.prepare("SELECT * FROM work_items WHERE id = ?").get(id) as WorkItemRow | undefined;
+}
+
+export function listWorkItems(db: Db, projectID: string): WorkItemRow[] {
+  return db
+    .prepare("SELECT * FROM work_items WHERE project_id = ? ORDER BY status ASC, rank ASC, created_at ASC")
+    .all(projectID) as WorkItemRow[];
 }
