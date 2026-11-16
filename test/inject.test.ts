@@ -367,6 +367,10 @@ describe("work items context", () => {
     expect(text).toContain("- [backlog] Need w0 (id=w0)");
   });
 
+  test("no items means no block at all", () => {
+    expect(renderWorkItemsContext([], "App")).toBe("");
+  });
+
   test("returns nothing when every item is closed", () => {
     expect(renderWorkItemsContext([workItem("d", "done"), workItem("x", "dropped")], "App")).toBe("");
   });
