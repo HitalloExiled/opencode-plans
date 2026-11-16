@@ -364,3 +364,19 @@ describe("appendWorkItemsBlock", () => {
     expect(appendWorkItemsBlock(messages, block)).toBe(false);
   });
 });
+
+describe("work items after compaction", () => {
+  const block = `${WORK_ITEMS_OPEN}\n- [backlog] A need\n</work-items>`;
+
+  test("a rewritten conversation gets the block again, once", () => {
+    // The compaction part marks the rewritten history; the turn resumes on a
+    // tool step, which is exactly where `appendTailBlock` adds the block.
+    const messages: InjectMessage[] = [
+      { role: "user", content: [{ type: "compaction", text: "summary" }] },
+      toolResult("resumed"),
+    ];
+    expect(appendTailBlock(messages, block, WORK_ITEMS_OPEN)).toBe(true);
+    expect(messages.at(-1)?.role).toBe("user");
+    expect(appendTailBlock(messages, block, WORK_ITEMS_OPEN)).toBe(false);
+  });
+});

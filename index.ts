@@ -24,6 +24,7 @@ import {
   pushRoutingRule,
   renderPlanContext,
   renderWorkItemsContext,
+  WORK_ITEMS_OPEN,
   type InjectMessage,
 } from "./src/inject.js";
 import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
@@ -199,6 +200,9 @@ async function registerCommand(ctx: Ctx) {
   });
 }
 
+/** Executing agents get the backlog only after a compaction: the prompt is the plan. */
+const EXECUTING_AGENTS = new Set(["build", "executor"]);
+
 /** Tools whose permission denial Plan rewrites into a Plan-directory message. */
 const PLAN_EDIT_TOOLS = new Set(["edit", "write", "patch"]);
 
@@ -247,17 +251,20 @@ async function onContext(ctx: Ctx, event: SessionContext) {
   // planner/executor clone Plan/Build, so their system must match too.
   pushRoutingRule(event.system);
 
-  // The backlog list is dynamic, so it rides the tail, never the system. It
-  // goes to every agent (the native Plan included): both flows can plan.
+  // The backlog list is dynamic, so it rides the tail, never the system. Every
+  // planning agent (the native Plan included) gets it each turn; an executor
+  // only after a compaction, so its prompt stays the plan.
   try {
-    const store = await requireStore();
-    const resolved = resolveProject(store.db, projectDirectory(ctx));
-    if (resolved) {
-      const text = renderWorkItemsContext(
-        listWorkItems(store.db, resolved.project.id),
-        resolved.project.name,
-      );
-      if (text) appendWorkItemsBlock(event.messages as InjectMessage[], text);
+    if (!EXECUTING_AGENTS.has(agent)) {
+      const store = await requireStore();
+      const resolved = resolveProject(store.db, projectDirectory(ctx));
+      if (resolved) {
+        const text = renderWorkItemsContext(
+          listWorkItems(store.db, resolved.project.id),
+          resolved.project.name,
+        );
+        if (text) appendWorkItemsBlock(event.messages as InjectMessage[], text);
+      }
     }
   } catch (error) {
     console.error(`[plans] work items injection failed: ${errorText(error)}`);
@@ -302,6 +309,18 @@ async function onContext(ctx: Ctx, event: SessionContext) {
 
     const sessionID = String(event.sessionID);
     const store = await requireStore();
+
+    // After a compaction the list may be gone from the conversation; the
+    // executor included, this is where it comes back.
+    const resolved = resolveProject(store.db, projectDirectory(ctx));
+    if (resolved) {
+      const itemsText = renderWorkItemsContext(
+        listWorkItems(store.db, resolved.project.id),
+        resolved.project.name,
+      );
+      if (itemsText) appendTailBlock(messages, itemsText, WORK_ITEMS_OPEN);
+    }
+
     const plans = listPlans(store.db, {
       projectID: projectID(ctx),
       sessionID,
