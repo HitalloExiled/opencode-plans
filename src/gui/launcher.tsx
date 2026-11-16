@@ -223,7 +223,6 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
           >
             <WorkBody
               target={() => ({
-                mode: "modal",
                 server: props.target().server,
                 visible: () => true,
               })}

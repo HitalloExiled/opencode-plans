@@ -281,6 +281,8 @@ export type PlanSummary = {
   done: number;
   total: number;
   updatedAt: string;
+  /** Session that owns the plan; opening it shows the plan there. */
+  sessionID: string;
 };
 
 export const planSummarySchema = Schema.Struct({
@@ -290,6 +292,7 @@ export const planSummarySchema = Schema.Struct({
   done: Schema.Number,
   total: Schema.Number,
   updatedAt: Schema.String,
+  sessionID: Schema.String,
 });
 
 export const planResultSchema = Schema.Struct({

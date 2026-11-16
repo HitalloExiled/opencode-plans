@@ -15,7 +15,6 @@ import { PlansRpc } from "./contract";
 import { executionFor, planTarget, sessionTarget } from "./execution";
 import type { Plan, PlanFlow, PlanStatus, PlanStep, StepStatus } from "./contract";
 import { useT } from "./i18n";
-import { ViewSwitch, WorkBody, type ViewMode } from "./work";
 import { bodyWithoutSteps } from "../plan-body";
 import { orderPlans, projectKeyOf, projectLabel as projectSectionName } from "./order";
 import { VIEW_INITIAL, ViewState } from "./state";
@@ -375,35 +374,20 @@ export type PlansTarget = {
 
 export function PlansView(props: { session: MountedSession }) {
   const panel = usePanel();
-  const [mode, setMode] = createSignal<ViewMode>("work");
-  const target = () => ({
-    mode: "panel" as const,
-    server: props.session.server,
-    session: props.session,
-    storageKey: `view:${props.session.server.id}:${props.session.id}`,
-    visible: () => panel.visible(),
-    projectName: () => {
-      const project = props.session.project;
-      return project?.name || (project?.worktree ? project.worktree.split("/").pop() || "" : "");
-    },
-  });
-
   return (
-    <div class="plans-view">
-      <ViewSwitch mode={mode} onChange={setMode} />
-      <div class="plans-view-body">
-        <Show when={mode() === "work"} fallback={<PlansBody target={target} />}>
-          <WorkBody
-            target={() => ({
-              mode: "panel",
-              server: props.session.server,
-              session: props.session,
-              visible: () => panel.visible(),
-            })}
-          />
-        </Show>
-      </div>
-    </div>
+    <PlansBody
+      target={() => ({
+        mode: "panel",
+        server: props.session.server,
+        session: props.session,
+        storageKey: `view:${props.session.server.id}:${props.session.id}`,
+        visible: () => panel.visible(),
+        projectName: () => {
+          const project = props.session.project;
+          return project?.name || (project?.worktree ? project.worktree.split("/").pop() || "" : "");
+        },
+      })}
+    />
   );
 }
 

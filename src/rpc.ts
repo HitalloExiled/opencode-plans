@@ -470,6 +470,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
               done: progress.done,
               total: progress.total,
               updatedAt: plan.updated_at,
+              sessionID: plan.session_id,
             }
           : null,
       };

@@ -1,16 +1,15 @@
 /**
- * Work side panel — the user's work items.
+ * Work — the global surface (overlay): the user's work items across projects.
  *
- * The panel shows only the project resolved from the session workspace; the
- * overlay (no routed session) shows every project that has items, grouped by
- * project and then by status. A card opens the item detail, where the need is
- * read and edited inline. Planning/executing arrive in the following USs.
+ * Work items are global because a project spans sessions and workspaces; the
+ * session side panel owns plans. The overlay offers Work and Plans (Global ->
+ * Work -> Plan and Global -> Plan); a plan is also reached from its item.
  */
 
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 import { usePlugin } from "@opencode/plugin/gui";
-import type { MountedSession, ServerRef } from "@opencode/plugin/gui";
+import type { ServerRef } from "@opencode/plugin/gui";
 import {
   SHARED_CSS,
   ScrollNav,
@@ -25,9 +24,10 @@ import {
   PlansRpc,
   WORK_ITEM_TRANSITIONS,
   WORK_STATUS_ORDER,
+  type PlanSummary,
+  type Project,
   type WorkGroup,
   type WorkItemDetail,
-  type PlanSummary,
   type WorkItemStatus,
 } from "./contract";
 import { useT } from "./i18n";
@@ -37,17 +37,13 @@ import { planWorkItem } from "./plan-item";
 export type ViewMode = "work" | "plans";
 
 export type WorkTarget = {
-  mode: "panel" | "modal";
   server: ServerRef;
-  /** Routed session; undefined in the modal. */
-  session?: MountedSession | undefined;
+  /** The overlay is always on screen. */
   visible: () => boolean;
 };
 
 const VIEW_CSS = `
-.plans-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.plans-view-switch { display: flex; align-items: center; gap: 4px; padding: 8px 12px 0; flex: 0 0 auto; }
-.plans-view-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.plans-view-switch { display: flex; align-items: center; gap: 4px; }
 `;
 
 const WORK_CSS = `
@@ -55,6 +51,8 @@ const WORK_CSS = `
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
   height: 100%;
   min-height: 0;
   padding: 12px;
@@ -63,10 +61,8 @@ const WORK_CSS = `
   color: var(--v2-text-text-base);
   font-size: 12.5px;
 }
-.work.is-modal { width: 100%; box-sizing: border-box; height: 100%; }
 .work-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.work-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
-.work.is-modal .work-scroll { padding-bottom: 24px; overscroll-behavior: contain; }
+.work-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; padding-bottom: 24px; overscroll-behavior: contain; }
 .work-project { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
 .work-project:last-child { margin-bottom: 0; }
 .work-project-name {
@@ -111,7 +107,7 @@ const WORK_CSS = `
 .work-card:hover { background-image: linear-gradient(var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)); }
 .work-card:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: -2px; }
 .work-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.work-toolbar { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.work-toolbar { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; }
 .work-new { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .work-new > :first-child { flex: 1; min-width: 0; }
 .work-detail { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
@@ -119,6 +115,7 @@ const WORK_CSS = `
 .work-detail-title { flex: 1; min-width: 0; margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .work-detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--v2-text-text-muted); font-size: 11px; }
 .work-detail-body { flex: 1; min-height: 0; overflow-y: auto; }
+.work-detail-empty { color: var(--v2-text-text-muted); font-size: 11.5px; }
 .work-deps { display: flex; flex-direction: column; gap: 6px; }
 .work-deps-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .work-deps-title {
@@ -133,7 +130,6 @@ const WORK_CSS = `
 .work-dep-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .work-dep-row .work-dot { flex: 0 0 auto; }
 .work-deps-empty { font-size: 11px; color: var(--v2-text-text-muted); }
-.work-detail-empty { color: var(--v2-text-text-muted); font-size: 11.5px; }
 .work-editor { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
 .work-editor textarea {
   flex: 1;
@@ -150,7 +146,7 @@ const WORK_CSS = `
 .work-error-detail { font-size: 11px; color: var(--v2-text-text-muted); overflow-wrap: anywhere; }
 `;
 
-/** The panel/overlay switch: Trabalho | Planos. */
+/** The overlay switch: Trabalho | Planos (Global -> Work and Global -> Plan). */
 export function ViewSwitch(props: { mode: Accessor<ViewMode>; onChange: (mode: ViewMode) => void }) {
   const ctx = usePlugin();
   const t = useT();
@@ -195,10 +191,12 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const ctx = usePlugin();
   const t = useT();
   const [groups, setGroups] = createSignal<WorkGroup[]>([]);
+  const [projects, setProjects] = createSignal<Project[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [reload, setReload] = createSignal(0);
 
+  const [projectFilter, setProjectFilter] = createSignal<string>("all");
   const [selectedID, setSelectedID] = createSignal<string | undefined>(undefined);
   const [detail, setDetail] = createSignal<WorkItemDetail | null>(null);
   const [detailLoading, setDetailLoading] = createSignal(false);
@@ -219,33 +217,24 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const [agentOnly, setAgentOnly] = createSignal(false);
   const [showDropped, setShowDropped] = createSignal(false);
 
-  const scope = () => (props.target().mode === "panel" && props.target().session ? "project" : "all");
-  const directory = () => props.target().session?.directory;
-  const isModal = () => props.target().mode === "modal";
-
-  const rpcOptions = () => {
-    const dir = directory();
-    return { ...(dir ? { location: { directory: dir } } : {}) };
-  };
-
   // A generation counter drops the result of a request whose target changed.
   let generation = 0;
 
   createEffect(() => {
     const target = props.target();
-    const currentScope = scope();
-    const dir = directory();
     void reload();
     const current = ++generation;
     setLoading(true);
     setError(null);
 
-    void target.server.client
-      .rpc(PlansRpc)
-      .listWorkItems({ scope: currentScope, ...(dir ? { directory: dir } : {}) }, rpcOptions())
-      .then((result) => {
+    void Promise.all([
+      target.server.client.rpc(PlansRpc).listWorkItems({ scope: "all" }),
+      target.server.client.rpc(PlansRpc).listProjects({}),
+    ])
+      .then(([itemGroups, projectList]) => {
         if (current !== generation) return;
-        setGroups(result as WorkGroup[]);
+        setGroups(itemGroups as WorkGroup[]);
+        setProjects(projectList as Project[]);
         setLoading(false);
       })
       .catch((cause: unknown) => {
@@ -279,7 +268,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     setDetailError(null);
     void target.server.client
       .rpc(PlansRpc)
-      .getWorkItem({ id }, rpcOptions())
+      .getWorkItem({ id })
       .then((value) => {
         if (current !== detailGeneration) return;
         setDetail(value as WorkItemDetail | null);
@@ -292,16 +281,22 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       });
   });
 
+  const selectedProject = createMemo(() => projects().find((project) => project.id === projectFilter()));
+
+  const projectGroups = createMemo(() => {
+    const id = projectFilter();
+    return id === "all" ? groups() : groups().filter((group) => group.project.id === id);
+  });
+
   const visibleGroups = createMemo(() =>
-    filterWorkGroups(groups(), { agentOnly: agentOnly(), showDropped: showDropped() }),
+    filterWorkGroups(projectGroups(), { agentOnly: agentOnly(), showDropped: showDropped() }),
   );
   const total = createMemo(() => visibleGroups().reduce((sum, group) => sum + group.items.length, 0));
-  const projectMissing = createMemo(() => scope() === "project" && groups().length === 0);
   const hasAgentItems = createMemo(() =>
-    groups().some((group) => group.items.some((item) => item.origin === "agent")),
+    projectGroups().some((group) => group.items.some((item) => item.origin === "agent")),
   );
   const hasDropped = createMemo(() =>
-    groups().some((group) => group.items.some((item) => item.status === "dropped")),
+    projectGroups().some((group) => group.items.some((item) => item.status === "dropped")),
   );
 
   const nav = createScrollNav({
@@ -319,13 +314,10 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     })).filter((section) => section.items.length > 0);
 
   const empty = () => {
-    if (projectMissing()) {
-      return { title: t("work.noProject.title"), hint: t("work.noProject.hint") };
-    }
     if (agentOnly()) {
       return { title: t("work.empty.agent.title"), hint: t("work.empty.agent.hint") };
     }
-    if (scope() === "project") {
+    if (projectFilter() !== "all") {
       return { title: t("work.project.empty.title"), hint: t("work.project.empty.hint") };
     }
     return { title: t("work.empty.title"), hint: t("work.empty.hint") };
@@ -362,7 +354,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     setActionError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
-      .saveWorkItem({ id, title, body: editBody() }, rpcOptions())
+      .saveWorkItem({ id, title, body: editBody() })
       .then((result) => {
         if (!result.ok) {
           setActionError(result.error ?? t("work.save.error"));
@@ -374,6 +366,32 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       })
       .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setSaving(false));
+  };
+
+  const createItem = () => {
+    const project = selectedProject();
+    const title = newTitle().trim();
+    if (!project || !title || creating()) return;
+    const location = project.locations.find((entry) => entry.primary) ?? project.locations[0];
+    if (!location) {
+      setActionError(t("work.create.error"));
+      return;
+    }
+    setCreating(true);
+    setActionError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .saveWorkItem({ directory: location.directory, title })
+      .then((result) => {
+        if (!result.ok) {
+          setActionError(result.error ?? t("work.create.error"));
+          return;
+        }
+        setNewTitle("");
+        setReload((n) => n + 1);
+      })
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setCreating(false));
   };
 
   const depCandidates = createMemo(() => {
@@ -392,7 +410,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     setActionError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
-      .addWorkItemDep({ itemID: id, blocksID }, rpcOptions())
+      .addWorkItemDep({ itemID: id, blocksID })
       .then((result) => {
         if (!result.ok) {
           setActionError(result.error ?? t("work.deps.error"));
@@ -411,7 +429,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     setActionError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
-      .removeWorkItemDep({ itemID: id, blocksID }, rpcOptions())
+      .removeWorkItemDep({ itemID: id, blocksID })
       .then((result) => {
         if (!result.ok) {
           setActionError(result.error ?? t("work.deps.error"));
@@ -422,16 +440,6 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setDepSaving(false));
   };
-
-  const parentCandidates = createMemo(() => {
-    const current = detail();
-    if (!current || current.children.length > 0) return [];
-    const group = groups().find((entry) => entry.project.id === current.item.projectID);
-    if (!group) return [];
-    return group.items.filter(
-      (item) => item.id !== current.item.id && item.parentID === undefined && item.id !== current.parent?.id,
-    );
-  });
 
   const planDetail = (current: WorkItemDetail) => {
     if (planning()) return;
@@ -448,7 +456,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     setActionError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
-      .getWorkItem({ id }, rpcOptions())
+      .getWorkItem({ id })
       .then((current) => {
         if (!current) throw new Error(t("work.plan.error"));
         return planWorkItem({ ctx, target: props.target(), detail: current as WorkItemDetail, t });
@@ -457,6 +465,20 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       .finally(() => setPlanning(false));
   };
 
+  const openPlan = (plan: PlanSummary) => {
+    ctx.tabs.open({ server: props.target().server.id, id: plan.sessionID }, { focus: true });
+  };
+
+  const parentCandidates = createMemo(() => {
+    const current = detail();
+    if (!current || current.children.length > 0) return [];
+    const group = groups().find((entry) => entry.project.id === current.item.projectID);
+    if (!group) return [];
+    return group.items.filter(
+      (item) => item.id !== current.item.id && item.parentID === undefined && item.id !== current.parent?.id,
+    );
+  });
+
   const setParent = (parentID: string | null) => {
     const id = selectedID();
     if (!id || parentSaving()) return;
@@ -464,7 +486,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     setActionError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
-      .setWorkItemParent({ id, parentID }, rpcOptions())
+      .setWorkItemParent({ id, parentID })
       .then((result) => {
         if (!result.ok) {
           setActionError(result.error ?? t("work.hier.error"));
@@ -495,7 +517,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     setActionError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
-      .moveWorkItem({ id, direction }, rpcOptions())
+      .moveWorkItem({ id, direction })
       .then((result) => {
         if (!result.ok) {
           setActionError(result.error ?? t("work.move.error"));
@@ -528,7 +550,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     setActionError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
-      .setWorkItemStatus({ id, status }, rpcOptions())
+      .setWorkItemStatus({ id, status })
       .then((result) => {
         if (!result.ok) {
           setActionError(result.error ?? t("work.status.error"));
@@ -541,34 +563,25 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       .finally(() => setStatusSaving(false));
   };
 
-  const createItem = () => {
-    const dir = directory();
-    const title = newTitle().trim();
-    if (!dir || !title || creating()) return;
-    setCreating(true);
-    setActionError(null);
-    void props.target()
-      .server.client.rpc(PlansRpc)
-      .saveWorkItem({ directory: dir, title }, rpcOptions())
-      .then((result) => {
-        if (!result.ok) {
-          setActionError(result.error ?? t("work.create.error"));
-          return;
-        }
-        setNewTitle("");
-        setReload((n) => n + 1);
-      })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => setCreating(false));
-  };
-
   return (
     <>
       <style>{SHARED_CSS + WORK_CSS}</style>
-      <div class="work" classList={{ "is-modal": isModal() }}>
+      <div class="work">
         <Show when={!selectedID()}>
-          <Show when={hasAgentItems() || hasDropped()}>
+          <Show when={projects().length > 0}>
             <div class="work-toolbar">
+              <ctx.ui.Menu
+                trigger="button"
+                icon="workspace"
+                label={selectedProject()?.name ?? t("work.projects.all")}
+                items={[
+                  { label: t("work.projects.all"), onSelect: () => setProjectFilter("all") },
+                  ...projects().map((project) => ({
+                    label: project.name,
+                    onSelect: () => setProjectFilter(project.id),
+                  })),
+                ]}
+              />
               <Show when={hasAgentItems()}>
                 <ctx.ui.Button
                   size="small"
@@ -592,7 +605,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
             </div>
           </Show>
 
-          <Show when={!isModal() && directory()}>
+          <Show when={selectedProject()}>
             <div class="work-new">
               <ctx.ui.TextInput
                 value={newTitle()}
@@ -786,6 +799,11 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                         <span class="work-dep-label">
                           {t("work.plan.progress", plan().done, plan().total)}
                         </span>
+                        <ctx.ui.IconButton
+                          icon="arrow-up-right"
+                          label={t("work.plan.open")}
+                          onClick={() => openPlan(plan())}
+                        />
                       </div>
                     )}
                   </Show>
