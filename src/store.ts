@@ -125,7 +125,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -202,6 +202,53 @@ const BASE_SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_work_item_deps_item ON work_item_deps(item_id)`,
   `CREATE INDEX IF NOT EXISTS idx_work_item_deps_blocks ON work_item_deps(blocks_id)`,
+  // v6 — project runs (F4): a run executes a project graph in parallel, each
+  // item isolated in its own branch/worktree and merged by a single session.
+  `CREATE TABLE IF NOT EXISTS runs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    base_ref TEXT NOT NULL,
+    status TEXT NOT NULL,
+    max_parallel INTEGER NOT NULL DEFAULT 2,
+    merge_session_id TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    error TEXT
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_active ON runs(project_id) WHERE status IN ('running', 'interrupted')`,
+  `CREATE INDEX IF NOT EXISTS idx_runs_project ON runs(project_id, started_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS run_items (
+    run_id TEXT NOT NULL,
+    work_item_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    plan_id TEXT,
+    branch TEXT,
+    worktree TEXT,
+    session_id TEXT,
+    started_at TEXT,
+    finished_at TEXT,
+    merged_sha TEXT,
+    error TEXT,
+    PRIMARY KEY (run_id, work_item_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_run_items_status ON run_items(run_id, status)`,
+  `CREATE TABLE IF NOT EXISTS merge_queue (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    work_item_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    enqueued_at TEXT NOT NULL,
+    claimed_at TEXT,
+    finished_at TEXT,
+    error TEXT
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_merge_queue_item ON merge_queue(run_id, work_item_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_merge_queue_fifo ON merge_queue(run_id, status, enqueued_at)`,
+  `CREATE TABLE IF NOT EXISTS plan_touches (
+    plan_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    PRIMARY KEY (plan_id, path)
+  )`,
 ];
 
 function apply(db: Db, statements: readonly string[]): void {
@@ -242,6 +289,16 @@ export function initSchema(db: Db): void {
   db.prepare(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_work_item ON plans(work_item_id) WHERE work_item_id IS NOT NULL",
   ).run();
+  // v6 — per-project run settings.
+  if (!hasColumn(db, "projects", "base_branch")) {
+    db.prepare("ALTER TABLE projects ADD COLUMN base_branch TEXT").run();
+  }
+  if (!hasColumn(db, "projects", "max_parallel")) {
+    db.prepare("ALTER TABLE projects ADD COLUMN max_parallel INTEGER NOT NULL DEFAULT 2").run();
+  }
+  if (!hasColumn(db, "projects", "verify_command")) {
+    db.prepare("ALTER TABLE projects ADD COLUMN verify_command TEXT").run();
+  }
   db.prepare(`PRAGMA user_version = ${SCHEMA_VERSION}`).run();
 }
 
@@ -837,6 +894,10 @@ export type WorkOrigin = "user" | "agent";
 export type ProjectRow = {
   id: string;
   name: string;
+  /** Integration base for runs; null means the repo default branch. */
+  base_branch: string | null;
+  max_parallel: number;
+  verify_command: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -1599,4 +1660,394 @@ export function ensureProjectForDirectory(db: Db, input: string): EnsureProjectR
     return { ok: true, project: raced.project, location: raced.location, created: false };
   }
   return created;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Project runs (F4)                                                   */
+/* ------------------------------------------------------------------ */
+
+export type RunStatus = "running" | "done" | "failed" | "cancelled" | "interrupted";
+export type RunItemStatus = "queued" | "running" | "merging" | "merged" | "failed" | "skipped";
+export type MergeStatus = "queued" | "merging" | "merged" | "failed";
+
+export type RunRow = {
+  id: string;
+  project_id: string;
+  base_ref: string;
+  status: RunStatus;
+  max_parallel: number;
+  merge_session_id: string | null;
+  started_at: string;
+  finished_at: string | null;
+  error: string | null;
+};
+
+export type RunItemRow = {
+  run_id: string;
+  work_item_id: string;
+  status: RunItemStatus;
+  plan_id: string | null;
+  branch: string | null;
+  worktree: string | null;
+  session_id: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  merged_sha: string | null;
+  error: string | null;
+};
+
+export type MergeEntryRow = {
+  id: string;
+  run_id: string;
+  work_item_id: string;
+  status: MergeStatus;
+  enqueued_at: string;
+  claimed_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+};
+
+export type RunOk = { ok: true; run: RunRow };
+export type RunItemOk = { ok: true; item: RunItemRow };
+
+const RUN_TERMINAL = new Set<RunStatus>(["done", "failed", "cancelled"]);
+/** Statuses where the item is finished, merged or not. */
+const RUN_ITEM_DONE = new Set<RunItemStatus>(["merged", "failed", "skipped"]);
+
+function clampParallel(value: number | undefined, fallback: number): number {
+  const next = value ?? fallback;
+  if (!Number.isFinite(next)) return fallback;
+  return Math.max(1, Math.min(8, Math.trunc(next)));
+}
+
+export function getRun(db: Db, id: string): RunRow | undefined {
+  return db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as RunRow | undefined;
+}
+
+export function listRuns(db: Db, projectID: string, limit = 20): RunRow[] {
+  return db
+    .prepare("SELECT * FROM runs WHERE project_id = ? ORDER BY started_at DESC LIMIT ?")
+    .all(projectID, limit) as RunRow[];
+}
+
+/** The run that blocks a new one: running or interrupted, one per project. */
+export function activeRun(db: Db, projectID: string): RunRow | undefined {
+  return db
+    .prepare("SELECT * FROM runs WHERE project_id = ? AND status IN ('running', 'interrupted')")
+    .get(projectID) as RunRow | undefined;
+}
+
+export type CreateRunInput = {
+  projectID: string;
+  baseRef: string;
+  maxParallel?: number | undefined;
+};
+
+export function createRun(db: Db, input: CreateRunInput): RunOk | WorkStoreError {
+  const baseRef = input.baseRef.trim();
+  if (!baseRef) return { ok: false, error: "base_ref é obrigatório para executar o projeto" };
+  const project = db.prepare("SELECT max_parallel FROM projects WHERE id = ?").get(input.projectID) as
+    | { max_parallel?: number }
+    | undefined;
+  if (!project) return { ok: false, error: `projeto não encontrado: ${input.projectID}` };
+  if (activeRun(db, input.projectID)) {
+    return { ok: false, error: "já existe um run ativo neste projeto; cancele ou aguarde o término" };
+  }
+
+  const id = crypto.randomUUID();
+  try {
+    db.prepare(
+      `INSERT INTO runs (id, project_id, base_ref, status, max_parallel, merge_session_id, started_at, finished_at, error)
+       VALUES (?, ?, ?, 'running', ?, NULL, ?, NULL, NULL)`,
+    ).run(id, input.projectID, baseRef, clampParallel(input.maxParallel, project.max_parallel ?? 2), nowTimestamp());
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  const run = getRun(db, id);
+  if (!run) return { ok: false, error: "run não encontrado após a criação" };
+  return { ok: true, run };
+}
+
+export type SetRunStatusInput = {
+  id: string;
+  status: RunStatus;
+  error?: string | null | undefined;
+};
+
+/**
+ * Moves the run through running -> (done | failed | cancelled | interrupted)
+ * and lets an interrupted run resume. A terminal run never changes again.
+ */
+export function setRunStatus(db: Db, input: SetRunStatusInput): RunOk | WorkStoreError {
+  const current = getRun(db, input.id);
+  if (!current) return { ok: false, error: `run não encontrado: ${input.id}` };
+  if (RUN_TERMINAL.has(current.status)) {
+    return { ok: false, error: `run já terminou: ${current.status}` };
+  }
+  const allowed = current.status === "running" ? ["done", "failed", "cancelled", "interrupted"] : ["running", "cancelled", "failed"];
+  if (!allowed.includes(input.status)) {
+    return { ok: false, error: `transição de run inválida: ${current.status} -> ${input.status}` };
+  }
+
+  const now = nowTimestamp();
+  const finishedAt = RUN_TERMINAL.has(input.status) ? now : null;
+  const error = input.error === undefined ? current.error : input.error;
+  try {
+    db.prepare("UPDATE runs SET status = ?, finished_at = ?, error = ? WHERE id = ?").run(
+      input.status,
+      finishedAt,
+      error,
+      input.id,
+    );
+  } catch (cause) {
+    return { ok: false, error: reason(cause) };
+  }
+  const run = getRun(db, input.id);
+  if (!run) return { ok: false, error: "run não encontrado após a mudança de status" };
+  return { ok: true, run };
+}
+
+export function setRunMergeSession(db: Db, id: string, sessionID: string | null): RunOk | WorkStoreError {
+  const current = getRun(db, id);
+  if (!current) return { ok: false, error: `run não encontrado: ${id}` };
+  try {
+    db.prepare("UPDATE runs SET merge_session_id = ? WHERE id = ?").run(sessionID, id);
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  const run = getRun(db, id);
+  if (!run) return { ok: false, error: "run não encontrado após vincular a sessão de merge" };
+  return { ok: true, run };
+}
+
+export type CreateRunItemInput = {
+  runID: string;
+  workItemID: string;
+  planID?: string | undefined;
+  branch?: string | undefined;
+  worktree?: string | undefined;
+};
+
+export function getRunItem(db: Db, runID: string, workItemID: string): RunItemRow | undefined {
+  return db
+    .prepare("SELECT * FROM run_items WHERE run_id = ? AND work_item_id = ?")
+    .get(runID, workItemID) as RunItemRow | undefined;
+}
+
+export function listRunItems(db: Db, runID: string): RunItemRow[] {
+  return db
+    .prepare("SELECT * FROM run_items WHERE run_id = ? ORDER BY work_item_id")
+    .all(runID) as RunItemRow[];
+}
+
+export function createRunItem(db: Db, input: CreateRunItemInput): RunItemOk | WorkStoreError {
+  if (!getRun(db, input.runID)) return { ok: false, error: `run não encontrado: ${input.runID}` };
+  if (getRunItem(db, input.runID, input.workItemID)) {
+    return { ok: false, error: `o item já está neste run: ${input.workItemID}` };
+  }
+  try {
+    db.prepare(
+      `INSERT INTO run_items (run_id, work_item_id, status, plan_id, branch, worktree, session_id, started_at, finished_at, merged_sha, error)
+       VALUES (?, ?, 'queued', ?, ?, ?, NULL, NULL, NULL, NULL, NULL)`,
+    ).run(
+      input.runID,
+      input.workItemID,
+      input.planID ?? null,
+      input.branch ?? null,
+      input.worktree ?? null,
+    );
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  const item = getRunItem(db, input.runID, input.workItemID);
+  if (!item) return { ok: false, error: "item do run não encontrado após a criação" };
+  return { ok: true, item };
+}
+
+export type SetRunItemStatusInput = {
+  runID: string;
+  workItemID: string;
+  status: RunItemStatus;
+  planID?: string | undefined;
+  branch?: string | undefined;
+  worktree?: string | undefined;
+  sessionID?: string | undefined;
+  mergedSha?: string | undefined;
+  error?: string | null | undefined;
+};
+
+/**
+ * Patches an item in place. Queuing starts the clock when it leaves `queued`;
+ * a finished status stamps `finished_at` once.
+ */
+export function setRunItemStatus(db: Db, input: SetRunItemStatusInput): RunItemOk | WorkStoreError {
+  const current = getRunItem(db, input.runID, input.workItemID);
+  if (!current) return { ok: false, error: `item do run não encontrado: ${input.workItemID}` };
+  const now = nowTimestamp();
+  const startedAt = current.started_at ?? (input.status !== "queued" ? now : null);
+  const finishedAt = RUN_ITEM_DONE.has(input.status) ? current.finished_at ?? now : null;
+  try {
+    db.prepare(
+      `UPDATE run_items
+          SET status = ?, plan_id = ?, branch = ?, worktree = ?, session_id = ?,
+              started_at = ?, finished_at = ?, merged_sha = ?, error = ?
+        WHERE run_id = ? AND work_item_id = ?`,
+    ).run(
+      input.status,
+      input.planID ?? current.plan_id,
+      input.branch ?? current.branch,
+      input.worktree ?? current.worktree,
+      input.sessionID ?? current.session_id,
+      startedAt,
+      finishedAt,
+      input.mergedSha ?? current.merged_sha,
+      input.error === undefined ? current.error : input.error,
+      input.runID,
+      input.workItemID,
+    );
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  const item = getRunItem(db, input.runID, input.workItemID);
+  if (!item) return { ok: false, error: "item do run não encontrado após a atualização" };
+  return { ok: true, item };
+}
+
+export function listMergeQueue(db: Db, runID: string): MergeEntryRow[] {
+  // rowid is insertion order; two enqueues can share the timestamp, so it is
+  // what makes the queue FIFO for real.
+  return db
+    .prepare("SELECT * FROM merge_queue WHERE run_id = ? ORDER BY enqueued_at ASC, rowid ASC")
+    .all(runID) as MergeEntryRow[];
+}
+
+/** Enqueues an item; enqueuing twice is a no-op. */
+export function enqueueMerge(db: Db, input: { runID: string; workItemID: string }): Ok | WorkStoreError {
+  if (!getRun(db, input.runID)) return { ok: false, error: `run não encontrado: ${input.runID}` };
+  try {
+    db.prepare(
+      `INSERT OR IGNORE INTO merge_queue (id, run_id, work_item_id, status, enqueued_at, claimed_at, finished_at, error)
+       VALUES (?, ?, ?, 'queued', ?, NULL, NULL, NULL)`,
+    ).run(crypto.randomUUID(), input.runID, input.workItemID, nowTimestamp());
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
+export type ClaimMergeResult = { ok: true; entry: MergeEntryRow | null } | WorkStoreError;
+
+/**
+ * Claims the next queued item, FIFO. Only one `merging` per run: while one is
+ * in flight the claim returns null rather than blocking.
+ */
+export function claimNextMerge(db: Db, runID: string): ClaimMergeResult {
+  const busy = db
+    .prepare("SELECT id FROM merge_queue WHERE run_id = ? AND status = 'merging' LIMIT 1")
+    .get(runID);
+  if (busy) return { ok: true, entry: null };
+
+  const next = db
+    .prepare(
+      "SELECT * FROM merge_queue WHERE run_id = ? AND status = 'queued' ORDER BY enqueued_at ASC, rowid ASC LIMIT 1",
+    )
+    .get(runID) as MergeEntryRow | undefined;
+  if (!next) return { ok: true, entry: null };
+
+  const claimedAt = nowTimestamp();
+  try {
+    transaction(db, () => {
+      const changed = db
+        .prepare("UPDATE merge_queue SET status = 'merging', claimed_at = ? WHERE id = ? AND status = 'queued'")
+        .run(claimedAt, next.id);
+      if (!changed || changed.changes === 0) throw new Error("a fila mudou durante o claim; tente de novo");
+    });
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  const entry = db.prepare("SELECT * FROM merge_queue WHERE id = ?").get(next.id) as MergeEntryRow | undefined;
+  if (!entry) return { ok: false, error: "entrada da fila não encontrada após o claim" };
+  return { ok: true, entry };
+}
+
+export type FinishMergeInput = {
+  id: string;
+  status: "merged" | "failed";
+  mergedSha?: string | undefined;
+  error?: string | null | undefined;
+};
+
+export function finishMerge(db: Db, input: FinishMergeInput): Ok | WorkStoreError {
+  const current = db.prepare("SELECT * FROM merge_queue WHERE id = ?").get(input.id) as MergeEntryRow | undefined;
+  if (!current) return { ok: false, error: `entrada da fila não encontrada: ${input.id}` };
+  if (current.status !== "merging") {
+    return { ok: false, error: `a entrada não está em merging: ${current.status}` };
+  }
+  try {
+    db.prepare(
+      "UPDATE merge_queue SET status = ?, finished_at = ?, error = ? WHERE id = ? AND status = 'merging'",
+    ).run(input.status, nowTimestamp(), input.error ?? null, input.id);
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
+/* ------------------------------------------------------------------ */
+/* Footprint and run settings                                          */
+/* ------------------------------------------------------------------ */
+
+export function planTouches(db: Db, planID: string): string[] {
+  return (
+    db.prepare("SELECT path FROM plan_touches WHERE plan_id = ? ORDER BY path ASC").all(planID) as {
+      path: string;
+    }[]
+  ).map((row) => row.path);
+}
+
+/** Replaces the plan's footprint in one transaction. */
+export function setPlanTouches(db: Db, planID: string, paths: readonly string[]): Ok | WorkStoreError {
+  const clean = [...new Set(paths.map((path) => path.trim()).filter(Boolean))];
+  try {
+    transaction(db, () => {
+      db.prepare("DELETE FROM plan_touches WHERE plan_id = ?").run(planID);
+      for (const path of clean) {
+        db.prepare("INSERT INTO plan_touches (plan_id, path) VALUES (?, ?)").run(planID, path);
+      }
+    });
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
+export type ProjectRunSettings = {
+  baseBranch?: string | null | undefined;
+  maxParallel?: number | undefined;
+  verifyCommand?: string | null | undefined;
+};
+
+export function setProjectRunSettings(
+  db: Db,
+  projectID: string,
+  input: ProjectRunSettings,
+): ProjectOk | WorkStoreError {
+  const project = getProject(db, projectID);
+  if (!project) return { ok: false, error: `projeto não encontrado: ${projectID}` };
+  const baseBranch = input.baseBranch === undefined ? project.base_branch : input.baseBranch?.trim() || null;
+  const maxParallel =
+    input.maxParallel === undefined ? project.max_parallel : clampParallel(input.maxParallel, project.max_parallel);
+  const verifyCommand =
+    input.verifyCommand === undefined ? project.verify_command : input.verifyCommand?.trim() || null;
+  try {
+    db.prepare(
+      "UPDATE projects SET base_branch = ?, max_parallel = ?, verify_command = ?, updated_at = ? WHERE id = ?",
+    ).run(baseBranch, maxParallel, verifyCommand, nowTimestamp(), projectID);
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  const updated = getProject(db, projectID);
+  if (!updated) return { ok: false, error: "projeto não encontrado após atualizar as configurações" };
+  return { ok: true, project: updated };
 }
