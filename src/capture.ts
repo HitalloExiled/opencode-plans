@@ -39,7 +39,8 @@ export function messageText(message: SessionMessageLike): string {
 import { extractSteps } from "./plan-body.js";
 
 /**
- * The last non-empty assistant message written by the built-in `plan` agent.
+ * The last non-empty assistant message written by a planning agent: the
+ * built-in `plan` or the plugin's own `planner`.
  * Messages are in chronological order.
  */
 export function findLastPlanMessage(
@@ -49,7 +50,8 @@ export function findLastPlanMessage(
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
     if (!message || message.type !== "assistant") continue;
-    if (String(message.agent ?? "") !== "plan") continue;
+    const agent = String(message.agent ?? "");
+    if (agent !== "plan" && agent !== "planner") continue;
     const body = messageText(message);
     if (!body) continue;
     if (options.requireSteps && extractSteps(body).length === 0) continue;

@@ -30,6 +30,7 @@ plans.ts                 tool definitions (save/list/get/update/delete/doctor)
 src/store.ts             SHARED data layer: node:sqlite, schema v2, migrations, SQL.
                          Used by the tools and by the server RPC.
 src/plan-body.ts         PURE step parsing/template/reassembly helpers (server + GUI)
+src/agents.ts            the plugin's primary agents (planner, executor) + registration
 src/rpc.ts               server RPC handlers (list/read/write + notifications)
 src/capture.ts           last Plan-agent message extraction
 src/inject.ts            routing rule (system) + post-compaction block (tail)
@@ -75,6 +76,12 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   load-bearing sentence first; parameter descriptions stay ≤6 words.
   `test/inject.test.ts` enforces all three (`plans.save` keeps the Plan-mode
   permission, `plans.update` the call shape).
+- **The plugin owns two primary agents** (`src/agents.ts`, registered with
+  `ctx.agent.transform`; `update` upserts, so a new id is created). `planner` is
+  read-only (denies `edit`) and saves the plan with `plans.save` in the same
+  turn; `executor` works the plan step by step with `plans.update`. Executing
+  from the panel/pill switches the session to `executor`; pausing returns it to
+  `planner`. `/save-plan` captures the last message of `plan` **or** `planner`.
 - **Saving is the expected behavior, not a permission.** The routing rule says
   it imperatively and spells out that the core Plan-mode reminder about "plan
   files" does not cover `plans.save`/`plans.update` (it means markdown under
@@ -156,7 +163,8 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   **Executar/Pausar** button (for `active` plans) and the composer pill all call
   the same `executionFor(target)` handle (`src/gui/execution.ts`): it owns the
   per-session `{ planID, pending }` store, runs `runPlan`
-  (`src/gui/execute.ts`) and switches the session agent to `build` before
+  (`src/gui/execute.ts`) and switches the session agent to the plugin's
+  `executor` before
   sending the prompt. The pill appears only while the session is idle with an
   active plan and hides while a run started by either entry point is pending or
   running; it never executes on its own. Because the state is shared, the panel

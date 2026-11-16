@@ -157,7 +157,7 @@ export function executionFor(ctx: Context, target: ExecutionTarget): ExecutionHa
           }
           await target.client.session.switchAgent({
             sessionID: target.sessionID,
-            agent: "plan",
+            agent: "planner",
           });
           if (!interrupted.interrupted) store.set(EXECUTION_INITIAL);
           notify(t("toast.pausing"), "success");

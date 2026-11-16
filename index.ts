@@ -22,6 +22,7 @@ import {
   type InjectMessage,
 } from "./src/inject.js";
 import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
+import { registerAgents } from "./src/agents.js";
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
 import { onPlanChange } from "./src/plan-events.js";
@@ -192,6 +193,7 @@ export default Plugin.define({
         console.error(`[plans] could not emit plan change: ${errorText(error)}`);
       });
     });
+    const agentRegistration = await registerAgents(ctx);
     const registrations = await Promise.all([
       registerTools(ctx),
       registerCommand(ctx),
@@ -200,7 +202,7 @@ export default Plugin.define({
       }),
       ctx.session.hook("context", (event) => onContext(ctx, event)),
     ]);
-    registrations.push(rpcRegistration);
+    registrations.push(rpcRegistration, agentRegistration);
 
     return async () => {
       offPlanChange();

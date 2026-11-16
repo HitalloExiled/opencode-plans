@@ -18,7 +18,7 @@ const EN = {
   "scroll.region": "Plans list",
   saveLast: "Save from agent",
   "saveLast.prompt":
-    "Save the plan you just presented with plans.save, steps in the ## Passos section. plans.save writes only the plans database, not files, so it is allowed in Plan mode. If it is already saved, confirm instead of creating another. Do not call plans.get to confirm; the save result already includes the checklist and step ids. Do not ask; save it now.",
+    "Save the plan you just presented with plans.save, steps in the ## Passos section. plans.save writes only the plans database, not files, so it works in Plan mode and with the Planner agent. If it is already saved, confirm instead of creating another. Do not call plans.get to confirm; the save result already includes the checklist and step ids. Do not ask; save it now.",
   "saveLast.tooltip": "Ask the agent to save the presented plan",
   newPlan: "New plan",
   editPlan: "Edit plan",
@@ -71,7 +71,7 @@ const EN = {
   loading: "Loading…",
   "empty.title": "No plans saved here yet",
   "empty.hint":
-    "Generate a plan in Plan mode, then use /save-plan or ask the agent to call plans.save.",
+    "Generate a plan in Plan mode or with the Planner agent, then use /save-plan or ask the agent to call plans.save.",
   "empty.search": "No plans match your search.",
   "empty.searchHint": "Try a different term.",
   steps: "Steps",
@@ -133,7 +133,7 @@ const PT: Record<keyof typeof EN, string> = {
   "scroll.region": "Lista de planos",
   saveLast: "Salvar do agente",
   "saveLast.prompt":
-    "Salve o plano que você acabou de apresentar com plans.save, passos na seção ## Passos. plans.save grava apenas o banco de planos, não arquivos, então é permitido no Plan mode. Se já estiver salvo, confirme em vez de criar outro. Não chame plans.get para confirmar; o resultado do plans.save já traz o checklist e os IDs. Não pergunte; salve agora.",
+    "Salve o plano que você acabou de apresentar com plans.save, passos na seção ## Passos. plans.save grava apenas o banco de planos, não arquivos, então funciona no Plan mode e no agente Planner. Se já estiver salvo, confirme em vez de criar outro. Não chame plans.get para confirmar; o resultado do plans.save já traz o checklist e os IDs. Não pergunte; salve agora.",
   "saveLast.tooltip": "Pedir ao agente para salvar o plano apresentado",
   newPlan: "Novo plano",
   editPlan: "Editar plano",

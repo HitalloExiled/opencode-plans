@@ -5,6 +5,7 @@
  * Executing is a user action: the plan runs in a target session. The panel and
  * the pill pass the routed session, so a plan from another session is moved
  * into it first; the page passes the plan's own session, so nothing moves.
+ * The run switches the session to the plugin's `executor` agent.
  */
 
 import type { Context, MountedSession } from "@opencode/plugin/gui";
@@ -59,7 +60,7 @@ export async function runPlan(input: {
 
   await target.client.session.switchAgent({
     sessionID: target.sessionID,
-    agent: "build",
+    agent: "executor",
   });
   await target.client.session.prompt({
     sessionID: target.sessionID,
