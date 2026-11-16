@@ -1090,3 +1090,46 @@ export function listWorkItems(db: Db, projectID: string): WorkItemRow[] {
     .prepare("SELECT * FROM work_items WHERE project_id = ? ORDER BY status ASC, rank ASC, created_at ASC")
     .all(projectID) as WorkItemRow[];
 }
+
+export type ProjectResolution = {
+  project: Project;
+  location: ProjectLocationRow;
+  match: "exact" | "ancestor";
+};
+
+/** `directory` is inside `ancestor` at a path boundary, never a name prefix. */
+export function isInsideWorkspace(directory: string, ancestor: string): boolean {
+  if (ancestor === "/") return directory !== "/";
+  return directory.startsWith(`${ancestor}/`);
+}
+
+/**
+ * The user project a session directory belongs to: an exact workspace match,
+ * else the deepest ancestor (nested projects resolve by specificity), else
+ * undefined ("no project").
+ */
+export function resolveProject(db: Db, directory: string): ProjectResolution | undefined {
+  const target = normalizeWorkspaceDirectory(directory);
+  if (!target) return undefined;
+
+  const rows = db.prepare("SELECT * FROM project_locations").all() as LocationRow[];
+  let exact: LocationRow | undefined;
+  let ancestor: { row: LocationRow; depth: number } | undefined;
+  for (const row of rows) {
+    const location = normalizeWorkspaceDirectory(row.directory);
+    if (location === target) {
+      exact = row;
+      break;
+    }
+    if (!isInsideWorkspace(target, location)) continue;
+    if (ancestor === undefined || location.length > ancestor.depth) {
+      ancestor = { row, depth: location.length };
+    }
+  }
+
+  const chosen = exact ?? ancestor?.row;
+  if (!chosen) return undefined;
+  const project = getProject(db, chosen.project_id);
+  if (!project) return undefined;
+  return { project, location: locationFrom(chosen), match: exact ? "exact" : "ancestor" };
+}
