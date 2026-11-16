@@ -39,7 +39,7 @@ export const PLANS_CONTEXT_CLOSE = "</plans-context>";
 export const PLANS_FLOW_OPEN = "<plans-flow>";
 
 const PLANS_FLOW_COMMON = [
-  "Persisted plans flow (plans.db is the plan record; markdown files under ~/.opencode/plan are scratch):",
+  "Persisted plans flow (plans.db is the plan record; this flow keeps no markdown copies):",
   "- Saving is expected, not optional: when you present a final plan with no blocking question, call plans.save in the same turn. Never wait for the user to ask.",
   "- Save at most one plan per request: if this request already saved one, update it with plans.update instead of saving another.",
   "- The plans.save result already lists the step ids; do not call plans.get just to confirm.",
@@ -48,6 +48,7 @@ const PLANS_FLOW_COMMON = [
 
 export const PLANNER_FLOW = [
   "Role: planner.",
+  "- File edits are denied in this flow for every path, including ~/.opencode/plan: edit, write and patch fail. The plan record is plans.db.",
   "- The Plan-mode reminder above still governs: implement nothing and tell the user to switch to the Executor agent (or to run the plan from the Plans panel).",
   "- When the user states requirements, keep them in the plan under construction: add steps or amend it.",
 ].join("\n");

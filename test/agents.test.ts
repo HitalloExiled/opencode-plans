@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { join } from "node:path";
 import {
   AGENTS,
   EXECUTOR_AGENT,
@@ -7,19 +6,18 @@ import {
   registerAgents,
   type AgentPermission,
 } from "../src/agents";
-import { PLAN_DIR } from "../src/plan-reminder";
 
 // The runtime's own definitions, read from `GET /api/agent` and the core
-// plugins (`packages/core/src/plugin/plan.ts`, `plugin/agent.ts`).
+// plugins (`packages/core/src/plugin/plan.ts`, `plugin/agent.ts`), minus
+// Plan's `~/.opencode/plan/*` exception: this plugin has no markdown to allow.
 const PLAN_RULES: readonly AgentPermission[] = [
   { action: "question", resource: "*", effect: "allow" },
   { action: "edit", resource: "*", effect: "deny" },
-  { action: "edit", resource: join(PLAN_DIR, "*"), effect: "allow" },
 ];
 const BUILD_RULES: readonly AgentPermission[] = [{ action: "question", resource: "*", effect: "allow" }];
 
 describe("planner agent", () => {
-  test("clones Plan: same description, no system, same rules", () => {
+  test("clones Plan: same description, no system, every edit denied", () => {
     expect(PLANNER_AGENT.id).toBe("planner");
     expect(PLANNER_AGENT.name).toBe("Planner");
     expect(PLANNER_AGENT.description).toBe(
@@ -80,7 +78,7 @@ describe("registerAgents", () => {
     // A previous plugin version may have left an extra rule behind.
     created.get("planner").permissions.push({ action: "edit", resource: "*", effect: "allow" });
     await registerAgents(ctx);
-    expect(created.get("planner").permissions).toHaveLength(3);
+    expect(created.get("planner").permissions).toHaveLength(2);
     expect(created.get("planner").permissions).toContainEqual({
       action: "edit",
       resource: "*",

@@ -111,6 +111,12 @@ describe("plans-flow extension", () => {
 
   test("the planner keeps Plan mode and the executor reads the plan", () => {
     expect(PLANNER_FLOW).toContain("switch to the Executor agent");
+    // The clone drops Plan's plan-directory exception, so the flow must say
+    // that every edit fails instead of inviting a markdown write.
+    expect(PLANNER_FLOW).toContain("File edits are denied");
+    expect(PLANNER_FLOW).toContain("~/.opencode/plan");
+    expect(PLANNER_FLOW).toContain("plans.db");
+    expect(plansFlowBlock("planner")).not.toContain("are scratch");
     expect(EXECUTOR_FLOW).toContain("plans.get");
     expect(EXECUTOR_FLOW).toContain("doing");
     expect(EXECUTOR_FLOW).toContain("done");

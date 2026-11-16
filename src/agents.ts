@@ -1,5 +1,5 @@
 /**
- * The plugin's own agents, cloned from the runtime's Plan and Build.
+ * The plugin's own agents: Plan and Build, replicated by behavior.
  *
  * Plan and Build carry no `system`. What makes Plan read-only is its permission
  * set plus the reminder the core injects on every request; Build is the same
@@ -7,14 +7,16 @@
  * prompt of our own — keeps what the model sees identical, which is the only
  * way the dedicated flow can behave like the native one.
  *
+ * One deliberate deviation: the planner drops Plan's `~/.opencode/plan/*`
+ * exception. This plugin's plan record lives in `plans.db`, so there is no
+ * markdown to allow and every edit stays denied.
+ *
  * `ctx.agent.transform(editor => editor.update(id, fn))` **upserts**: the
  * runtime creates the agent when the id does not exist, so no `add` is needed.
  */
 
 import type { Plugin } from "@opencode/plugin";
 import { Agent } from "@opencode/schema/agent";
-import { join } from "node:path";
-import { PLAN_DIR } from "./plan-reminder.js";
 
 export type AgentPermission = {
   action: string;
@@ -29,11 +31,16 @@ export type AgentSpec = {
   permissions: readonly AgentPermission[];
 };
 
-/** Plan's own rules (`packages/core/src/plugin/plan.ts`). */
+/**
+ * Plan's permission set, minus its plan-directory exception.
+ *
+ * The plugin keeps the plan record in `plans.db`, so there is no markdown file
+ * to allow: every edit path stays denied. `edit`, `write` and `patch` are all
+ * checked against the `edit` action.
+ */
 const PLAN_PERMISSIONS: readonly AgentPermission[] = [
   { action: "question", resource: "*", effect: "allow" },
   { action: "edit", resource: "*", effect: "deny" },
-  { action: "edit", resource: join(PLAN_DIR, "*"), effect: "allow" },
 ];
 
 /** Build's own rules (`packages/core/src/plugin/agent.ts`); editing stays open. */

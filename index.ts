@@ -28,7 +28,7 @@ import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, listTool, saveTool, u
 import { registerAgents } from "./src/agents.js";
 import { getFlow } from "./src/flow.js";
 import { planMessageAgents } from "./src/flow-rules.js";
-import { applyPlanReminder, PLAN_DIR } from "./src/plan-reminder.js";
+import { applyPlanReminder } from "./src/plan-reminder.js";
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
 import { onPlanChange } from "./src/plan-events.js";
@@ -156,9 +156,13 @@ function isPermissionBlocked(error: unknown): boolean {
 }
 
 /**
- * Replica of Plan's `tool.hook`: a denied edit outside the plan directory gets
- * the same actionable message the native Plan produces. Dedicated flow only;
- * the core already handles the native Plan.
+ * Plan's `tool.hook` shape, kept as a safety net.
+ *
+ * With `edit * deny` and no allow rule the runtime hides edit/write/patch from
+ * the planner's catalog (`whollyDisabled`), so no call reaches this hook today;
+ * it fires again if a path is ever re-allowed. The message is flow-accurate:
+ * "outside the Plan directory" would be false for every path. Dedicated flow
+ * only; the core already handles the native Plan.
  */
 async function registerPlanToolHook(ctx: Ctx) {
   return ctx.tool.hook("execute.after", (event) => {
@@ -168,7 +172,7 @@ async function registerPlanToolHook(ctx: Ctx) {
     if (!PLAN_EDIT_TOOLS.has(event.tool)) return;
     if (!isPermissionBlocked(event.error.error)) return;
     event.error = new Tool.Error({
-      message: `Cannot use ${event.tool} to modify files outside the Plan directory: ${PLAN_DIR}`,
+      message: `Cannot use ${event.tool} to modify files: the plans flow is read-only; save the plan with plans.save.`,
     });
   });
 }

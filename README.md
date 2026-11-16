@@ -58,14 +58,15 @@ e o `npm run gui:build`).
    exatamente como antes; **Dedicado** usa os agentes próprios. A escolha fica
    em `flow.json`, ao lado do `plans.db`, e vale para a instalação.
 2. **Dois agentes próprios** (fluxo dedicado), **clones por comportamento** do
-   Plan e do Build: mesmas permissões, mesmas descrições, **sem system**. O
-   **Planner** recebe o mesmo reminder que o core injeta no Plan (antes do
-   prompt, inclusive depois de compactação) e o mesmo erro para edição fora de
-   `~/.opencode/plan`; o **Executor** edita e roda como o Build. Por cima do
-   clone, um bloco `<plans-flow>` na cauda pede para salvar o plano no mesmo
-   turno (`plans.save`, um por pedido) e marcar progresso (`plans.update`,
-   `doing` -> `done`). O Executar do painel troca a sessão para o Executor;
-   pausar volta ao Planner.
+   Plan e do Build: mesmas descrições, **sem system**. O **Executor** edita e
+   roda como o Build. O **Planner** é o Plan **sem a exceção do diretório de
+   planos**: toda edição é negada e as ferramentas `edit`/`write`/`patch` nem
+   aparecem no catálogo — o plano vive no `plans.db`. Ele recebe o mesmo
+   reminder que o core injeta no Plan, antes do prompt e inclusive depois de
+   compactação. Por cima do clone, um bloco `<plans-flow>` na cauda pede para
+   salvar o plano no mesmo turno (`plans.save`, um por pedido) e marcar
+   progresso (`plans.update`, `doing` -> `done`). O Executar do painel troca a
+   sessão para o Executor; pausar volta ao Planner.
 3. **Persiste um plano** (`plans.save`) com título, Markdown, passos e vínculo
    ao projeto/sessão. O `plans.save` aceita `id` para **substituir o
    texto/estrutura** de um plano existente: isso recria os passos e reinicia

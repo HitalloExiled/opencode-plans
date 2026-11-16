@@ -96,15 +96,23 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   name alone; read the flow.
 - **`planner` is Plan and `executor` is Build, replicated by behavior.** Both
   live in `src/agents.ts` (registered with `ctx.agent.transform`; `update`
-  upserts). They copy the native descriptions and permission sets — `planner`:
-  `edit * deny` + `edit ~/.opencode/plan/* allow`; `executor`: editing open —
-  and carry **no `system`**. Shell stays allowed on the planner, exactly like
-  Plan: read-only is an instruction, not a permission, so a shell redirect can
-  still write. `src/plan-reminder.ts` replicates the core's `enter`/`leave`
-  text byte for byte and splices it before the user's prompt on every request
-  (also after a compaction); `index.ts` replicates Plan's `tool.hook` so a
-  denied `edit`/`write`/`patch` reports `Cannot use <tool> to modify files
-  outside the Plan directory: <dir>`.
+  upserts). They copy the native descriptions and carry **no `system`**.
+  `executor` keeps Build's rules (editing open). `planner` keeps Plan's
+  **minus the `~/.opencode/plan/*` exception**: only `edit * deny`. The plan
+  record is `plans.db`, so there is no markdown to allow. With no allow rule
+  the runtime's `whollyDisabled` hides `edit`/`write`/`patch` from the
+  planner's catalog entirely — stronger than a denial, and the reason the tool
+  hook below is a safety net rather than a live path. Shell stays allowed on
+  the planner, exactly like Plan: read-only is an instruction for shell, not a
+  permission, so a redirect can still write.
+- **The reminder is replicated byte for byte, and the hook keeps a sane
+  message.** `src/plan-reminder.ts` mirrors the core's `enter`/`leave` text and
+  splices it before the user's prompt on every request (also after a
+  compaction). `index.ts` keeps Plan's `tool.hook` shape for
+  `edit`/`write`/`patch` denials, but with a flow-accurate message:
+  `Cannot use <tool> to modify files: the plans flow is read-only; save the
+  plan with plans.save.` ("outside the Plan directory" would be false for every
+  path.)
 - **The reminder is spliced, never persisted.** The text is byte-identical to
   the core's, so a synthetic copy would be indistinguishable from Plan's own
   reminder; the core's reconciler would then treat it as stale for any agent
