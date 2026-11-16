@@ -310,11 +310,27 @@ async function executeItem(ctx: Ctx, db: Db, run: RunRow, item: RunItemRow): Pro
   const added = await addWorktree({ repo, worktree, branch, startRef: tip });
   if (!added.ok) throw new Error(`worktree: ${added.error}`);
 
+  // A cancel may land during the git work: the item is closed, so undo quietly.
+  const stillRunning = (): boolean =>
+    controllers.get(run.id)?.cancelled !== true &&
+    getRun(db, run.id)?.status === "running" &&
+    getRunItem(db, run.id, item.work_item_id)?.status === "running";
+
+  if (!stillRunning()) {
+    await removeWorktree(repo, worktree, true).catch(() => undefined);
+    return;
+  }
+
   const session = await ctx.session.create({
     agent: runAgent(getFlow()),
     title: `Run: ${detail.title}`,
     location: { directory: worktree },
   });
+
+  if (!stillRunning()) {
+    await ctx.session.interrupt({ sessionID: session.id }).catch(() => undefined);
+    return;
+  }
 
   setRunItemStatus(db, {
     runID: run.id,
@@ -332,8 +348,14 @@ async function executeItem(ctx: Ctx, db: Db, run: RunRow, item: RunItemRow): Pro
   });
   await ctx.session.wait({ sessionID: session.id });
 
+  // A cancel (or a finished run) may land while the turn was in flight: the
+  // item was already closed by cancelProjectRun, so touch nothing.
   const controller = controllers.get(run.id);
-  if (controller?.cancelled) return;
+  const currentRun = getRun(db, run.id);
+  const currentItem = getRunItem(db, run.id, item.work_item_id);
+  if (controller?.cancelled || currentRun?.status !== "running" || currentItem?.status !== "running") {
+    return;
+  }
 
   const after = getPlan(db, plan.id);
   if (after?.status === "done") {

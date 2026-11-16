@@ -222,6 +222,52 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   back to `plan`; a new Execute resumes from the current steps. It is not a
   server tool.
 
+## Project runs (F4)
+
+The run layer executes a whole project, not one item. Files:
+
+- `src/store.ts` — schema v6: `runs`, `run_items`, `merge_queue`,
+  `plan_touches`, plus `projects.base_branch/max_parallel/verify_command`.
+  One active run per project (partial unique index); `claimNextMerge` is the
+  single transactional FIFO claim; `stopMergeQueue` is the failure brake.
+- `src/run-scheduler.ts` — pure: `scheduleRun` (gate on `merged`, maxParallel,
+  transitive skip), `summarizeRun`.
+- `src/run-paths.ts` — worktrees under `<plans.db dir>/worktrees/<run>/`
+  (`integration`, `items/<item>`), branches `run/<run>` and `wi/<item>`.
+- `src/git.ts` — shell-free git: worktrees, branches, diff names, ancestor.
+- `src/run-engine.ts` — `preflightRun`, `startProjectRun`, `pump`,
+  `executeItem`, `cancelProjectRun`, `retryRunItem`, `resumeAfterMerge`,
+  `recoverRuns`.
+- `src/merge-session.ts` — one merge session per run, created lazily in the
+  integration worktree and woken with a queued prompt.
+- `merge.ts` — the `merge` namespace (`list/next/done/fail`), bound to the run
+  through `runs.merge_session_id`.
+
+Invariants:
+
+- **The base branch is never touched.** Items accumulate as `wi/<item>`
+  branches; the engine enqueues and only the merge session writes `run/<id>`.
+- **One merge at a time.** `merge.next` claims FIFO and refuses while another
+  entry is `merging`; `merge.done` demands `merge-base --is-ancestor` of the
+  item branch against the integration HEAD.
+- **The gate is integration.** A dependent only starts when its dependency is
+  `merged`, not merely executed.
+- **Cancellation wins races.** `executeItem` re-checks the run/item status
+  after every await; a cancel that lands mid-git or mid-session must not be
+  overwritten.
+- **No auto-resume.** `recoverRuns` (plugin setup) marks `running` runs
+  `interrupted` and returns in-flight merges/items to the queue.
+- **Footprint is conservative.** Exact-vs-glob is matched; two globs overlap
+  when their literal prefixes are compatible; an empty footprint conflicts with
+  everything. Over-serializing is safe, parallel writers are not.
+
+Test map: `test/runs.test.ts` (store), `test/run-scheduler.test.ts` (pure
+decisions), `test/work-footprint.test.ts` + `test/run-footprint.test.ts`
+(matching and recompute), `test/run-preflight.test.ts` (preflight, paths,
+recovery), `test/merge-tools.test.ts` (claim, ancestor guard, failure),
+`test/run-e2e.test.ts` (parallel items, implicit chain, resolved conflict,
+failed merge, cancel) with a fake agent over real repositories.
+
 ## Manual UI checklist (agent flow)
 
 The renderer owns Execute/Pause (`runPlan`, the pause path); no API call drives

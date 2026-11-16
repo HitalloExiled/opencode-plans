@@ -44,7 +44,7 @@ const {
   stopMergeQueue,
   workItemDeps,
 } = store;
-const { resumeAfterMerge, startProjectRun, runPaths } = await import("../src/run-engine");
+const { cancelProjectRun, resumeAfterMerge, startProjectRun, runPaths } = await import("../src/run-engine");
 const { currentSha, git } = await import("../src/git");
 
 const sh = (cwd: string, ...args: string[]) =>
@@ -75,8 +75,11 @@ function fakeAgent(input: {
   failMerge: Set<string>;
   /** Items that also edit the shared file. */
   shared: Set<string>;
+  /** Leave executor turns pending until interrupted (cancel test). */
+  hang?: boolean;
 }) {
   const sessions = new Map<string, { kind: "item" | "merge"; itemID?: string; worktree: string }>();
+  const pending = new Map<string, () => void>();
   let series = 0;
 
   const commit = (worktree: string, name: string, content: string) => {
@@ -159,6 +162,10 @@ function fakeAgent(input: {
         const meta = sessions.get(request.sessionID);
         if (!meta) return;
         if (meta.kind === "item" && meta.itemID) {
+          if (input.hang) {
+            await new Promise<void>((resolve) => pending.set(request.sessionID, resolve));
+            return;
+          }
           executorTurn(meta.itemID, meta.worktree);
           return;
         }
@@ -168,8 +175,9 @@ function fakeAgent(input: {
       async wait() {
         return undefined;
       },
-      async interrupt() {
-        return undefined;
+      async interrupt(request: { sessionID: string }) {
+        pending.get(request.sessionID)?.();
+        pending.delete(request.sessionID);
       },
     },
   };
@@ -265,6 +273,36 @@ describe("run engine end to end", () => {
 
     // Item worktrees are disposable and get cleaned up.
     expect(existsSync(runPaths(started.runID).item(a))).toBe(false);
+  }, 20_000);
+
+  test("cancel interrupts an in-flight run and closes its items", async () => {
+    const db = open();
+    const dir = repo();
+    const project = setupRun(db, dir);
+    makeItem(db, project.id, "Slow", ["src/slow/**"]);
+
+    const { ctx } = fakeAgent({
+      db,
+      failExecution: new Set(),
+      failMerge: new Set(),
+      shared: new Set(),
+      hang: true,
+    });
+    const started = await startProjectRun(ctx as never, db, { projectID: project.id, directory: dir });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+
+    expect(
+      await waitFor(() => listRunItems(db, started.runID).some((item) => item.status === "running")),
+    ).toBe(true);
+
+    const cancelled = await cancelProjectRun(ctx as never, db, started.runID);
+    expect(cancelled.ok).toBe(true);
+    // Let the interrupted turn resume: it must not overwrite the cancel.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(getRun(db, started.runID)?.status).toBe("cancelled");
+    expect(listRunItems(db, started.runID).map((item) => item.status)).toEqual(["skipped"]);
   }, 20_000);
 
   test("a failed merge fails the run and skips its dependents, base intact", async () => {

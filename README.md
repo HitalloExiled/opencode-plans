@@ -201,6 +201,32 @@ interativa e o body é exibido sem o checklist extraído.
 - O Plan agent é instruído a chamar `plans.save` ao apresentar o plano final;
   a tool só escreve no `plans.db`, nunca no repositório.
 
+## Work items e execução de projeto (F4)
+
+- **Backlog** (`work.*`): `work.list`/`work.get` leem o projeto resolvido pelo
+  diretório (corpo do item em `<work-item-body>`, tratado como dado) e
+  `work.save`/`work.update` escrevem — no máximo **3 itens por pedido**, dedupe
+  por título normalizado + pai + status não-terminal, `origin=agent`; fechar
+  (`done`/`dropped`) só com o planner ou o usuário.
+- **Superfície Trabalho** (overlay): lista e quadro por status, filtros e, com
+  um projeto selecionado, **Executar projeto**.
+- **Run**: o pré-voo exige repo git, `base_ref`, nenhum run ativo, itens `ready`
+  com plano `active` e grafo acíclico. O run cria `run/<id>` (integração) e, por
+  item, um worktree + branch `wi/<item>` a partir do **tip da integração**; a
+  sessão do executor roda nesse diretório e o plano é a fonte da verdade.
+- **Fila de merge**: item concluído é **enfileirado**, nunca mergeado pelo
+  engine. Uma **sessão única** (worktree de integração) drena com
+  `merge.list/next/done/fail`: claim FIFO com um `merging` por vez,
+  `merge.done` confere `merge-base --is-ancestor` e grava o SHA; `merge.fail`
+  para a fila e deixa o run falhar. A **base nunca muda**; dependentes só
+  começam quando a dependência está `merged`.
+- **Dependências implícitas**: `plans.save` aceita `touches` (arquivos/globs);
+  interseção vira aresta `kind='implicit'` na direção determinística
+  (rank → created_at → id); footprint vazio conflita com tudo e serializa.
+- **Cancelar/retry/restart**: cancelar interrompe as sessões e fecha os itens;
+  retry recria a branch do tip; ao subir, runs `running` viram `interrupted` e
+  merges em voo voltam para `queued` (sem retomada automática).
+
 ## Dados
 
 ```
@@ -208,13 +234,19 @@ interativa e o body é exibido sem o checklist extraído.
 $PLANS_DB                                # override (testes/isolamento)
 ```
 
-Schema (v2):
+Schema (v6):
 
 - `plans` — id, project_id, project_directory, session_id, message_id, title,
   body (template com `<!-- plans:steps -->`), status, created_at, updated_at,
-  completed_at.
+  completed_at, work_item_id.
 - `plan_steps` — plan_id, position, step_id, text, status
   (`todo` | `doing` | `done`).
+- `plan_touches` — plan_id, path (footprint declarado).
+- `projects` / `project_locations` — projeto do usuário (N workspaces) e
+  `base_branch`, `max_parallel`, `verify_command`.
+- `work_items`, `work_item_deps` (kind/reason) — necessidades, hierarquia,
+  ordem e dependências explícitas/implícitas.
+- `runs`, `run_items`, `merge_queue` — execução de projeto (F4).
 
 O banco é criado no primeiro uso; as migrações são idempotentes e controladas
 por `PRAGMA user_version`. Nada de `*.db` no repositório.
