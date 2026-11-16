@@ -87,7 +87,7 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   load-bearing sentence first; parameter descriptions stay ≤6 words.
   `test/inject.test.ts` enforces all three (`plans.save` keeps the Plan-mode
   permission, `plans.update` the call shape).
-- **Two agent flows, toggled in the GUI and stored server-side.** `flow.json`
+- **Two agent flows, toggled by the "Experimental agents flow" switch in the GUI and stored server-side.** `flow.json`
   next to `plans.db` (RPC `getFlow`/`setFlow`, cached in memory) holds
   `native` (default) or `dedicated`. `native` reproduces the pre-agents
   behavior exactly (commit fb70c25): the routing rule on every agent,

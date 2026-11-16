@@ -1127,24 +1127,11 @@ export function PlansBody(props: { target: () => PlansTarget }) {
             </span>
           </div>
           <div class="plans-actions">
-            <div class="plans-toggles" role="group" aria-label={t("flow.label")}>
-              <button
-                type="button"
-                class="plans-toggle"
-                classList={{ "is-active": flow() === "native" }}
-                onClick={() => void changeFlow("native")}
-              >
-                {t("flow.native")}
-              </button>
-              <button
-                type="button"
-                class="plans-toggle"
-                classList={{ "is-active": flow() === "dedicated" }}
-                onClick={() => void changeFlow("dedicated")}
-              >
-                {t("flow.dedicated")}
-              </button>
-            </div>
+            <ctx.ui.Switch
+              checked={flow() === "dedicated"}
+              label={t("flow.experimental")}
+              onChange={(checked) => void changeFlow(checked ? "dedicated" : "native")}
+            />
             <Show when={!detached()}>
               <ctx.ui.Button
                 size="small"
