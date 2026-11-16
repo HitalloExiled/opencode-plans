@@ -140,8 +140,14 @@ function clip(text: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
-/** Compact view of the session plan: title, progress, id and pending steps. */
-export function renderPlanContext(plan: Plan | undefined): string {
+/**
+ * Compact view of the session plan: title, progress, id, the work item it
+ * serves and the pending steps.
+ */
+export function renderPlanContext(
+  plan: Plan | undefined,
+  workItem?: { id: string; title: string } | undefined,
+): string {
   if (!plan) return "";
   const { done, doing, total } = planProgress(plan);
   const progress = doing > 0 ? `${done}/${total}, ${doing} doing` : `${done}/${total}`;
@@ -151,6 +157,7 @@ export function renderPlanContext(plan: Plan | undefined): string {
     `- [${plan.status}] ${plan.title} (${progress})`,
     `id: ${plan.id}`,
   ];
+  if (workItem) lines.push(`item: ${clip(workItem.title, MAX_STEP_TEXT)} (${workItem.id})`);
 
   const pending = plan.steps.filter((step) => step.status !== "done");
   // The step in progress comes first: it is where the agent stopped.

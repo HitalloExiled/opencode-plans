@@ -182,6 +182,8 @@ const EN = {
   "toast.executeError": "Could not start the plan",
   "execute.prompt":
     'Execute or resume the plan "{0}" (id: {1}) from where it is. If the plan is not already in the conversation, read it with plans.get; otherwise use the text and step ids you already have. Do the remaining steps and mark each with plans.update ("doing" then "done"). The plan is the source of truth: do not replan or rewrite the body. When every step is done and nothing is blocked, do not close the work item: summarize the result and say it is ready for acceptance; the item stays doing, since done and dropped are the user\'s call.',
+  "execute.promptItem":
+    'Execute or resume the plan "{0}" (id: {1}), which serves the work item "{2}" (id: {3}), from where it is. If the plan is not already in the conversation, read it with plans.get; otherwise use the text and step ids you already have. Do the remaining steps and mark each with plans.update ("doing" then "done"). The plan is the source of truth: do not replan or rewrite the body. When every step is done and nothing is blocked, do not close the work item: summarize the result and say it is ready for acceptance; the item stays doing, since done and dropped are the user\'s call.',
   "execute.pill": "Run plan",
   "execute.pillTitle": 'Run the plan "{0}"',
   "toast.pausing": "Pausing plan…",
@@ -371,6 +373,8 @@ const PT: Record<keyof typeof EN, string> = {
   "toast.executeError": "Não foi possível iniciar o plano",
   "execute.prompt":
     'Execute ou retome o plano "{0}" (id: {1}) do ponto atual. Se o plano ainda não estiver na conversa, leia com plans.get; caso contrário, use o texto e os IDs que você já tem. Faça os passos restantes e marque cada um com plans.update ("doing" e depois "done"). O plano é a fonte da verdade: não replaneje nem reescreva o body. Quando todos os passos estiverem concluídos e nada estiver bloqueado, não feche o work item: resuma o resultado e diga que está pronto para aceite; o item continua doing, porque done e dropped são decisão do usuário.',
+  "execute.promptItem":
+    'Execute ou retome o plano "{0}" (id: {1}), que atende ao work item "{2}" (id: {3}), do ponto atual. Se o plano ainda não estiver na conversa, leia com plans.get; caso contrário, use o texto e os IDs que você já tem. Faça os passos restantes e marque cada um com plans.update ("doing" e depois "done"). O plano é a fonte da verdade: não replaneje nem reescreva o body. Quando todos os passos estiverem concluídos e nada estiver bloqueado, não feche o work item: resuma o resultado e diga que está pronto para aceite; o item continua doing, porque done e dropped são decisão do usuário.',
   "execute.pill": "Executar plano",
   "execute.pillTitle": 'Executar o plano "{0}"',
   "toast.pausing": "Pausando plano…",

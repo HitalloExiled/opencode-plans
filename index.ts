@@ -37,7 +37,15 @@ import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
 import { emitPlanChange, onPlanChange } from "./src/plan-events.js";
 import { createRpcHandlers } from "./src/rpc.js";
-import { listPlans, listWorkItems, planProgress, requireStore, resolveProject, savePlan } from "./src/store.js";
+import {
+  getWorkItem,
+  listPlans,
+  listWorkItems,
+  planProgress,
+  requireStore,
+  resolveProject,
+  savePlan,
+} from "./src/store.js";
 import { captureWorkItem } from "./src/work-capture.js";
 
 type Ctx = Plugin.Context;
@@ -331,7 +339,11 @@ async function onContext(ctx: Ctx, event: SessionContext) {
 
     const sessionPlan = plans.find((plan) => plan.session_id === sessionID) ?? plans[0];
     if (!sessionPlan) return;
-    const text = renderPlanContext(sessionPlan);
+    const linked = sessionPlan.work_item_id ? getWorkItem(store.db, sessionPlan.work_item_id) : undefined;
+    const text = renderPlanContext(
+      sessionPlan,
+      linked ? { id: linked.id, title: linked.title } : undefined,
+    );
     if (text) appendTailBlock(messages, text);
   } catch (error) {
     console.error(`[plans] context injection failed: ${errorText(error)}`);

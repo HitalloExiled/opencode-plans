@@ -235,6 +235,19 @@ describe("renderPlanContext", () => {
     expect(text.indexOf("(s3)")).toBeLessThan(text.indexOf("(s2)"));
   });
 
+  test("names the work item the plan serves", () => {
+    const text = renderPlanContext(planWith([step("s1", "one", "todo", 0)]), {
+      id: "item-1",
+      title: "Ship the backlog",
+    });
+    expect(text).toContain("item: Ship the backlog (item-1)");
+  });
+
+  test("has no item line when the plan serves none", () => {
+    expect(renderPlanContext(planWith([step("s1", "one", "todo", 0)]))).not.toContain("item:");
+    expect(renderPlanContext(undefined, { id: "item-1", title: "x" })).toBe("");
+  });
+
   test("caps pending steps at eight", () => {
     const steps = Array.from({ length: 12 }, (_, index) =>
       step(`s${index + 1}`, `step ${index + 1}`, "todo", index),

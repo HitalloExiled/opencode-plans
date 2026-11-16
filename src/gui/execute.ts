@@ -59,6 +59,15 @@ export async function runPlan(input: {
     moved = true;
   }
 
+  // The work item names the need the plan serves; a missing item (deleted or
+  // unlinked) simply falls back to the plan-only prompt.
+  const detail = current.workItemID
+    ? await target.client
+        .rpc(PlansRpc)
+        .getWorkItem({ id: current.workItemID })
+        .catch(() => null)
+    : null;
+
   // The flow setting picks the agent (one tested mapping, `runAgent`).
   const flow = await target.client.rpc(PlansRpc).getFlow({});
   await target.client.session.switchAgent({
@@ -67,7 +76,9 @@ export async function runPlan(input: {
   });
   await target.client.session.prompt({
     sessionID: target.sessionID,
-    text: t("execute.prompt", current.title, current.id),
+    text: detail
+      ? t("execute.promptItem", current.title, current.id, detail.item.title, detail.item.id)
+      : t("execute.prompt", current.title, current.id),
   });
 
   return { plan: current, moved };
