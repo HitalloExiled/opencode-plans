@@ -814,9 +814,12 @@ function reason(error: unknown): string {
 }
 
 /** Absolute path, no trailing slash (the root stays "/"). */
+/** Absolute path, no trailing slash; the root stays "/", empty stays empty. */
 export function normalizeWorkspaceDirectory(directory: string): string {
-  const trimmed = directory.trim().replace(/\/+$/, "");
-  return trimmed || "/";
+  const trimmed = directory.trim();
+  if (!trimmed) return "";
+  const stripped = trimmed.replace(/\/+$/, "");
+  return stripped || "/";
 }
 
 type LocationRow = {
@@ -1132,4 +1135,48 @@ export function resolveProject(db: Db, directory: string): ProjectResolution | u
   const project = getProject(db, chosen.project_id);
   if (!project) return undefined;
   return { project, location: locationFrom(chosen), match: exact ? "exact" : "ancestor" };
+}
+
+/** A readable project name for an auto-created container. */
+export function projectNameForDirectory(directory: string): string {
+  return basename(normalizeWorkspaceDirectory(directory)) || "Workspace";
+}
+
+export type EnsureProjectResult =
+  | { ok: true; project: Project; location: ProjectLocationRow; created: boolean }
+  | WorkStoreError;
+
+/**
+ * The project for a session workspace, created on first use. A subdirectory of
+ * an existing workspace reuses that project; the creation is idempotent and
+ * the UNIQUE(directory) index is the final guard against two writers.
+ */
+export function ensureProjectForDirectory(db: Db, input: string): EnsureProjectResult {
+  const directory = normalizeWorkspaceDirectory(input);
+  if (!directory) return { ok: false, error: "o diretório do workspace é obrigatório" };
+  if (!isAbsolute(directory)) {
+    return { ok: false, error: `o workspace precisa de um caminho absoluto: ${directory}` };
+  }
+
+  const resolved = resolveProject(db, directory);
+  if (resolved) {
+    return { ok: true, project: resolved.project, location: resolved.location, created: false };
+  }
+
+  const created = createProject(db, {
+    name: projectNameForDirectory(directory),
+    locations: [{ directory }],
+  });
+  if (created.ok) {
+    const location = created.project.locations[0];
+    if (!location) return { ok: false, error: "workspace não encontrado após a criação" };
+    return { ok: true, project: created.project, location, created: true };
+  }
+
+  // Another writer may have won the race between the resolve and the insert.
+  const raced = resolveProject(db, directory);
+  if (raced) {
+    return { ok: true, project: raced.project, location: raced.location, created: false };
+  }
+  return created;
 }
