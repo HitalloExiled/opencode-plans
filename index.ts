@@ -38,6 +38,7 @@ import { notificationLocale, tn, type NotificationLocale } from "./src/notificat
 import { emitPlanChange, onPlanChange } from "./src/plan-events.js";
 import { createRpcHandlers } from "./src/rpc.js";
 import {
+  getPlanByWorkItem,
   getWorkItem,
   listPlans,
   listWorkItems,
@@ -45,6 +46,7 @@ import {
   requireStore,
   resolveProject,
   savePlan,
+  type Store,
 } from "./src/store.js";
 import { captureWorkItem } from "./src/work-capture.js";
 
@@ -245,6 +247,19 @@ async function registerPlanToolHook(ctx: Ctx) {
   });
 }
 
+/** The tail list for the session's project: open items and their plans. */
+function workItemsText(store: Store, directory: string): string | undefined {
+  const resolved = resolveProject(store.db, directory);
+  if (!resolved) return undefined;
+  const items = listWorkItems(store.db, resolved.project.id);
+  const plans = new Map<string, NonNullable<ReturnType<typeof getPlanByWorkItem>>>();
+  for (const item of items) {
+    const plan = getPlanByWorkItem(store.db, item.id);
+    if (plan) plans.set(item.id, plan);
+  }
+  return renderWorkItemsContext(items, resolved.project.name, plans) || undefined;
+}
+
 /**
  * Two layers, one cache rule: the routing rule is constant and re-pushed on
  * every request, so the head of the prompt stays byte-identical; the plan
@@ -265,14 +280,8 @@ async function onContext(ctx: Ctx, event: SessionContext) {
   try {
     if (!EXECUTING_AGENTS.has(agent)) {
       const store = await requireStore();
-      const resolved = resolveProject(store.db, projectDirectory(ctx));
-      if (resolved) {
-        const text = renderWorkItemsContext(
-          listWorkItems(store.db, resolved.project.id),
-          resolved.project.name,
-        );
-        if (text) appendWorkItemsBlock(event.messages as InjectMessage[], text);
-      }
+      const text = workItemsText(store, projectDirectory(ctx));
+      if (text) appendWorkItemsBlock(event.messages as InjectMessage[], text);
     }
   } catch (error) {
     console.error(`[plans] work items injection failed: ${errorText(error)}`);
@@ -320,14 +329,8 @@ async function onContext(ctx: Ctx, event: SessionContext) {
 
     // After a compaction the list may be gone from the conversation; the
     // executor included, this is where it comes back.
-    const resolved = resolveProject(store.db, projectDirectory(ctx));
-    if (resolved) {
-      const itemsText = renderWorkItemsContext(
-        listWorkItems(store.db, resolved.project.id),
-        resolved.project.name,
-      );
-      if (itemsText) appendTailBlock(messages, itemsText, WORK_ITEMS_OPEN);
-    }
+    const itemsText = workItemsText(store, projectDirectory(ctx));
+    if (itemsText) appendTailBlock(messages, itemsText, WORK_ITEMS_OPEN);
 
     const plans = listPlans(store.db, {
       projectID: projectID(ctx),

@@ -354,6 +354,19 @@ describe("work items context", () => {
     expect(text).toContain("project \"App\"");
   });
 
+  test("shows the plan status and progress of each item", () => {
+    const plans = new Map([
+      ["w0", planWith([step("s1", "one", "done", 0), step("s2", "two", "todo", 1)])],
+    ]);
+    const text = renderWorkItemsContext([workItem("w0", "doing")], "App", plans);
+    expect(text).toContain("- [doing] Need w0 (id=w0, plan=active 1/2)");
+  });
+
+  test("omits the plan when the item has none", () => {
+    const text = renderWorkItemsContext([workItem("w0", "backlog")], "App");
+    expect(text).toContain("- [backlog] Need w0 (id=w0)");
+  });
+
   test("returns nothing when every item is closed", () => {
     expect(renderWorkItemsContext([workItem("d", "done"), workItem("x", "dropped")], "App")).toBe("");
   });
