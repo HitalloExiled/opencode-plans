@@ -143,6 +143,16 @@ export type WorkOrigin = "user" | "agent";
 /** UI order of the status sections and board columns. */
 export const WORK_STATUS_ORDER = ["doing", "ready", "blocked", "backlog", "done", "dropped"] as const;
 
+/** Allowed status moves. Same-status is a no-op; anything else is rejected. */
+export const WORK_ITEM_TRANSITIONS: Record<WorkItemStatus, readonly WorkItemStatus[]> = {
+  backlog: ["ready", "dropped"],
+  ready: ["doing", "blocked", "backlog", "dropped"],
+  doing: ["done", "blocked", "ready", "dropped"],
+  blocked: ["ready", "doing", "dropped"],
+  done: ["ready"],
+  dropped: ["backlog", "ready"],
+};
+
 export type WorkItem = {
   id: string;
   projectID: string;
@@ -355,6 +365,11 @@ export const saveWorkItemInputSchema = Schema.Struct({
   body: optString,
 });
 
+export const setWorkItemStatusInputSchema = Schema.Struct({
+  id: Schema.String,
+  status: workStatusSchema,
+});
+
 export const listOptionsSchema = Schema.Struct({
   scope: Schema.optional(planScopeSchema),
   sessionID: optString,
@@ -518,6 +533,10 @@ export const PlansRpc = Rpc.define({
     },
     saveWorkItem: {
       input: Schema.toStandardSchemaV1(saveWorkItemInputSchema),
+      output: Schema.toStandardSchemaV1(workItemResultSchema),
+    },
+    setWorkItemStatus: {
+      input: Schema.toStandardSchemaV1(setWorkItemStatusInputSchema),
       output: Schema.toStandardSchemaV1(workItemResultSchema),
     },
   },

@@ -49,6 +49,7 @@ import {
   schemaVersion,
   setPrimaryLocation,
   setStep,
+  setWorkItemStatus as setStatusRow,
   updatePlan,
   updateWorkItem,
   type Plan as StorePlan,
@@ -458,6 +459,12 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         title: input.title,
         body: input.body,
       });
+      return result.ok ? { ok: true, item: toWorkItem(result.item) } : { ok: false, error: result.error };
+    },
+
+    setWorkItemStatus: async (input) => {
+      const store = await requireStore();
+      const result = setStatusRow(store.db, { id: input.id, status: input.status });
       return result.ok ? { ok: true, item: toWorkItem(result.item) } : { ok: false, error: result.error };
     },
   };

@@ -23,6 +23,7 @@ import {
 } from "opencode-shared/gui";
 import {
   PlansRpc,
+  WORK_ITEM_TRANSITIONS,
   WORK_STATUS_ORDER,
   type WorkGroup,
   type WorkItemDetail,
@@ -180,6 +181,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const [editTitle, setEditTitle] = createSignal("");
   const [editBody, setEditBody] = createSignal("");
   const [saving, setSaving] = createSignal(false);
+  const [statusSaving, setStatusSaving] = createSignal(false);
   const [newTitle, setNewTitle] = createSignal("");
   const [creating, setCreating] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
@@ -327,6 +329,26 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       })
       .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setSaving(false));
+  };
+
+  const changeStatus = (status: WorkItemStatus) => {
+    const id = selectedID();
+    if (!id || statusSaving()) return;
+    setStatusSaving(true);
+    setActionError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .setWorkItemStatus({ id, status }, rpcOptions())
+      .then((result) => {
+        if (!result.ok) {
+          setActionError(result.error ?? t("work.status.error"));
+          return;
+        }
+        setDetailReload((n) => n + 1);
+        setReload((n) => n + 1);
+      })
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setStatusSaving(false));
   };
 
   const createItem = () => {
@@ -487,6 +509,19 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                   <span>
                     {t("work.detail.project")}: {current().project.name}
                   </span>
+                  <ctx.ui.Menu
+                    trigger="button"
+                    icon="status"
+                    label={t("work.status.change")}
+                    disabled={statusSaving()}
+                    items={WORK_STATUS_ORDER.map((status) => ({
+                      label: t(statusLabelKey(status)),
+                      disabled:
+                        status === current().item.status ||
+                        !WORK_ITEM_TRANSITIONS[current().item.status].includes(status),
+                      onSelect: () => changeStatus(status),
+                    }))}
+                  />
                 </div>
 
                 <Show when={actionError()}>

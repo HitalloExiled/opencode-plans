@@ -16,6 +16,7 @@
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
+import { WORK_ITEM_TRANSITIONS } from "./gui/contract.js";
 
 import {
   buildTemplate,
@@ -1130,6 +1131,43 @@ export function createWorkItem(db: Db, input: CreateWorkItemInput): WorkItemOk |
 
 export function getWorkItem(db: Db, id: string): WorkItemRow | undefined {
   return db.prepare("SELECT * FROM work_items WHERE id = ?").get(id) as WorkItemRow | undefined;
+}
+
+export type SetWorkItemStatusInput = {
+  id: string;
+  status: WorkItemStatus;
+};
+
+/**
+ * Moves the item through the allowed status graph. `done`/`dropped` close it;
+ * any other status clears `closed_at`. Same status is a no-op.
+ */
+export function setWorkItemStatus(db: Db, input: SetWorkItemStatusInput): WorkItemOk | WorkStoreError {
+  const current = getWorkItem(db, input.id);
+  if (!current) return { ok: false, error: `work item não encontrado: ${input.id}` };
+  if (current.status === input.status) return { ok: true, item: current };
+
+  const allowed = WORK_ITEM_TRANSITIONS[current.status] ?? [];
+  if (!allowed.includes(input.status)) {
+    return { ok: false, error: `transição inválida: ${current.status} -> ${input.status}` };
+  }
+
+  const now = nowTimestamp();
+  const closedAt = input.status === "done" || input.status === "dropped" ? now : null;
+  try {
+    db.prepare("UPDATE work_items SET status = ?, updated_at = ?, closed_at = ? WHERE id = ?").run(
+      input.status,
+      now,
+      closedAt,
+      input.id,
+    );
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+
+  const item = getWorkItem(db, input.id);
+  if (!item) return { ok: false, error: "item não encontrado após a mudança de status" };
+  return { ok: true, item };
 }
 
 export type UpdateWorkItemInput = {
