@@ -65,6 +65,10 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   `PlansRpc.save` (editor) are the explicit entry points. The hint button only
   sends a user-message nudge asking the agent to call `plans.save`; it never
   captures the last message itself.
+- **The routing rule is skipped for our own agents.** `planner`/`executor`
+  carry the flow in their system prompt; pushing the constant rule there would
+  duplicate the save contract and mix in Plan-mode wording (`ownsRoutingRule`).
+  Native agents keep the rule.
 - **Injection is cache-first, in two layers.** The routing rule is constant and
   re-pushed VERBATIM on every request — never conditionally, never only on the
   first one: a shrinking head forces a full re-prefill of the conversation

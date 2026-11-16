@@ -24,6 +24,15 @@ export const PLANS_ROUTING_RULE = [
   '- Track progress with plans.update (stepID + stepStatus: "doing" then "done"); never rewrite the body to change status.',
 ].join("\n");
 
+/**
+ * The plugin's own agents carry the whole flow in their system prompt, so the
+ * constant routing rule is skipped for them: pushing it would duplicate the
+ * save contract and mix in Plan-mode wording that does not apply.
+ */
+export function ownsRoutingRule(agent: string | undefined): boolean {
+  return agent === "planner" || agent === "executor";
+}
+
 export const PLANS_CONTEXT_OPEN = "<plans-context>";
 export const PLANS_CONTEXT_CLOSE = "</plans-context>";
 

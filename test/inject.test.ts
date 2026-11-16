@@ -7,6 +7,7 @@ import {
   appendTailBlock,
   hasCompaction,
   hasPlanBlock,
+  ownsRoutingRule,
   PLANS_ROUTING_RULE,
   pushRoutingRule,
   renderPlanContext,
@@ -89,6 +90,19 @@ describe("routing rule", () => {
 
   test("keeps every stated requirement inside the plan under construction", () => {
     expect(PLANS_ROUTING_RULE).toContain("every requirement the user states belongs in the plan under construction");
+  });
+});
+
+describe("ownsRoutingRule", () => {
+  test("our own agents carry the flow in their system prompt", () => {
+    expect(ownsRoutingRule("planner")).toBe(true);
+    expect(ownsRoutingRule("executor")).toBe(true);
+  });
+
+  test("native agents and subagents keep the constant rule", () => {
+    expect(ownsRoutingRule("plan")).toBe(false);
+    expect(ownsRoutingRule("build")).toBe(false);
+    expect(ownsRoutingRule(undefined)).toBe(false);
   });
 });
 

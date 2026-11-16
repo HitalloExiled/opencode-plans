@@ -17,6 +17,7 @@ import { findLastPlanMessage, type SessionMessageLike } from "./src/capture.js";
 import {
   appendTailBlock,
   hasCompaction,
+  ownsRoutingRule,
   pushRoutingRule,
   renderPlanContext,
   type InjectMessage,
@@ -141,10 +142,13 @@ async function registerCommand(ctx: Ctx) {
  * plan text is no longer in the conversation.
  */
 async function onContext(ctx: Ctx, event: SessionContext) {
-  // Outside the try/catch: a broken database must not drop the rule.
-  pushRoutingRule(event.system);
+  const agent = String(event.agent);
+  // Outside the try/catch: a broken database must not drop the rule. Our own
+  // agents carry the flow in their system prompt, so the constant rule is
+  // skipped there instead of duplicating/conflicting with it.
+  if (!ownsRoutingRule(agent)) pushRoutingRule(event.system);
 
-  if (String(event.agent) === "plan") return;
+  if (agent === "plan") return;
   try {
     const messages = event.messages as InjectMessage[];
     const last = messages.at(-1);
