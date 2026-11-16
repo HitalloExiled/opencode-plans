@@ -37,6 +37,7 @@ import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
 import { emitPlanChange, onPlanChange } from "./src/plan-events.js";
 import { createRpcHandlers } from "./src/rpc.js";
+import { recoverRuns } from "./src/run-engine.js";
 import {
   getPlanByWorkItem,
   getWorkItem,
@@ -356,6 +357,15 @@ async function onContext(ctx: Ctx, event: SessionContext) {
 export default Plugin.define({
   id: "plans",
   async setup(ctx) {
+    // A run never resumes on its own: running -> interrupted, in-flight merges
+    // back to the queue. None of this blocks the plugin from loading.
+    try {
+      const store = await requireStore();
+      recoverRuns(store.db);
+    } catch (error) {
+      console.error(`[plans] could not recover runs: ${errorText(error)}`);
+    }
+
     // Registered first: tool and RPC writes publish through its `changed`
     // event, and the bus listener must exist before anything can write.
     const rpcRegistration = await ctx.rpc.register(PlansRpc, createRpcHandlers(ctx));

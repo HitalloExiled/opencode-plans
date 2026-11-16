@@ -42,6 +42,8 @@ const EN: Record<string, string> = {
   "work.project": "project: {0}",
   "work.id": "id: {0}",
   "work.failed": "Failed to create the work item: {0}",
+  "run.item.prompt":
+    'Execute the plan "{0}" (id: {1}) for the work item "{2}" (id: {3}) in this worktree. Read it with plans.get, do the steps and mark them with plans.update ("doing" then "done"). Do not switch branches or merge: the run integrates through the merge queue. When every step is done and nothing is blocked, summarize the result and say it is ready for acceptance; the work item stays doing.',
 };
 
 const PT: Record<string, string> = {
@@ -80,6 +82,8 @@ const PT: Record<string, string> = {
   "work.project": "projeto: {0}",
   "work.id": "id: {0}",
   "work.failed": "Falha ao criar o work item: {0}",
+  "run.item.prompt":
+    'Execute o plano "{0}" (id: {1}) do work item "{2}" (id: {3}) neste worktree. Leia com plans.get, faça os passos e marque cada um com plans.update ("doing" e depois "done"). Não troque de branch nem mergeie: o run integra pela fila de merge. Quando todos os passos estiverem concluídos e nada estiver bloqueado, resuma o resultado e diga que está pronto para aceite; o work item continua doing.',
 };
 
 const TABLES: Record<NotificationLocale, Record<string, string>> = {
