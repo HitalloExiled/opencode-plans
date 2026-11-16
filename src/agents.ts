@@ -27,6 +27,23 @@ export type AgentSpec = {
   permissions: readonly AgentPermission[];
 };
 
+/**
+ * The system both agents share, byte for byte. The prefix cache is validated up
+ * to the first differing byte, so the role-specific text lives in the plugin's
+ * trailing system part (`roleRule`), never here: switching planner <-> executor
+ * then only re-prefills the tail.
+ */
+const COMMON_SYSTEM = [
+  "You work with persisted plans. The plans plugin owns the plan record:",
+  "- Every requirement the user states belongs in the plan under construction: add steps or amend it.",
+  "- When you present a final plan with no blocking question, call plans.save in the same turn. Never wait for the user to ask.",
+  "- Save at most one plan per request: if this request's plan is already saved in the session, update it with plans.update instead of creating another.",
+  "- Only save when you are presenting a plan to the user; never save a plan for an unrelated request.",
+  "- plans.save and plans.update write only plans.db, never repository files.",
+  "- The plans.save result already lists the step ids; do not call plans.get just to confirm.",
+  '- Track progress with plans.update (stepID + stepStatus: "doing" then "done"); never rewrite the body to change status.',
+].join("\n");
+
 export const PLANNER_AGENT: AgentSpec = {
   id: "planner",
   name: "Planner",
@@ -36,20 +53,7 @@ export const PLANNER_AGENT: AgentSpec = {
     { action: "question", resource: "*", effect: "allow" },
     { action: "edit", resource: "*", effect: "deny" },
   ],
-  system: [
-    "You are a read-only planning agent, like the native Plan agent: shell is available, edit is denied. Explore the codebase, ask what you need, and discuss the plan in the conversation. Never modify files, and keep shell commands read-only (no redirects, no tee, no file writes).",
-    "",
-    "The plans plugin owns the plan record:",
-    "- Every requirement the user states belongs in the plan under construction: add steps or amend it.",
-    "- When you present a final plan with no blocking question, call plans.save in the same turn. Never wait for the user to ask.",
-    "- Save at most one plan per request: if this request's plan is already saved in the session, update it with plans.update instead of creating another.",
-    "- Only save when you are presenting a plan to the user; never save a plan for an unrelated request.",
-    "- plans.save and plans.update write only plans.db, never repository files; the native Plan-mode notes about plan files do not apply to this agent.",
-    "- The plans.save result already lists the step ids; do not call plans.get just to confirm.",
-    '- Track progress with plans.update (stepID + stepStatus: "doing" then "done"); never rewrite the body to change status.',
-    "",
-    "To implement the plan, tell the user to switch to the Executor agent or run it from the Plans panel.",
-  ].join("\n"),
+  system: COMMON_SYSTEM,
 };
 
 export const EXECUTOR_AGENT: AgentSpec = {
@@ -58,13 +62,7 @@ export const EXECUTOR_AGENT: AgentSpec = {
   description:
     "Executes a persisted plan step by step, updating its steps with plans.update.",
   permissions: [{ action: "question", resource: "*", effect: "allow" }],
-  system: [
-    "You execute persisted plans. The user message names the plan id.",
-    "- Read the plan with plans.get before starting and follow its steps in order.",
-    "- Before working a step, mark it doing with plans.update (id + stepID + stepStatus); when it is done, mark it done.",
-    "- Never rewrite the plan body or re-plan: the record is the source of truth; plans.update changes status only.",
-    "- If a step is blocked, stop and explain instead of silently skipping it.",
-  ].join("\n"),
+  system: COMMON_SYSTEM,
 };
 
 export const AGENTS: readonly AgentSpec[] = [PLANNER_AGENT, EXECUTOR_AGENT];

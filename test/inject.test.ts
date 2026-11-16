@@ -7,7 +7,10 @@ import {
   appendTailBlock,
   hasCompaction,
   hasPlanBlock,
+  EXECUTOR_ROLE,
   ownsRoutingRule,
+  PLANNER_ROLE,
+  roleRule,
   PLANS_ROUTING_RULE,
   pushRoutingRule,
   renderPlanContext,
@@ -93,16 +96,33 @@ describe("routing rule", () => {
   });
 });
 
-describe("ownsRoutingRule", () => {
-  test("our own agents carry the flow in their system prompt", () => {
+describe("ownsRoutingRule / roleRule", () => {
+  test("our own agents get their role instead of the routing rule", () => {
     expect(ownsRoutingRule("planner")).toBe(true);
     expect(ownsRoutingRule("executor")).toBe(true);
+    expect(roleRule("planner")).toBe(PLANNER_ROLE);
+    expect(roleRule("executor")).toBe(EXECUTOR_ROLE);
+    // The roles differ: they are the only bytes that change on a switch.
+    expect(PLANNER_ROLE).not.toBe(EXECUTOR_ROLE);
   });
 
   test("native agents and subagents keep the constant rule", () => {
     expect(ownsRoutingRule("plan")).toBe(false);
     expect(ownsRoutingRule("build")).toBe(false);
     expect(ownsRoutingRule(undefined)).toBe(false);
+    expect(roleRule("plan")).toBeUndefined();
+    expect(roleRule(undefined)).toBeUndefined();
+  });
+
+  test("the planner role is read-only", () => {
+    expect(PLANNER_ROLE).toContain("Never modify files");
+    expect(PLANNER_ROLE).toContain("Keep shell commands read-only");
+  });
+
+  test("the executor role reads and tracks the plan", () => {
+    expect(EXECUTOR_ROLE).toContain("plans.get");
+    expect(EXECUTOR_ROLE).toContain("plans.update");
+    expect(EXECUTOR_ROLE).toContain("doing");
   });
 });
 

@@ -25,9 +25,35 @@ export const PLANS_ROUTING_RULE = [
 ].join("\n");
 
 /**
- * The plugin's own agents carry the whole flow in their system prompt, so the
- * constant routing rule is skipped for them: pushing it would duplicate the
- * save contract and mix in Plan-mode wording that does not apply.
+ * The plugin's own agents share one system prompt (`COMMON_SYSTEM` in
+ * agents.ts), byte for byte, so switching between them keeps the cached prefix.
+ * Their role lives here, in a constant trailing system part: the only bytes
+ * that change on a switch.
+ */
+export const PLANNER_ROLE = [
+  "Planner role (read-only, like the native Plan agent):",
+  "- Explore, ask, and discuss the plan in the conversation. Never modify files: edit is denied.",
+  "- Keep shell commands read-only (no redirects, no tee, no file writes).",
+  "- Do not implement: tell the user to switch to the Executor agent or run the plan from the Plans panel.",
+].join("\n");
+
+export const EXECUTOR_ROLE = [
+  "Executor role:",
+  "- The user message names the plan id. Read it with plans.get and follow its steps in order.",
+  "- Before working a step, mark it doing with plans.update (id + stepID + stepStatus); when it is done, mark it done.",
+  "- If a step is blocked, stop and explain instead of silently skipping it.",
+].join("\n");
+
+/** The role text appended for the plugin's own agents, or undefined. */
+export function roleRule(agent: string | undefined): string | undefined {
+  if (agent === "planner") return PLANNER_ROLE;
+  if (agent === "executor") return EXECUTOR_ROLE;
+  return undefined;
+}
+
+/**
+ * Whether the plugin's agent owns its own routing text. Native agents get the
+ * constant routing rule; ours get the shared system plus their role part.
  */
 export function ownsRoutingRule(agent: string | undefined): boolean {
   return agent === "planner" || agent === "executor";

@@ -19,6 +19,7 @@ import {
   hasCompaction,
   ownsRoutingRule,
   pushRoutingRule,
+  roleRule,
   renderPlanContext,
   type InjectMessage,
 } from "./src/inject.js";
@@ -146,7 +147,12 @@ async function onContext(ctx: Ctx, event: SessionContext) {
   // Outside the try/catch: a broken database must not drop the rule. Our own
   // agents carry the flow in their system prompt, so the constant rule is
   // skipped there instead of duplicating/conflicting with it.
-  if (!ownsRoutingRule(agent)) pushRoutingRule(event.system);
+  if (ownsRoutingRule(agent)) {
+    const role = roleRule(agent);
+    if (role) event.system.push({ type: "text", text: role });
+  } else {
+    pushRoutingRule(event.system);
+  }
 
   if (agent === "plan") return;
   try {

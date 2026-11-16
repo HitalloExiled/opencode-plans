@@ -2,14 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { AGENTS, EXECUTOR_AGENT, PLANNER_AGENT, registerAgents } from "../src/agents";
 
 describe("planner agent", () => {
-  test("is read-only and saves the plan in the same turn", () => {
+  test("is read-only and shares the common save contract", () => {
     expect(PLANNER_AGENT.id).toBe("planner");
     expect(PLANNER_AGENT.system).toContain("call plans.save in the same turn");
     expect(PLANNER_AGENT.system).toContain("Never wait for the user to ask");
     expect(PLANNER_AGENT.system).toContain("Every requirement the user states belongs");
     expect(PLANNER_AGENT.system).toContain("Save at most one plan per request");
     expect(PLANNER_AGENT.system).toContain("Only save when you are presenting a plan");
-    expect(PLANNER_AGENT.system).toContain("keep shell commands read-only");
     expect(PLANNER_AGENT.permissions).toContainEqual({
       action: "edit",
       resource: "*",
@@ -27,12 +26,12 @@ describe("planner agent", () => {
 });
 
 describe("executor agent", () => {
-  test("loads the plan and tracks steps with plans.update", () => {
+  test("shares the planner system byte for byte", () => {
     expect(EXECUTOR_AGENT.id).toBe("executor");
-    expect(EXECUTOR_AGENT.system).toContain("plans.get");
-    expect(EXECUTOR_AGENT.system).toContain("plans.update");
-    expect(EXECUTOR_AGENT.system).toContain("doing");
-    expect(EXECUTOR_AGENT.system).toContain("Never rewrite the plan body");
+    // The cached prefix is validated up to the first differing byte: a shared
+    // system keeps planner <-> executor switches from re-prefilling the head.
+    expect(EXECUTOR_AGENT.system).toBe(PLANNER_AGENT.system);
+    expect(EXECUTOR_AGENT.system).toContain("never rewrite the body to change status");
   });
 });
 
