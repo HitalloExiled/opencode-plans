@@ -17,11 +17,13 @@ import { Tool } from "@opencode/schema/tool";
 import { findLastPlanMessage, type SessionMessageLike } from "./src/capture.js";
 import {
   appendTailBlock,
+  appendWorkItemsBlock,
   hasCompaction,
   PLANS_FLOW_OPEN,
   plansFlowBlock,
   pushRoutingRule,
   renderPlanContext,
+  renderWorkItemsContext,
   type InjectMessage,
 } from "./src/inject.js";
 import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
@@ -34,7 +36,7 @@ import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
 import { emitPlanChange, onPlanChange } from "./src/plan-events.js";
 import { createRpcHandlers } from "./src/rpc.js";
-import { listPlans, planProgress, requireStore, savePlan } from "./src/store.js";
+import { listPlans, listWorkItems, planProgress, requireStore, resolveProject, savePlan } from "./src/store.js";
 import { captureWorkItem } from "./src/work-capture.js";
 
 type Ctx = Plugin.Context;
@@ -244,6 +246,22 @@ async function onContext(ctx: Ctx, event: SessionContext) {
   // is constant and goes to every agent, exactly like the native flow: the
   // planner/executor clone Plan/Build, so their system must match too.
   pushRoutingRule(event.system);
+
+  // The backlog list is dynamic, so it rides the tail, never the system. It
+  // goes to every agent (the native Plan included): both flows can plan.
+  try {
+    const store = await requireStore();
+    const resolved = resolveProject(store.db, projectDirectory(ctx));
+    if (resolved) {
+      const text = renderWorkItemsContext(
+        listWorkItems(store.db, resolved.project.id),
+        resolved.project.name,
+      );
+      if (text) appendWorkItemsBlock(event.messages as InjectMessage[], text);
+    }
+  } catch (error) {
+    console.error(`[plans] work items injection failed: ${errorText(error)}`);
+  }
 
   if (agent === "plan") return;
   try {

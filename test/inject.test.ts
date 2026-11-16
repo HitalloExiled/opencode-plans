@@ -5,6 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   appendTailBlock,
+  appendWorkItemsBlock,
   hasCompaction,
   hasPlanBlock,
   EXECUTOR_FLOW,
@@ -14,9 +15,11 @@ import {
   plansFlowBlock,
   pushRoutingRule,
   renderPlanContext,
+  renderWorkItemsContext,
+  WORK_ITEMS_OPEN,
   type InjectMessage,
 } from "../src/inject";
-import type { Plan, StepRow, StepStatus } from "../src/store";
+import type { Plan, StepRow, StepStatus, WorkItemRow } from "../src/store";
 import {
   PLANS_NAMESPACE,
   deleteTool,
@@ -306,5 +309,58 @@ describe("catalog budget", () => {
         ).toBeLessThanOrEqual(6);
       }
     }
+  });
+});
+
+const workItem = (id: string, status: WorkItemRow["status"], body = ""): WorkItemRow => ({
+  id,
+  project_id: "p1",
+  location_id: null,
+  parent_id: null,
+  title: `Need ${id}`,
+  body,
+  status,
+  rank: 1,
+  origin: "user",
+  created_at: "2026-01-01T00:00:00.000Z",
+  updated_at: "2026-01-01T00:00:00.000Z",
+  closed_at: null,
+});
+
+describe("work items context", () => {
+  test("caps the list at 12, drops terminal items and never includes the body", () => {
+    const items = Array.from({ length: 15 }, (_, index) =>
+      workItem(`w${index}`, "backlog", `secret body ${index}`),
+    );
+    items.push(workItem("closed", "done", "secret body done"));
+    const text = renderWorkItemsContext(items, "App");
+    expect(text.startsWith(WORK_ITEMS_OPEN)).toBe(true);
+    expect(text.split("\n").filter((line) => line.startsWith("- [")).length).toBe(12);
+    expect(text).not.toContain("secret body");
+    expect(text).not.toContain("closed");
+    expect(text).toContain("project \"App\"");
+  });
+
+  test("returns nothing when every item is closed", () => {
+    expect(renderWorkItemsContext([workItem("d", "done"), workItem("x", "dropped")], "App")).toBe("");
+  });
+});
+
+describe("appendWorkItemsBlock", () => {
+  const block = `${WORK_ITEMS_OPEN}\n- [backlog] A need\n</work-items>`;
+
+  test("appends once to a fresh user message", () => {
+    const messages: InjectMessage[] = [user("hi")];
+    expect(appendWorkItemsBlock(messages, block)).toBe(true);
+    expect(appendWorkItemsBlock(messages, block)).toBe(false);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.content).toHaveLength(2);
+  });
+
+  test("on a tool tail it adds one synthetic message and never stacks", () => {
+    const messages: InjectMessage[] = [user("hi"), toolResult("out")];
+    expect(appendWorkItemsBlock(messages, block)).toBe(true);
+    messages.push(toolResult("out2"));
+    expect(appendWorkItemsBlock(messages, block)).toBe(false);
   });
 });
