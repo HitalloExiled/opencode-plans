@@ -10,14 +10,17 @@ import type { Plugin } from "@opencode/plugin";
 import type { RpcHandlers } from "@opencode/plugin/promise/rpc";
 import {
   PlansRpc,
+  WORK_STATUS_ORDER,
   type Plan,
   type PlanFlow,
   type PlanResult,
   type Project,
   type ProjectResult,
   type Status,
+  type WorkItem,
 } from "./gui/contract.js";
 import { getFlow, setFlow as persistFlow } from "./flow.js";
+import { sortWorkItems } from "./work-list.js";
 import { notificationLocale, tn } from "./notifications.js";
 import { emitPlanChange } from "./plan-events.js";
 import {
@@ -30,12 +33,15 @@ import {
   getStore,
   listPlans,
   listProjects,
+  listWorkItems as listProjectWorkItems,
+  listWorkItemsAll,
   movePlan,
   planProgress,
   plansDbPath,
   removeProjectLocation,
   renameProject,
   requireStore,
+  resolveProject,
   savePlan,
   schemaVersion,
   setPrimaryLocation,
@@ -44,6 +50,7 @@ import {
   type Plan as StorePlan,
   type Project as StoreProject,
   type SaveOk,
+  type WorkItemRow as StoreWorkItemRow,
   type WriteError,
 } from "./store.js";
 
@@ -97,6 +104,21 @@ const projectError = (
   ...(extra.needsConfirmation ? { needsConfirmation: true } : {}),
   ...(extra.items !== undefined ? { items: extra.items } : {}),
 });
+
+const toWorkItem = (item: StoreWorkItemRow): WorkItem => ({
+  id: item.id,
+  projectID: item.project_id,
+  ...(item.location_id ? { locationID: item.location_id } : {}),
+  ...(item.parent_id ? { parentID: item.parent_id } : {}),
+  title: item.title,
+  status: item.status,
+  rank: item.rank,
+  origin: item.origin,
+  createdAt: item.created_at,
+  updatedAt: item.updated_at,
+});
+
+
 
 /** Tell the session that the user changed a plan from the panel. */
 async function notify(
@@ -373,6 +395,34 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       if (!result.ok) return projectError(result.error);
       const project = getProject(store.db, input.projectID);
       return project ? projectOk(project) : projectError("projeto não encontrado após trocar o primary");
+    },
+
+    listWorkItems: async (input) => {
+      const store = await requireStore();
+      if (input.scope === "project") {
+        if (!input.directory) return [];
+        const resolved = resolveProject(store.db, input.directory);
+        if (!resolved) return [];
+        return [
+          {
+            project: toProject(resolved.project),
+            items: sortWorkItems(listProjectWorkItems(store.db, resolved.project.id)).map(toWorkItem),
+          },
+        ];
+      }
+
+      const projects = listProjects(store.db);
+      const byProject = new Map<string, StoreWorkItemRow[]>();
+      for (const item of listWorkItemsAll(store.db)) {
+        const bucket = byProject.get(item.project_id);
+        if (bucket) bucket.push(item);
+        else byProject.set(item.project_id, [item]);
+      }
+      return projects
+        .map((project) => ({ project, items: sortWorkItems(byProject.get(project.id) ?? []) }))
+        .filter((group) => group.items.length > 0)
+        .sort((a, b) => a.project.name.localeCompare(b.project.name))
+        .map((group) => ({ project: toProject(group.project), items: group.items.map(toWorkItem) }));
     },
   };
 }

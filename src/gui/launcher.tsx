@@ -22,6 +22,7 @@ import { useT } from "./i18n";
 import { builtinServer, globalTarget } from "./page";
 import type { PlansTarget } from "./view";
 import { PlansBody } from "./view";
+import { ViewSwitch, WorkBody, type ViewMode } from "./work";
 
 const CSS = `
 .plans-modal-scrim {
@@ -56,6 +57,7 @@ const CSS = `
   padding: 8px 12px;
   border-bottom: 1px solid var(--v2-border-border-muted);
 }
+.plans-modal-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .plans-modal-title {
   margin: 0;
   font-size: 13px;
@@ -144,6 +146,7 @@ export function PlansPill(props: { active: boolean }) {
 function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
   const ctx = usePlugin();
   const t = useT();
+  const [mode, setMode] = createSignal<ViewMode>("work");
   let panel: HTMLDivElement | undefined;
   let previous: Element | null = null;
 
@@ -207,11 +210,25 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
         onKeyDown={trapTab}
       >
         <div class="plans-modal-head">
-          <h2 class="plans-modal-title">{t("page.title")}</h2>
+          <div class="plans-modal-title-row">
+            <h2 class="plans-modal-title">{t("page.title")}</h2>
+            <ViewSwitch mode={mode} onChange={setMode} />
+          </div>
           <ctx.ui.IconButton icon="close" label={t("close")} onClick={() => props.onClose()} />
         </div>
         <div class="plans-modal-body">
-          <PlansBody target={props.target} />
+          <Show
+            when={mode() === "work"}
+            fallback={<PlansBody target={props.target} />}
+          >
+            <WorkBody
+              target={() => ({
+                mode: "modal",
+                server: props.target().server,
+                visible: () => true,
+              })}
+            />
+          </Show>
         </div>
       </div>
     </div>

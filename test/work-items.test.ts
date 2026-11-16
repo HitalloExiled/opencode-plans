@@ -18,6 +18,7 @@ import {
   initSchema,
   listProjects,
   listWorkItems,
+  listWorkItemsAll,
   removeProjectLocation,
   renameProject,
   schemaVersion,
@@ -221,6 +222,15 @@ describe("work item containment", () => {
 
     const wrong = createWorkItem(db, { projectID: app.id, locationID: other.locations[0]!.id, title: "Need" });
     expect(wrong).toEqual({ ok: false, error: "o workspace não pertence a este projeto" });
+  });
+
+  test("listWorkItemsAll returns items from every project", () => {
+    const db = open();
+    const first = project(db, "First", ["/work/first"]);
+    const second = project(db, "Second", ["/work/second"]);
+    createWorkItem(db, { projectID: first.id, title: "a1" });
+    createWorkItem(db, { projectID: second.id, title: "b1" });
+    expect(listWorkItemsAll(db).map((item) => item.title).sort()).toEqual(["a1", "b1"]);
   });
 
   test("getWorkItem returns what was stored", () => {

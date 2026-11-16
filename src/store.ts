@@ -1138,6 +1138,11 @@ export function listWorkItems(db: Db, projectID: string): WorkItemRow[] {
     .all(projectID) as WorkItemRow[];
 }
 
+/** Every item, for the global surface; the caller groups by project. */
+export function listWorkItemsAll(db: Db): WorkItemRow[] {
+  return db.prepare("SELECT * FROM work_items ORDER BY created_at ASC, rank ASC").all() as WorkItemRow[];
+}
+
 export type ProjectResolution = {
   project: Project;
   location: ProjectLocationRow;

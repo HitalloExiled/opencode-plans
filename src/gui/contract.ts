@@ -137,6 +137,36 @@ export type RemoveProjectLocationInput = ProjectLocationRef & {
   confirm?: boolean | undefined;
 };
 
+export type WorkItemStatus = "backlog" | "ready" | "doing" | "blocked" | "done" | "dropped";
+export type WorkOrigin = "user" | "agent";
+
+/** UI order of the status sections and board columns. */
+export const WORK_STATUS_ORDER = ["doing", "ready", "blocked", "backlog", "done", "dropped"] as const;
+
+export type WorkItem = {
+  id: string;
+  projectID: string;
+  locationID?: string | undefined;
+  parentID?: string | undefined;
+  title: string;
+  status: WorkItemStatus;
+  rank: number;
+  origin: WorkOrigin;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkGroup = {
+  project: Project;
+  items: readonly WorkItem[];
+};
+
+export type WorkListInput = {
+  scope: "project" | "all";
+  /** Session directory; resolves the project for `scope: "project"`. */
+  directory?: string | undefined;
+};
+
 /* ------------------------------------------------------------------ */
 /* Schemas                                                             */
 /* ------------------------------------------------------------------ */
@@ -242,6 +272,40 @@ export const removeProjectLocationInputSchema = Schema.Struct({
   projectID: Schema.String,
   locationID: Schema.String,
   confirm: Schema.optional(Schema.Boolean),
+});
+
+export const workStatusSchema = Schema.Union([
+  Schema.Literal("backlog"),
+  Schema.Literal("ready"),
+  Schema.Literal("doing"),
+  Schema.Literal("blocked"),
+  Schema.Literal("done"),
+  Schema.Literal("dropped"),
+]);
+
+export const workOriginSchema = Schema.Union([Schema.Literal("user"), Schema.Literal("agent")]);
+
+export const workItemSchema = Schema.Struct({
+  id: Schema.String,
+  projectID: Schema.String,
+  locationID: optString,
+  parentID: optString,
+  title: Schema.String,
+  status: workStatusSchema,
+  rank: Schema.Number,
+  origin: workOriginSchema,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+});
+
+export const workGroupSchema = Schema.Struct({
+  project: projectSchema,
+  items: Schema.Array(workItemSchema),
+});
+
+export const workListInputSchema = Schema.Struct({
+  scope: Schema.Union([Schema.Literal("project"), Schema.Literal("all")]),
+  directory: optString,
 });
 
 export const listOptionsSchema = Schema.Struct({
@@ -396,6 +460,10 @@ export const PlansRpc = Rpc.define({
     setProjectPrimary: {
       input: Schema.toStandardSchemaV1(projectLocationRefSchema),
       output: Schema.toStandardSchemaV1(projectResultSchema),
+    },
+    listWorkItems: {
+      input: Schema.toStandardSchemaV1(workListInputSchema),
+      output: Schema.toStandardSchemaV1(Schema.Array(workGroupSchema)),
     },
   },
   events: {
