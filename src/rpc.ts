@@ -17,6 +17,9 @@ import {
   type Project,
   type ProjectResult,
   type Status,
+  type MergeEntryView,
+  type RunItemView,
+  type RunView,
   type WorkItem,
   type WorkItemDetail,
 } from "./gui/contract.js";
@@ -25,7 +28,9 @@ import { sortWorkItems } from "./work-list.js";
 import { captureWorkItem } from "./work-capture.js";
 import { notificationLocale, tn } from "./notifications.js";
 import { emitPlanChange } from "./plan-events.js";
+import { cancelProjectRun, preflightRun, retryRunItem, startProjectRun } from "./run-engine.js";
 import {
+  activeRun,
   addProjectLocation,
   addWorkItemDep as addDepRow,
   countPlans,
@@ -35,8 +40,11 @@ import {
   getPlanByWorkItem,
   getProject,
   getStore,
+  getRun,
   getWorkItem as getWorkItemRow,
+  listMergeQueue,
   listPlans,
+  listRunItems,
   listProjects,
   listWorkItems as listProjectWorkItems,
   listWorkItemsAll,
@@ -54,6 +62,7 @@ import {
   savePlan,
   schemaVersion,
   setPrimaryLocation,
+  setProjectRunSettings,
   setStep,
   setWorkItemParent as setParentRow,
   setWorkItemStatus as setStatusRow,
@@ -61,6 +70,7 @@ import {
   updateWorkItem,
   workItemChildren,
   workItemDeps,
+  type Db,
   type Plan as StorePlan,
   type Project as StoreProject,
   type SaveOk,
@@ -100,6 +110,9 @@ const toProject = (project: StoreProject): Project => ({
   name: project.name,
   createdAt: project.created_at,
   updatedAt: project.updated_at,
+  ...(project.base_branch ? { baseBranch: project.base_branch } : {}),
+  maxParallel: project.max_parallel,
+  ...(project.verify_command ? { verifyCommand: project.verify_command } : {}),
   locations: project.locations.map((location) => ({
     id: location.id,
     directory: location.directory,
@@ -108,6 +121,44 @@ const toProject = (project: StoreProject): Project => ({
     position: location.position,
   })),
 });
+
+function buildRunView(db: Db, run: NonNullable<ReturnType<typeof getRun>>): RunView {
+  const items: RunItemView[] = listRunItems(db, run.id).map((item) => ({
+    itemID: item.work_item_id,
+    title: getWorkItemRow(db, item.work_item_id)?.title ?? item.work_item_id,
+    status: item.status,
+    ...(item.branch ? { branch: item.branch } : {}),
+    ...(item.worktree ? { worktree: item.worktree } : {}),
+    ...(item.session_id ? { sessionID: item.session_id } : {}),
+    ...(item.started_at ? { startedAt: item.started_at } : {}),
+    ...(item.finished_at ? { finishedAt: item.finished_at } : {}),
+    ...(item.merged_sha ? { mergedSha: item.merged_sha } : {}),
+    ...(item.error ? { error: item.error } : {}),
+  }));
+  const queue: MergeEntryView[] = listMergeQueue(db, run.id).map((entry) => ({
+    id: entry.id,
+    itemID: entry.work_item_id,
+    title: getWorkItemRow(db, entry.work_item_id)?.title ?? entry.work_item_id,
+    status: entry.status,
+    enqueuedAt: entry.enqueued_at,
+    ...(entry.claimed_at ? { claimedAt: entry.claimed_at } : {}),
+    ...(entry.finished_at ? { finishedAt: entry.finished_at } : {}),
+    ...(entry.error ? { error: entry.error } : {}),
+  }));
+  return {
+    id: run.id,
+    projectID: run.project_id,
+    baseRef: run.base_ref,
+    status: run.status,
+    maxParallel: run.max_parallel,
+    ...(run.merge_session_id ? { mergeSessionID: run.merge_session_id } : {}),
+    startedAt: run.started_at,
+    ...(run.finished_at ? { finishedAt: run.finished_at } : {}),
+    ...(run.error ? { error: run.error } : {}),
+    items,
+    queue,
+  };
+}
 
 const projectOk = (project: StoreProject): ProjectResult => ({ ok: true, project: toProject(project) });
 
@@ -542,5 +593,61 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const result = setParentRow(store.db, { id: input.id, parentID: input.parentID ?? null });
       return result.ok ? { ok: true } : { ok: false, error: result.error };
     },
+    runPreflight: async (input) => {
+      const store = await requireStore();
+      const result = await preflightRun(store.db, input.projectID, input.directory);
+      if (!result.ok) return { ok: false, blockers: result.blockers, items: [] };
+      return {
+        ok: true,
+        blockers: [],
+        baseRef: result.value.baseRef,
+        maxParallel: result.value.maxParallel,
+        items: result.value.items.map((entry) => ({
+          itemID: entry.item.id,
+          title: entry.item.title,
+          planID: entry.plan.id,
+          planTitle: entry.plan.title,
+          deps: entry.deps,
+        })),
+      };
+    },
+
+    runStart: async (input) => {
+      const store = await requireStore();
+      return startProjectRun(ctx, store.db, { projectID: input.projectID, directory: input.directory });
+    },
+
+    runActive: async (input) => {
+      const store = await requireStore();
+      const run = activeRun(store.db, input.projectID);
+      return run ? buildRunView(store.db, run) : null;
+    },
+
+    runGet: async (input) => {
+      const store = await requireStore();
+      const run = getRun(store.db, input.runID);
+      return run ? buildRunView(store.db, run) : null;
+    },
+
+    runCancel: async (input) => {
+      const store = await requireStore();
+      return cancelProjectRun(ctx, store.db, input.runID);
+    },
+
+    runRetry: async (input) => {
+      const store = await requireStore();
+      return retryRunItem(ctx, store.db, input.runID, input.itemID);
+    },
+
+    runSettings: async (input) => {
+      const store = await requireStore();
+      const result = setProjectRunSettings(store.db, input.projectID, {
+        baseBranch: input.baseBranch,
+        maxParallel: input.maxParallel,
+        verifyCommand: input.verifyCommand,
+      });
+      return result.ok ? projectOk(result.project) : projectError(result.error);
+    },
+
   };
 }

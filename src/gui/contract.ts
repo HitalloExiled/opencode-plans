@@ -107,6 +107,10 @@ export type Project = {
   createdAt: string;
   updatedAt: string;
   locations: readonly ProjectLocation[];
+  /** Run settings (F4). */
+  baseBranch?: string | undefined;
+  maxParallel?: number | undefined;
+  verifyCommand?: string | undefined;
 };
 
 export type ProjectResult = {
@@ -316,6 +320,9 @@ export const projectSchema = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
   locations: Schema.Array(projectLocationSchema),
+  baseBranch: optString,
+  maxParallel: Schema.optional(Schema.Number),
+  verifyCommand: optString,
 });
 
 export const projectResultSchema = Schema.Struct({
@@ -529,6 +536,141 @@ export const planChangeSchema = Schema.Struct({
 });
 
 /* ------------------------------------------------------------------ */
+/* Project runs (F4)                                                   */
+/* ------------------------------------------------------------------ */
+
+export type RunItemView = {
+  itemID: string;
+  title: string;
+  status: string;
+  branch?: string | undefined;
+  worktree?: string | undefined;
+  sessionID?: string | undefined;
+  startedAt?: string | undefined;
+  finishedAt?: string | undefined;
+  mergedSha?: string | undefined;
+  error?: string | undefined;
+};
+
+export type MergeEntryView = {
+  id: string;
+  itemID: string;
+  title: string;
+  status: string;
+  enqueuedAt: string;
+  claimedAt?: string | undefined;
+  finishedAt?: string | undefined;
+  error?: string | undefined;
+};
+
+export type RunView = {
+  id: string;
+  projectID: string;
+  baseRef: string;
+  status: string;
+  maxParallel: number;
+  mergeSessionID?: string | undefined;
+  startedAt: string;
+  finishedAt?: string | undefined;
+  error?: string | undefined;
+  items: RunItemView[];
+  queue: MergeEntryView[];
+};
+
+export type PreflightView = {
+  ok: boolean;
+  blockers: string[];
+  baseRef?: string | undefined;
+  maxParallel?: number | undefined;
+  items: {
+    itemID: string;
+    title: string;
+    planID: string;
+    planTitle: string;
+    deps: string[];
+  }[];
+};
+
+export const runItemViewSchema = Schema.Struct({
+  itemID: Schema.String,
+  title: Schema.String,
+  status: Schema.String,
+  branch: optString,
+  worktree: optString,
+  sessionID: optString,
+  startedAt: optString,
+  finishedAt: optString,
+  mergedSha: optString,
+  error: optString,
+});
+
+export const mergeEntryViewSchema = Schema.Struct({
+  id: Schema.String,
+  itemID: Schema.String,
+  title: Schema.String,
+  status: Schema.String,
+  enqueuedAt: Schema.String,
+  claimedAt: optString,
+  finishedAt: optString,
+  error: optString,
+});
+
+export const runViewSchema = Schema.Struct({
+  id: Schema.String,
+  projectID: Schema.String,
+  baseRef: Schema.String,
+  status: Schema.String,
+  maxParallel: Schema.Number,
+  mergeSessionID: optString,
+  startedAt: Schema.String,
+  finishedAt: optString,
+  error: optString,
+  items: Schema.Array(runItemViewSchema),
+  queue: Schema.Array(mergeEntryViewSchema),
+});
+
+export const preflightViewSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  blockers: Schema.Array(Schema.String),
+  baseRef: optString,
+  maxParallel: Schema.optional(Schema.Number),
+  items: Schema.Array(
+    Schema.Struct({
+      itemID: Schema.String,
+      title: Schema.String,
+      planID: Schema.String,
+      planTitle: Schema.String,
+      deps: Schema.Array(Schema.String),
+    }),
+  ),
+});
+
+export const runStartViewSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  error: optString,
+  runID: optString,
+});
+
+export const runIDInputSchema = Schema.Struct({ runID: Schema.String });
+
+export const runProjectInputSchema = Schema.Struct({
+  projectID: Schema.String,
+  directory: Schema.String,
+});
+
+export const runRetryInputSchema = Schema.Struct({
+  runID: Schema.String,
+  itemID: Schema.String,
+});
+
+export const runSettingsInputSchema = Schema.Struct({
+  projectID: Schema.String,
+  baseBranch: Schema.optional(Schema.NullOr(Schema.String)),
+  maxParallel: Schema.optional(Schema.Number),
+  verifyCommand: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+/* ------------------------------------------------------------------ */
 /* The RPC                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -642,6 +784,34 @@ export const PlansRpc = Rpc.define({
     removeWorkItemDep: {
       input: Schema.toStandardSchemaV1(workItemDepInputSchema),
       output: Schema.toStandardSchemaV1(opResultSchema),
+    },
+    runPreflight: {
+      input: Schema.toStandardSchemaV1(runProjectInputSchema),
+      output: Schema.toStandardSchemaV1(preflightViewSchema),
+    },
+    runStart: {
+      input: Schema.toStandardSchemaV1(runProjectInputSchema),
+      output: Schema.toStandardSchemaV1(runStartViewSchema),
+    },
+    runActive: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({ projectID: Schema.String })),
+      output: Schema.toStandardSchemaV1(Schema.NullOr(runViewSchema)),
+    },
+    runGet: {
+      input: Schema.toStandardSchemaV1(runIDInputSchema),
+      output: Schema.toStandardSchemaV1(Schema.NullOr(runViewSchema)),
+    },
+    runCancel: {
+      input: Schema.toStandardSchemaV1(runIDInputSchema),
+      output: Schema.toStandardSchemaV1(opResultSchema),
+    },
+    runRetry: {
+      input: Schema.toStandardSchemaV1(runRetryInputSchema),
+      output: Schema.toStandardSchemaV1(opResultSchema),
+    },
+    runSettings: {
+      input: Schema.toStandardSchemaV1(runSettingsInputSchema),
+      output: Schema.toStandardSchemaV1(projectResultSchema),
     },
   },
   events: {

@@ -26,7 +26,9 @@ import {
   WORK_STATUS_ORDER,
   type Plan,
   type PlanSummary,
+  type PreflightView,
   type Project,
+  type RunView,
   type WorkGroup,
   type WorkItemDetail,
   type WorkItemStatus,
@@ -200,8 +202,41 @@ const WORK_CSS = `
 .work-board-card.is-drop { box-shadow: inset 0 2px 0 var(--v2-border-border-focus); }
 .work-card-project { font-size: 10px; color: var(--v2-text-text-faint); }
 .work-card-actions { display: flex; align-items: center; gap: 4px; }
+.work-run-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.work-run-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: 6px;
+  background: var(--v2-background-bg-layer-01);
+}
+.work-run-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.work-run-row { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.work-run-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.work-run-blockers { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--v2-state-fg-danger); }
+.work-run-badge { flex: 0 0 auto; }
 .work-board-empty { font-size: 10.5px; color: var(--v2-text-text-faint); }
 `;
+
+const runTone = (status: string): ChipTone =>
+  status === "failed" ? "danger" : status === "done" ? "success" : status === "running" ? "info" : "neutral";
+
+const runItemTone = (status: string): ChipTone =>
+  status === "failed" ? "danger" : status === "merged" || status === "done" ? "success" : status === "running" || status === "merging" ? "info" : "neutral";
+
+const mergeTone = (status: string): ChipTone =>
+  status === "failed" ? "danger" : status === "merged" ? "success" : status === "merging" ? "info" : "neutral";
+
+const duration = (start?: string, end?: string): string => {
+  if (!start) return "";
+  const from = Date.parse(start);
+  const to = end ? Date.parse(end) : Date.now();
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return "";
+  const seconds = Math.round((to - from) / 1000);
+  return seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+};
 
 /** The overlay switch: Trabalho | Planos (Global -> Work and Global -> Plan). */
 export function ViewSwitch(props: { mode: Accessor<ViewMode>; onChange: (mode: ViewMode) => void }) {
@@ -277,6 +312,15 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const [agentOnly, setAgentOnly] = createSignal(false);
   const [showDropped, setShowDropped] = createSignal(false);
   const [placing, setPlacing] = createSignal(false);
+  const [run, setRun] = createSignal<RunView | null>(null);
+  const [preflight, setPreflight] = createSignal<PreflightView | null>(null);
+  const [preflightBusy, setPreflightBusy] = createSignal(false);
+  const [runBusy, setRunBusy] = createSignal(false);
+  const [runError, setRunError] = createSignal<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const [baseInput, setBaseInput] = createSignal("");
+  const [parallelInput, setParallelInput] = createSignal("2");
+  const [verifyInput, setVerifyInput] = createSignal("");
   const [dropColumn, setDropColumn] = createSignal<WorkItemStatus | null>(null);
   const [dropIndex, setDropIndex] = createSignal(-1);
 
@@ -366,6 +410,160 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   });
 
   const selectedProject = createMemo(() => projects().find((project) => project.id === projectFilter()));
+
+  /** Run settings and monitor are per selected project. */
+  createEffect(() => {
+    const project = selectedProject();
+    void reload();
+    if (!project) {
+      setRun(null);
+      return;
+    }
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .runActive({ projectID: project.id })
+      .then((value) => setRun(value as RunView | null))
+      .catch(() => setRun(null));
+  });
+
+  /** Run state per item, for the cards. */
+  const runItems = createMemo(() => {
+    const map = new Map<string, string>();
+    for (const entry of run()?.items ?? []) map.set(entry.itemID, entry.status);
+    return map;
+  });
+
+  const directoryOf = (project: Project): string =>
+    project.locations.find((location) => location.primary)?.directory ?? project.locations[0]?.directory ?? "";
+
+  const openSession = (id: string) => {
+    ctx.tabs.open({ server: props.target().server.id, id }, { focus: true });
+  };
+
+  const loadRun = (projectID: string) => {
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .runActive({ projectID })
+      .then((value) => setRun(value as RunView | null))
+      .catch(() => undefined);
+  };
+
+  const openPreflight = () => {
+    const project = selectedProject();
+    if (!project) return;
+    setPreflightBusy(true);
+    setRunError(null);
+    setPreflight(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .runPreflight({ projectID: project.id, directory: directoryOf(project) })
+      .then((value) => setPreflight(value as PreflightView))
+      .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setPreflightBusy(false));
+  };
+
+  const startRun = () => {
+    const project = selectedProject();
+    if (!project) return;
+    setRunBusy(true);
+    setRunError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .runStart({ projectID: project.id, directory: directoryOf(project) })
+      .then((result) => {
+        if (!result.ok) {
+          setRunError(result.error ?? t("work.run.startError"));
+          return;
+        }
+        setPreflight(null);
+        if (result.runID) {
+          void props.target()
+            .server.client.rpc(PlansRpc)
+            .runGet({ runID: result.runID })
+            .then((value) => setRun(value as RunView | null));
+        }
+        ctx.toast.show({ title: t("work.run.started"), variant: "success" });
+      })
+      .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setRunBusy(false));
+  };
+
+  const cancelRun = (runID: string) => {
+    const project = selectedProject();
+    if (!project || runBusy()) return;
+    setRunBusy(true);
+    setRunError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .runCancel({ runID })
+      .then((result) => {
+        if (!result.ok) {
+          setRunError(result.error ?? t("work.run.cancelError"));
+          return;
+        }
+        loadRun(project.id);
+      })
+      .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setRunBusy(false));
+  };
+
+  const retryRun = (runID: string, itemID: string) => {
+    if (runBusy()) return;
+    setRunBusy(true);
+    setRunError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .runRetry({ runID, itemID })
+      .then((result) => {
+        if (!result.ok) {
+          setRunError(result.error ?? t("work.run.retryError"));
+          return;
+        }
+        void props.target()
+          .server.client.rpc(PlansRpc)
+          .runGet({ runID })
+          .then((value) => setRun(value as RunView | null));
+      })
+      .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setRunBusy(false));
+  };
+
+  const syncSettings = () => {
+    const project = selectedProject();
+    if (!project) return;
+    setBaseInput(project.baseBranch ?? "");
+    setParallelInput(String(project.maxParallel ?? 2));
+    setVerifyInput(project.verifyCommand ?? "");
+  };
+
+  const saveSettings = () => {
+    const project = selectedProject();
+    if (!project || runBusy()) return;
+    setRunBusy(true);
+    setRunError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .runSettings({
+        projectID: project.id,
+        baseBranch: baseInput().trim() || null,
+        maxParallel: Number(parallelInput()) || 2,
+        verifyCommand: verifyInput().trim() || null,
+      })
+      .then((result) => {
+        if (!result.ok) {
+          setRunError(result.error ?? t("work.run.settingsError"));
+          return;
+        }
+        if (result.project) {
+          const updated = result.project;
+          setProjects((list) => list.map((entry) => (entry.id === updated.id ? updated : entry)));
+        }
+        setSettingsOpen(false);
+        ctx.toast.show({ title: t("work.run.settingsSaved"), variant: "success" });
+      })
+      .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setRunBusy(false));
+  };
 
   /** The active plan of each item, for the card progress. */
   const plansByItem = createMemo(() => {
@@ -814,6 +1012,198 @@ export function WorkBody(props: { target: () => WorkTarget }) {
             </div>
           </Show>
 
+          <Show when={selectedProject()}>
+            <div class="work-run-bar">
+              <ctx.ui.Button
+                size="small"
+                variant="neutral"
+                icon="fill-triangle-down"
+                busy={preflightBusy()}
+                onClick={openPreflight}
+              >
+                {t("work.run.button")}
+              </ctx.ui.Button>
+              <ctx.ui.Button
+                size="small"
+                variant="ghost"
+                icon="settings-gear"
+                onClick={() => {
+                  setSettingsOpen((value) => !value);
+                  syncSettings();
+                }}
+              >
+                {t("work.run.settings")}
+              </ctx.ui.Button>
+              <Show when={run()}>
+                {(current) => (
+                  <>
+                    <StatusChip
+                      tone={runTone(current().status)}
+                      label={t(`run.status.${current().status}`)}
+                    />
+                    <span class="work-dep-label">
+                      {t(
+                        "work.run.progress",
+                        current().items.filter((entry) => entry.status === "merged").length,
+                        current().items.length,
+                      )}
+                    </span>
+                  </>
+                )}
+              </Show>
+            </div>
+
+            <Show when={runError()}>
+              <ErrorBanner message={runError()!} />
+            </Show>
+
+            <Show when={preflight()}>
+              {(view) => (
+                <div class="work-run-panel">
+                  <Show
+                    when={view().ok}
+                    fallback={
+                      <div class="work-run-blockers">
+                        <For each={view().blockers}>{(blocker) => <div>• {blocker}</div>}</For>
+                      </div>
+                    }
+                  >
+                    <div class="work-dep-label">
+                      {t("work.run.ready", view().items.length, view().baseRef ?? "", view().maxParallel ?? 0)}
+                    </div>
+                    <For each={view().items}>
+                      {(entry) => (
+                        <div class="work-run-row">
+                          <span class="work-card-title">{entry.title}</span>
+                          <span class="work-dep-label">{entry.planTitle}</span>
+                        </div>
+                      )}
+                    </For>
+                    <div class="work-run-actions">
+                      <ctx.ui.Button size="small" variant="ghost" onClick={() => setPreflight(null)}>
+                        {t("cancel")}
+                      </ctx.ui.Button>
+                      <ctx.ui.Button size="small" variant="contrast" busy={runBusy()} onClick={startRun}>
+                        {t("work.run.start")}
+                      </ctx.ui.Button>
+                    </div>
+                  </Show>
+                </div>
+              )}
+            </Show>
+
+            <Show when={run()}>
+              {(current) => (
+                <div class="work-run-panel">
+                  <div class="work-run-head">
+                    <span class="work-dep-label">{t("work.run.items")}</span>
+                    <Show when={current().status === "running" || current().status === "interrupted"}>
+                      <ctx.ui.Button
+                        size="small"
+                        variant="ghost"
+                        icon="close-small"
+                        busy={runBusy()}
+                        onClick={() => cancelRun(current().id)}
+                      >
+                        {t("work.run.cancel")}
+                      </ctx.ui.Button>
+                    </Show>
+                    <Show when={current().mergeSessionID}>
+                      {(sessionID) => (
+                        <ctx.ui.Button
+                          size="small"
+                          variant="ghost"
+                          icon="arrow-up-right"
+                          onClick={() => openSession(sessionID())}
+                        >
+                          {t("work.run.mergeSession")}
+                        </ctx.ui.Button>
+                      )}
+                    </Show>
+                  </div>
+
+                  <For each={current().items}>
+                    {(entry) => (
+                      <div class="work-run-row">
+                        <StatusChip
+                          tone={runItemTone(entry.status)}
+                          label={t(`run.item.${entry.status}`)}
+                        />
+                        <span class="work-card-title">{entry.title}</span>
+                        <span class="work-dep-label">{entry.branch ?? ""}</span>
+                        <span class="work-dep-label">{duration(entry.startedAt, entry.finishedAt)}</span>
+                        <Show when={entry.sessionID}>
+                          {(sessionID) => (
+                            <ctx.ui.IconButton
+                              icon="arrow-up-right"
+                              label={t("work.run.openSession")}
+                              onClick={() => openSession(sessionID())}
+                            />
+                          )}
+                        </Show>
+                        <Show when={entry.status === "failed" || entry.status === "skipped"}>
+                          <ctx.ui.IconButton
+                            icon="refresh"
+                            label={t("work.run.retry")}
+                            disabled={runBusy()}
+                            onClick={() => retryRun(current().id, entry.itemID)}
+                          />
+                        </Show>
+                        <Show when={entry.error}>
+                          <span class="work-error-detail">{entry.error}</span>
+                        </Show>
+                      </div>
+                    )}
+                  </For>
+
+                  <Show when={current().queue.length > 0}>
+                    <div class="work-dep-label">{t("work.run.queue")}</div>
+                    <For each={current().queue}>
+                      {(entry) => (
+                        <div class="work-run-row">
+                          <StatusChip tone={mergeTone(entry.status)} label={t(`run.merge.${entry.status}`)} />
+                          <span class="work-card-title">{entry.title}</span>
+                          <Show when={entry.error}>
+                            <span class="work-error-detail">{entry.error}</span>
+                          </Show>
+                        </div>
+                      )}
+                    </For>
+                  </Show>
+                </div>
+              )}
+            </Show>
+
+            <Show when={settingsOpen()}>
+              <div class="work-run-panel">
+                <ctx.ui.TextInput
+                  value={baseInput()}
+                  onInput={(value) => setBaseInput(value)}
+                  label={t("work.run.base")}
+                  placeholder={t("work.run.baseHint")}
+                />
+                <ctx.ui.TextInput
+                  value={parallelInput()}
+                  onInput={(value) => setParallelInput(value)}
+                  label={t("work.run.parallel")}
+                />
+                <ctx.ui.TextInput
+                  value={verifyInput()}
+                  onInput={(value) => setVerifyInput(value)}
+                  label={t("work.run.verify")}
+                />
+                <div class="work-run-actions">
+                  <ctx.ui.Button size="small" variant="ghost" onClick={() => setSettingsOpen(false)}>
+                    {t("cancel")}
+                  </ctx.ui.Button>
+                  <ctx.ui.Button size="small" variant="contrast" busy={runBusy()} onClick={saveSettings}>
+                    {t("work.run.save")}
+                  </ctx.ui.Button>
+                </div>
+              </div>
+            </Show>
+          </Show>
+
           <Show when={actionError()}>
             <ErrorBanner message={actionError()!} />
           </Show>
@@ -894,6 +1284,16 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                                     </div>
                                     <Show when={item.origin === "agent"}>
                                       <StatusChip label={t("work.agent")} tone="info" />
+                                    </Show>
+                                    <Show when={runItems().get(item.id)}>
+                                      {(status) => (
+                                        <span class="work-run-badge">
+                                          <StatusChip
+                                            label={t(`run.item.${status()}`)}
+                                            tone={runItemTone(status())}
+                                          />
+                                        </span>
+                                      )}
                                     </Show>
                                     <ctx.ui.IconButton
                                       icon="brain"
@@ -995,6 +1395,16 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                                     )}
                                   </Show>
                                 </div>
+                                <Show when={runItems().get(entry.item.id)}>
+                                  {(status) => (
+                                    <span class="work-run-badge">
+                                      <StatusChip
+                                        label={t(`run.item.${status()}`)}
+                                        tone={runItemTone(status())}
+                                      />
+                                    </span>
+                                  )}
+                                </Show>
                                 <span class="work-card-actions" onClick={(event) => event.stopPropagation()}>
                                   <Show when={entry.item.origin === "agent"}>
                                     <StatusChip label={t("work.agent")} tone="info" />
