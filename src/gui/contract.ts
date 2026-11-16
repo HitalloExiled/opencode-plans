@@ -434,6 +434,13 @@ export const moveWorkItemInputSchema = Schema.Struct({
   direction: Schema.Union([Schema.Literal("up"), Schema.Literal("down")]),
 });
 
+export const placeWorkItemInputSchema = Schema.Struct({
+  id: Schema.String,
+  status: workStatusSchema,
+  /** Zero-based index inside the destination column. */
+  position: Schema.Number,
+});
+
 export const workItemDepInputSchema = Schema.Struct({
   itemID: Schema.String,
   blocksID: Schema.String,
@@ -616,6 +623,10 @@ export const PlansRpc = Rpc.define({
     },
     moveWorkItem: {
       input: Schema.toStandardSchemaV1(moveWorkItemInputSchema),
+      output: Schema.toStandardSchemaV1(workItemResultSchema),
+    },
+    placeWorkItem: {
+      input: Schema.toStandardSchemaV1(placeWorkItemInputSchema),
       output: Schema.toStandardSchemaV1(workItemResultSchema),
     },
     addWorkItemDep: {

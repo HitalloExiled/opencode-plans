@@ -39,6 +39,10 @@ import { planWorkItem } from "./plan-item";
 
 export type ViewMode = "work" | "plans";
 
+/** Lista | Quadro. Module state so the overlay can widen while the board is on. */
+const [boardMode, setBoardMode] = createSignal(false);
+export const workBoardMode = boardMode;
+
 export type WorkTarget = {
   server: ServerRef;
   /** The overlay is always on screen. */
@@ -65,6 +69,7 @@ const WORK_CSS = `
   font-size: 12.5px;
 }
 .work-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.work-body.is-hidden { display: none; }
 .work-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; padding-bottom: 24px; overscroll-behavior: contain; }
 .work-project { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
 .work-project:last-child { margin-bottom: 0; }
@@ -163,6 +168,39 @@ const WORK_CSS = `
   background: currentColor;
 }
 .work-run-hint { font-size: 10.5px; color: var(--v2-text-text-faint); }
+.work-view-switch { display: flex; align-items: center; gap: 4px; }
+.work-board { display: flex; gap: 8px; flex: 1; min-height: 0; overflow-x: auto; padding-bottom: 4px; }
+.work-col {
+  flex: 1 1 0;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 8px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: 8px;
+  background: var(--v2-background-bg-layer-02);
+}
+.work-col.is-over { border-color: var(--v2-border-border-focus); }
+.work-col-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--v2-text-text-muted);
+}
+.work-col-count { margin-left: auto; font-weight: 500; color: var(--v2-text-text-faint); }
+.work-col-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.work-board-card { cursor: grab; align-items: flex-start; }
+.work-board-card:active { cursor: grabbing; }
+.work-board-card.is-drop { box-shadow: inset 0 2px 0 var(--v2-border-border-focus); }
+.work-card-project { font-size: 10px; color: var(--v2-text-text-faint); }
+.work-card-actions { display: flex; align-items: center; gap: 4px; }
+.work-board-empty { font-size: 10.5px; color: var(--v2-text-text-faint); }
 `;
 
 /** The overlay switch: Trabalho | Planos (Global -> Work and Global -> Plan). */
@@ -238,6 +276,9 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const [actionError, setActionError] = createSignal<string | null>(null);
   const [agentOnly, setAgentOnly] = createSignal(false);
   const [showDropped, setShowDropped] = createSignal(false);
+  const [placing, setPlacing] = createSignal(false);
+  const [dropColumn, setDropColumn] = createSignal<WorkItemStatus | null>(null);
+  const [dropIndex, setDropIndex] = createSignal(-1);
 
   // A generation counter drops the result of a request whose target changed.
   let generation = 0;
@@ -364,6 +405,54 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       status,
       items: group.items.filter((item) => item.status === status),
     })).filter((section) => section.items.length > 0);
+
+  /** Dropped joins the board only when its filter is on. */
+  const boardStatuses = createMemo(() =>
+    showDropped() ? [...WORK_STATUS_ORDER] : WORK_STATUS_ORDER.filter((status) => status !== "dropped"),
+  );
+
+  const boardColumns = createMemo(() => {
+    const groups = visibleGroups();
+    return boardStatuses().map((status) => ({
+      status,
+      items: groups.flatMap((group) =>
+        group.items
+          .filter((item) => item.status === status)
+          .map((item) => ({ item, project: group.project.name })),
+      ),
+    }));
+  });
+
+  /** Drag and the accessible menu both land here: status plus exact index. */
+  const place = (id: string, status: WorkItemStatus, position: number) => {
+    if (placing()) return;
+    setPlacing(true);
+    setActionError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .placeWorkItem({ id, status, position })
+      .then((result) => {
+        if (!result.ok) {
+          setActionError(result.error ?? t("work.move.error"));
+          return;
+        }
+        setReload((n) => n + 1);
+      })
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => {
+        setPlacing(false);
+        setDropColumn(null);
+        setDropIndex(-1);
+      });
+  };
+
+  const drop = (event: DragEvent, status: WorkItemStatus, index: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = event.dataTransfer?.getData("text/plain") ?? "";
+    if (!id) return;
+    place(id, status, index);
+  };
 
   const empty = () => {
     if (agentOnly()) {
@@ -650,6 +739,24 @@ export function WorkBody(props: { target: () => WorkTarget }) {
         <Show when={!selectedID()}>
           <Show when={projects().length > 0}>
             <div class="work-toolbar">
+              <div class="work-view-switch" role="group" aria-label={t("work.view.label")}>
+                <ctx.ui.Button
+                  size="small"
+                  variant={boardMode() ? "ghost" : "neutral"}
+                  icon="checklist"
+                  onClick={() => setBoardMode(false)}
+                >
+                  {t("work.view.list")}
+                </ctx.ui.Button>
+                <ctx.ui.Button
+                  size="small"
+                  variant={boardMode() ? "neutral" : "ghost"}
+                  icon="workspace"
+                  onClick={() => setBoardMode(true)}
+                >
+                  {t("work.view.board")}
+                </ctx.ui.Button>
+              </div>
               <ctx.ui.Menu
                 trigger="button"
                 icon="workspace"
@@ -725,7 +832,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
               when={visibleGroups().length > 0 && total() > 0}
               fallback={<EmptyState icon="checklist" title={empty().title} hint={empty().hint} />}
             >
-              <div class="work-body">
+              <div class="work-body" classList={{ "is-hidden": boardMode() }}>
                 <div
                   class="work-scroll os-scroll"
                   ref={nav.ref}
@@ -810,6 +917,114 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                 </div>
                 <ScrollNav nav={nav} topLabel={t("scroll.top")} bottomLabel={t("scroll.bottom")} />
               </div>
+              <Show when={boardMode()}>
+                <div class="work-board">
+                  <For each={boardColumns()}>
+                    {(column) => (
+                      <section
+                        class="work-col"
+                        classList={{ "is-over": dropColumn() === column.status }}
+                        aria-label={t(statusLabelKey(column.status))}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          setDropColumn(column.status);
+                          if (dropIndex() < 0) setDropIndex(column.items.length);
+                        }}
+                        onDragLeave={(event) => {
+                          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                          if (dropColumn() !== column.status) return;
+                          setDropColumn(null);
+                          setDropIndex(-1);
+                        }}
+                        onDrop={(event) => drop(event, column.status, column.items.length)}
+                      >
+                        <header class="work-col-head">
+                          <span class={`work-dot is-${column.status}`} />
+                          {t(statusLabelKey(column.status))}
+                          <span class="work-col-count">{column.items.length}</span>
+                        </header>
+                        <div class="work-col-body">
+                          <For each={column.items}>
+                            {(entry, index) => (
+                              <div
+                                class="work-card work-board-card"
+                                classList={{
+                                  "is-drop": dropColumn() === column.status && dropIndex() === index(),
+                                }}
+                                draggable={true}
+                                role="button"
+                                tabIndex={0}
+                                onDragStart={(event) => {
+                                  event.dataTransfer?.setData("text/plain", entry.item.id);
+                                  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+                                }}
+                                onDragOver={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setDropColumn(column.status);
+                                  setDropIndex(index());
+                                }}
+                                onDrop={(event) => drop(event, column.status, index())}
+                                onClick={() => openItem(entry.item.id)}
+                                onKeyDown={(event) => {
+                                  if (event.target !== event.currentTarget) return;
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    openItem(entry.item.id);
+                                  }
+                                }}
+                              >
+                                <div class="work-card-main">
+                                  <span class="work-card-title">{entry.item.title}</span>
+                                  <Show when={projectFilter() === "all"}>
+                                    <span class="work-card-project">{entry.project}</span>
+                                  </Show>
+                                  <Show when={plansByItem().get(entry.item.id)}>
+                                    {(plan) => (
+                                      <span class="work-card-progress">
+                                        <span class="work-progress">
+                                          <span
+                                            class="work-progress-done"
+                                            style={{ width: `${planProgressOf(plan()).percent}%` }}
+                                          />
+                                        </span>
+                                        <span class="work-progress-label">
+                                          {t("work.progress", planProgressOf(plan()).done, planProgressOf(plan()).total)}
+                                        </span>
+                                      </span>
+                                    )}
+                                  </Show>
+                                </div>
+                                <span class="work-card-actions" onClick={(event) => event.stopPropagation()}>
+                                  <Show when={entry.item.origin === "agent"}>
+                                    <StatusChip label={t("work.agent")} tone="info" />
+                                  </Show>
+                                  <ctx.ui.Menu
+                                    trigger="button"
+                                    icon="status"
+                                    label={t("work.board.move")}
+                                    disabled={placing()}
+                                    items={boardStatuses().map((status) => ({
+                                      label: t(statusLabelKey(status)),
+                                      disabled:
+                                        status === entry.item.status ||
+                                        !WORK_ITEM_TRANSITIONS[entry.item.status].includes(status),
+                                      onSelect: () => place(entry.item.id, status, 9999),
+                                    }))}
+                                  />
+                                </span>
+                              </div>
+                            )}
+                          </For>
+                          <Show when={column.items.length === 0}>
+                            <span class="work-board-empty">{t("work.board.empty")}</span>
+                          </Show>
+                        </div>
+                      </section>
+                    )}
+                  </For>
+                </div>
+              </Show>
             </Show>
           </Show>
         </Show>

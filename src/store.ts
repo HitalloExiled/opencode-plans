@@ -1373,6 +1373,65 @@ export function moveWorkItem(db: Db, input: MoveWorkItemInput): WorkItemOk | Wor
   return { ok: true, item };
 }
 
+export type PlaceWorkItemInput = {
+  id: string;
+  status: WorkItemStatus;
+  /** Zero-based index inside the destination status. */
+  position: number;
+};
+
+/**
+ * Drops an item into another column at an exact index: the GUI board and the
+ * accessible "move to" menu both land here. Transitions are validated like
+ * `setWorkItemStatus`, and the destination group is renumbered 1..N.
+ */
+export function placeWorkItem(db: Db, input: PlaceWorkItemInput): WorkItemOk | WorkStoreError {
+  const current = getWorkItem(db, input.id);
+  if (!current) return { ok: false, error: `work item não encontrado: ${input.id}` };
+
+  if (input.status !== current.status) {
+    const allowed = WORK_ITEM_TRANSITIONS[current.status] ?? [];
+    if (!allowed.includes(input.status)) {
+      return { ok: false, error: `transição inválida: ${current.status} -> ${input.status}` };
+    }
+  }
+
+  const siblings = listWorkItems(db, current.project_id).filter(
+    (item) => item.status === input.status && item.id !== current.id,
+  );
+  const position = Math.max(0, Math.min(Math.trunc(input.position), siblings.length));
+  const reordered = [...siblings];
+  reordered.splice(position, 0, current);
+
+  const now = nowTimestamp();
+  const closedAt =
+    input.status === "done" || input.status === "dropped" ? current.closed_at ?? now : null;
+
+  try {
+    transaction(db, () => {
+      reordered.forEach((item, index) => {
+        if (item.id === current.id) {
+          db.prepare(
+            "UPDATE work_items SET status = ?, rank = ?, updated_at = ?, closed_at = ? WHERE id = ?",
+          ).run(input.status, index + 1, now, closedAt, item.id);
+          return;
+        }
+        db.prepare("UPDATE work_items SET rank = ?, updated_at = ? WHERE id = ?").run(
+          index + 1,
+          now,
+          item.id,
+        );
+      });
+    });
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+
+  const item = getWorkItem(db, input.id);
+  if (!item) return { ok: false, error: "item não encontrado após a movimentação" };
+  return { ok: true, item };
+}
+
 export type SetWorkItemStatusInput = {
   id: string;
   status: WorkItemStatus;

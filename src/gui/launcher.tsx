@@ -22,7 +22,7 @@ import { useT } from "./i18n";
 import { builtinServer, globalTarget } from "./page";
 import type { PlansTarget } from "./view";
 import { PlansBody } from "./view";
-import { ViewSwitch, WorkBody, type ViewMode } from "./work";
+import { ViewSwitch, WorkBody, workBoardMode, type ViewMode } from "./work";
 
 const CSS = `
 .plans-modal-scrim {
@@ -65,6 +65,7 @@ const CSS = `
   color: var(--v2-text-text-base);
 }
 .plans-modal-body { flex: 1; min-height: 0; }
+.plans-modal.is-board { width: min(1280px, calc(100% - 20px)); }
 `;
 
 const [active, setActive] = createSignal(0);
@@ -202,6 +203,7 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
       <div
         ref={panel}
         class="plans-modal"
+        classList={{ "is-board": workBoardMode() }}
         role="dialog"
         aria-modal="true"
         aria-label={t("page.title")}
