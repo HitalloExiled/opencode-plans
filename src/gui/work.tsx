@@ -34,6 +34,7 @@ import {
 import { useT } from "./i18n";
 import { executionFor, planTarget } from "./execution";
 import { filterWorkGroups } from "../work-filter";
+import { planProgressOf } from "../work-progress";
 import { planWorkItem } from "./plan-item";
 
 export type ViewMode = "work" | "plans";
@@ -108,7 +109,13 @@ const WORK_CSS = `
 }
 .work-card:hover { background-image: linear-gradient(var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)); }
 .work-card:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: -2px; }
-.work-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.work-card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-card-progress { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.work-progress { width: 56px; flex: 0 0 auto; height: 4px; border-radius: 999px; overflow: hidden; background: var(--v2-overlay-simple-overlay-pressed); }
+.work-progress-done { display: block; height: 100%; background: var(--v2-state-fg-success); transition: width .2s ease; }
+.work-progress-label { flex: 0 0 auto; font-size: 10px; color: var(--v2-text-text-muted); font-variant-numeric: tabular-nums; }
+.work-progress-doing { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--v2-text-text-faint); }
 .work-toolbar { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; }
 .work-new { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .work-new > :first-child { flex: 1; min-width: 0; }
@@ -204,6 +211,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const t = useT();
   const [groups, setGroups] = createSignal<WorkGroup[]>([]);
   const [projects, setProjects] = createSignal<Project[]>([]);
+  const [activePlans, setActivePlans] = createSignal<Plan[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [reload, setReload] = createSignal(0);
@@ -244,11 +252,13 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     void Promise.all([
       target.server.client.rpc(PlansRpc).listWorkItems({ scope: "all" }),
       target.server.client.rpc(PlansRpc).listProjects({}),
+      target.server.client.rpc(PlansRpc).list({ scope: "all", status: "active" }),
     ])
-      .then(([itemGroups, projectList]) => {
+      .then(([itemGroups, projectList, plans]) => {
         if (current !== generation) return;
         setGroups(itemGroups as WorkGroup[]);
         setProjects(projectList as Project[]);
+        setActivePlans(plans as Plan[]);
         setLoading(false);
       })
       .catch((cause: unknown) => {
@@ -315,6 +325,15 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   });
 
   const selectedProject = createMemo(() => projects().find((project) => project.id === projectFilter()));
+
+  /** The active plan of each item, for the card progress. */
+  const plansByItem = createMemo(() => {
+    const map = new Map<string, Plan>();
+    for (const plan of activePlans()) {
+      if (plan.workItemID && !map.has(plan.workItemID)) map.set(plan.workItemID, plan);
+    }
+    return map;
+  });
 
   const projectGroups = createMemo(() => {
     const id = projectFilter();
@@ -745,7 +764,27 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                                       }
                                     }}
                                   >
-                                    <span class="work-card-title">{item.title}</span>
+                                    <div class="work-card-main">
+                                      <span class="work-card-title">{item.title}</span>
+                                      <Show when={plansByItem().get(item.id)}>
+                                        {(plan) => (
+                                          <span class="work-card-progress">
+                                            <span class="work-progress">
+                                              <span
+                                                class="work-progress-done"
+                                                style={{ width: `${planProgressOf(plan()).percent}%` }}
+                                              />
+                                            </span>
+                                            <span class="work-progress-label">
+                                              {t("work.progress", planProgressOf(plan()).done, planProgressOf(plan()).total)}
+                                            </span>
+                                            <Show when={planProgressOf(plan()).doing}>
+                                              {(doing) => <span class="work-progress-doing">{doing()}</span>}
+                                            </Show>
+                                          </span>
+                                        )}
+                                      </Show>
+                                    </div>
                                     <Show when={item.origin === "agent"}>
                                       <StatusChip label={t("work.agent")} tone="info" />
                                     </Show>
