@@ -208,9 +208,13 @@ interativa e o body é exibido sem o checklist extraído.
   `work.save`/`work.update` escrevem — no máximo **3 itens por pedido**, dedupe
   por título normalizado + pai + status não-terminal, `origin=agent`; fechar
   (`done`/`dropped`) só com o planner ou o usuário.
-- **Iniciativas**: **Nova iniciativa** no topo da superfície (nome + um ou mais
-  repositórios; o primeiro é primário) e **Gerenciar iniciativa** para renomear,
-  adicionar/remover repositórios e trocar o primário.
+- **Iniciativas**: o overlay tem três telas — **Iniciativa | Trabalho | Planos**.
+  A tela **Iniciativa** lista todas com nome, descrição, nº de repositórios e de
+  itens; **Nova iniciativa** pede só nome e descrição opcional. A tela
+  **Trabalho** mostra uma iniciativa por vez (seletor para trocar) e
+  **Gerenciar iniciativa** renomeia/re-descreve, adiciona/remove repositórios e
+  troca o primário; sem repositório, orienta a adicionar um antes de capturar
+  itens.
 - **Superfície Trabalho** (overlay): lista, quadro por status e **grafo de
 dependências**; com uma iniciativa selecionada, **Executar iniciativa**. O
   grafo cria/remove dependências explícitas (seta do dependente para a

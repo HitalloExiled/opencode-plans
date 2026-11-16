@@ -21,7 +21,7 @@ import {
   listWorkItems,
   listWorkItemsAll,
   removeInitiativeRepo,
-  renameInitiative,
+  updateInitiative,
   setWorkItemRepo,
   SCHEMA_VERSION,
   schemaVersion,
@@ -122,6 +122,26 @@ describe("v7 migration repair", () => {
   });
 });
 
+describe("v8 migration", () => {
+  test("adds the description column to a v7 database", () => {
+    const db = new DatabaseSync(":memory:") as Db;
+    db.prepare(
+      `CREATE TABLE initiatives (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, base_branch TEXT,
+        max_parallel INTEGER NOT NULL DEFAULT 2, verify_command TEXT,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      )`,
+    ).run();
+    db.prepare("INSERT INTO initiatives (id, name, created_at, updated_at) VALUES ('i1', 'Old', 'a', 'a')").run();
+    db.prepare("PRAGMA user_version = 7").run();
+
+    initSchema(db);
+
+    expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
+    expect(getInitiative(db, "i1")?.description).toBeNull();
+  });
+});
+
 describe("projects", () => {
   test("is born with its repositories, the first is primary", () => {
     const db = open();
@@ -132,12 +152,14 @@ describe("projects", () => {
     expect(app.repos.map((repo) => repo.label)).toEqual(["app", "plugins"]);
   });
 
-  test("requires at least one repository", () => {
+  test("can start empty, with a name and an optional description", () => {
     const db = open();
-    expect(createInitiative(db, { name: "Empty", repos: [] })).toEqual({
-      ok: false,
-      error: "uma iniciativa precisa de pelo menos um repositório",
-    });
+    const created = createInitiative(db, { name: "Empty", description: "  Later  " });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.initiative.repos).toEqual([]);
+    expect(created.initiative.description).toBe("Later");
+    expect(createInitiative(db, { name: "Plain" }).ok).toBe(true);
   });
 
   test("requires an absolute repository path", () => {
@@ -200,29 +222,32 @@ describe("projects", () => {
     expect(getWorkItem(db, item.item.id)?.repo_id).toBeNull();
     expect(getInitiative(db, app.id)!.repos.map((repo) => repo.id)).toEqual([app.repos[0]!.id]);
 
-    expect(removeInitiativeRepo(db, app.id, app.repos[0]!.id)).toEqual({
-      ok: false,
-      error: "a iniciativa precisa de pelo menos um repositório",
-    });
+    // The last repository can go too: the initiative just has none.
+    expect(removeInitiativeRepo(db, app.id, app.repos[0]!.id).ok).toBe(true);
+    expect(getInitiative(db, app.id)!.repos).toEqual([]);
   });
 
-  test("renames the project keeping ids and links", () => {
+  test("updates the name and description keeping ids and links", () => {
     const db = open();
     const app = project(db);
     const item = createWorkItem(db, { initiativeID: app.id, title: "Need" });
     if (!item.ok) throw new Error(item.error);
 
-    const renamed = renameInitiative(db, app.id, "  New name  ");
+    const renamed = updateInitiative(db, { id: app.id, name: "  New name  ", description: "  Why  " });
     expect(renamed.ok).toBe(true);
     if (!renamed.ok) return;
     expect(renamed.initiative.name).toBe("New name");
+    expect(renamed.initiative.description).toBe("Why");
     expect(renamed.initiative.id).toBe(app.id);
     expect(renamed.initiative.repos.map((repo) => repo.id)).toEqual(
       app.repos.map((repo) => repo.id),
     );
     expect(getWorkItem(db, item.item.id)?.initiative_id).toBe(app.id);
-    expect(renameInitiative(db, app.id, "   ")).toEqual({ ok: false, error: "o nome da iniciativa é obrigatório" });
-    expect(renameInitiative(db, "missing", "x").ok).toBe(false);
+    expect(updateInitiative(db, { id: app.id, name: "   " })).toEqual({
+      ok: false,
+      error: "o nome da iniciativa é obrigatório",
+    });
+    expect(updateInitiative(db, { id: "missing", name: "x" }).ok).toBe(false);
   });
 
   test("removing the primary promotes the next repository", () => {

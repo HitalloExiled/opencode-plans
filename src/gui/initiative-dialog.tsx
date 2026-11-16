@@ -1,8 +1,8 @@
 /**
- * Create and manage initiatives: the user's grouping of repositories. The
- * dialog creates one with its first repositories, renames it, and adds,
- * removes or promotes repositories. All of it goes through the RPC; the
- * surface updates from the returned initiative.
+ * Create and manage initiatives. Creation needs only a name and an optional
+ * description; repositories are managed afterwards (or added implicitly by the
+ * plan picker). The dialog also renames/re-describes and adds, removes or
+ * promotes repositories.
  */
 
 import { createSignal, For, Show } from "solid-js";
@@ -47,47 +47,24 @@ export function openInitiativeDialog(input: InitiativeDialogInput): void {
   input.ctx.dialogs.open((dialog) => <InitiativeDialog {...input} close={() => dialog.close()} />);
 }
 
-const folderName = (directory: string): string =>
-  directory.split("/").filter(Boolean).pop() || directory;
-
 function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) {
   const t = useT();
   const [current, setCurrent] = createSignal<Initiative | undefined>(props.initiative);
   const [mode, setMode] = createSignal<"create" | "edit">(props.mode === "edit" && props.initiative ? "edit" : "create");
   const [name, setName] = createSignal(props.initiative?.name ?? "");
-  const [paths, setPaths] = createSignal<string[]>(
-    props.initiative ? [] : [""],
-  );
+  const [description, setDescription] = createSignal(props.initiative?.description ?? "");
   const [newPath, setNewPath] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
-  const setPath = (index: number, value: string) => {
-    setPaths((list) => list.map((entry, position) => (position === index ? value : entry)));
-  };
-
-  const cleanPaths = (): string[] =>
-    paths()
-      .map((path) => path.trim())
-      .filter((path) => path.length > 0);
-
   const create = () => {
-    if (busy()) return;
-    const repos = cleanPaths();
-    if (repos.length === 0) {
-      setError(t("work.initiative.atLeastOne"));
-      return;
-    }
-    if (repos.some((path) => !path.startsWith("/"))) {
-      setError(t("work.initiative.invalidPath"));
-      return;
-    }
-    const title = name().trim() || folderName(repos[0]!);
+    const title = name().trim();
+    if (!title || busy()) return;
     setBusy(true);
     setError(null);
     void props.server.client
       .rpc(PlansRpc)
-      .createInitiative({ name: title, repos: repos.map((directory) => ({ directory })) })
+      .createInitiative({ name: title, description: description().trim() || undefined })
       .then((result) => {
         if (!result.ok || !result.initiative) {
           setError(result.error ?? t("work.initiative.error"));
@@ -100,13 +77,15 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
       .finally(() => setBusy(false));
   };
 
-  const replace = (initiative: Initiative, action: "updated") => {
+  const replace = (initiative: Initiative) => {
     setCurrent(initiative);
     setMode("edit");
-    props.onChanged(initiative, action);
+    setName(initiative.name);
+    setDescription(initiative.description ?? "");
+    props.onChanged(initiative, "updated");
   };
 
-  const rename = () => {
+  const save = () => {
     const value = current();
     const title = name().trim();
     if (!value || !title || busy()) return;
@@ -114,13 +93,17 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
     setError(null);
     void props.server.client
       .rpc(PlansRpc)
-      .renameInitiative({ id: value.id, name: title })
+      .updateInitiative({
+        id: value.id,
+        name: title,
+        description: description().trim() || null,
+      })
       .then((result) => {
         if (!result.ok || !result.initiative) {
           setError(result.error ?? t("work.initiative.error"));
           return;
         }
-        replace(result.initiative, "updated");
+        replace(result.initiative);
       })
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setBusy(false));
@@ -145,7 +128,7 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
           return;
         }
         setNewPath("");
-        replace(result.initiative, "updated");
+        replace(result.initiative);
       })
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setBusy(false));
@@ -176,14 +159,14 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
             setError(retried.error ?? t("work.initiative.error"));
             return;
           }
-          replace(retried.initiative, "updated");
+          replace(retried.initiative);
           return;
         }
         if (!result.ok || !result.initiative) {
           setError(result.error ?? t("work.initiative.error"));
           return;
         }
-        replace(result.initiative, "updated");
+        replace(result.initiative);
       })
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setBusy(false));
@@ -202,7 +185,7 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
           setError(result.error ?? t("work.initiative.error"));
           return;
         }
-        replace(result.initiative, "updated");
+        replace(result.initiative);
       })
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setBusy(false));
@@ -223,40 +206,16 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
           onInput={(value) => setName(value)}
           label={t("work.initiative.name")}
           placeholder={t("work.initiative.nameHint")}
-          onSubmit={() => (mode() === "edit" ? rename() : create())}
+          onSubmit={() => (mode() === "edit" ? save() : create())}
         />
 
-        <Show when={mode() === "create"}>
-          <p class="initiative-dialog-hint">{t("work.initiative.repoHint")}</p>
-          <div class="initiative-dialog-list">
-            <For each={paths()}>
-              {(path, index) => (
-                <div class="initiative-dialog-row">
-                  <props.ctx.ui.TextInput
-                    value={path}
-                    onInput={(value) => setPath(index(), value)}
-                    label={t("work.initiative.repoPath")}
-                    placeholder={t("work.initiative.repoPathHint")}
-                  />
-                  <props.ctx.ui.IconButton
-                    icon="close-small"
-                    label={t("work.initiative.removeRepo")}
-                    disabled={paths().length <= 1}
-                    onClick={() => setPaths((list) => list.filter((_, position) => position !== index()))}
-                  />
-                </div>
-              )}
-            </For>
-          </div>
-          <props.ctx.ui.Button
-            size="small"
-            variant="ghost"
-            icon="plus"
-            onClick={() => setPaths((list) => [...list, ""])}
-          >
-            {t("work.initiative.addRepo")}
-          </props.ctx.ui.Button>
-        </Show>
+        <props.ctx.ui.TextInput
+          value={description()}
+          onInput={(value) => setDescription(value)}
+          label={t("work.initiative.description")}
+          placeholder={t("work.initiative.descriptionHint")}
+          onSubmit={() => (mode() === "edit" ? save() : create())}
+        />
 
         <Show when={mode() === "edit" && current()}>
           {(initiative) => (
@@ -267,22 +226,25 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
                   {(repo) => (
                     <div class="initiative-dialog-repo" classList={{ "is-primary": repo.primary }}>
                       <span class="initiative-dialog-repo-path">{repo.directory}</span>
-                      <Show when={repo.primary} fallback={
-                        <props.ctx.ui.Button
-                          size="small"
-                          variant="ghost"
-                          disabled={busy()}
-                          onClick={() => makePrimary(repo.id)}
-                        >
-                          {t("work.initiative.makePrimary")}
-                        </props.ctx.ui.Button>
-                      }>
+                      <Show
+                        when={repo.primary}
+                        fallback={
+                          <props.ctx.ui.Button
+                            size="small"
+                            variant="ghost"
+                            disabled={busy()}
+                            onClick={() => makePrimary(repo.id)}
+                          >
+                            {t("work.initiative.makePrimary")}
+                          </props.ctx.ui.Button>
+                        }
+                      >
                         <span class="initiative-dialog-hint">{t("work.initiative.primary")}</span>
                       </Show>
                       <props.ctx.ui.IconButton
                         icon="trash"
                         label={t("work.initiative.removeRepo")}
-                        disabled={busy() || initiative().repos.length <= 1}
+                        disabled={busy()}
                         onClick={() => removeRepo(repo.id)}
                       />
                     </div>
@@ -324,21 +286,15 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
               size="small"
               variant="contrast"
               busy={busy()}
-              disabled={busy() || !name().trim() && cleanPaths().length === 0}
+              disabled={busy() || !name().trim()}
               onClick={create}
             >
               {t("work.initiative.create")}
             </props.ctx.ui.Button>
           </Show>
           <Show when={mode() === "edit"}>
-            <props.ctx.ui.Button
-              size="small"
-              variant="contrast"
-              busy={busy()}
-              disabled={busy() || !name().trim() || name().trim() === current()?.name}
-              onClick={rename}
-            >
-              {t("work.initiative.saveName")}
+            <props.ctx.ui.Button size="small" variant="contrast" busy={busy()} disabled={busy() || !name().trim()} onClick={save}>
+              {t("work.initiative.save")}
             </props.ctx.ui.Button>
           </Show>
         </div>

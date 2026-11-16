@@ -126,7 +126,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -161,6 +161,7 @@ const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS initiatives (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
+    description TEXT,
     base_branch TEXT,
     max_parallel INTEGER NOT NULL DEFAULT 2,
     verify_command TEXT,
@@ -361,6 +362,9 @@ export function initSchema(db: Db): void {
   }
   if (!hasColumn(db, "initiatives", "verify_command")) {
     db.prepare("ALTER TABLE initiatives ADD COLUMN verify_command TEXT").run();
+  }
+  if (!hasColumn(db, "initiatives", "description")) {
+    db.prepare("ALTER TABLE initiatives ADD COLUMN description TEXT").run();
   }
   db.prepare(`PRAGMA user_version = ${SCHEMA_VERSION}`).run();
 }
@@ -976,6 +980,7 @@ export type WorkOrigin = "user" | "agent";
 export type InitiativeRow = {
   id: string;
   name: string;
+  description: string | null;
   /** Integration base for runs; null means the repo default branch. */
   base_branch: string | null;
   max_parallel: number;
@@ -1074,18 +1079,33 @@ export function listInitiatives(db: Db): Initiative[] {
   return rows.map((row) => ({ ...row, repos: reposFor(db, row.id) }));
 }
 
-export function renameInitiative(db: Db, id: string, name: string): InitiativeOk | WorkStoreError {
-  const trimmed = name.trim();
-  if (!trimmed) return { ok: false, error: "o nome da iniciativa é obrigatório" };
-  if (!getInitiative(db, id)) return { ok: false, error: `iniciativa não encontrado: ${id}` };
-  const now = nowTimestamp();
+export type UpdateInitiativeInput = {
+  id: string;
+  name?: string | undefined;
+  description?: string | null | undefined;
+};
+
+/** Renames and/or rewrites the description; omitted fields are kept. */
+export function updateInitiative(db: Db, input: UpdateInitiativeInput): InitiativeOk | WorkStoreError {
+  const current = getInitiative(db, input.id);
+  if (!current) return { ok: false, error: `iniciativa não encontrada: ${input.id}` };
+  const name = input.name === undefined ? current.name : input.name.trim();
+  if (!name) return { ok: false, error: "o nome da iniciativa é obrigatório" };
+  const description =
+    input.description === undefined ? current.description : input.description?.trim() || null;
+
   try {
-    db.prepare("UPDATE initiatives SET name = ?, updated_at = ? WHERE id = ?").run(trimmed, now, id);
+    db.prepare("UPDATE initiatives SET name = ?, description = ?, updated_at = ? WHERE id = ?").run(
+      name,
+      description,
+      nowTimestamp(),
+      input.id,
+    );
   } catch (error) {
     return { ok: false, error: reason(error) };
   }
-  const initiative = getInitiative(db, id);
-  if (!initiative) return { ok: false, error: "iniciativa não encontrado após a renomeação" };
+  const initiative = getInitiative(db, input.id);
+  if (!initiative) return { ok: false, error: "iniciativa não encontrada após a atualização" };
   return { ok: true, initiative };
 }
 
@@ -1096,7 +1116,9 @@ export type InitiativeRepoInput = {
 
 export type CreateInitiativeInput = {
   name: string;
-  repos: readonly InitiativeRepoInput[];
+  description?: string | null | undefined;
+  /** Repositories are optional: a new initiative can start empty. */
+  repos?: readonly InitiativeRepoInput[] | undefined;
 };
 
 export type InitiativeOk = { ok: true; initiative: Initiative };
@@ -1110,9 +1132,9 @@ export type Ok = { ok: true };
 export function createInitiative(db: Db, input: CreateInitiativeInput): InitiativeOk | WorkStoreError {
   const name = input.name.trim();
   if (!name) return { ok: false, error: "o nome da iniciativa é obrigatório" };
-  if (input.repos.length === 0) return { ok: false, error: "uma iniciativa precisa de pelo menos um repositório" };
+  const description = input.description?.trim() || null;
 
-  const repos = input.repos.map((repo) => {
+  const repos = (input.repos ?? []).map((repo) => {
     const directory = normalizeWorkspaceDirectory(repo.directory);
     if (!directory) return { directory: "", label: "" };
     return { directory, label: repo.label?.trim() || basename(directory) || directory };
@@ -1136,12 +1158,9 @@ export function createInitiative(db: Db, input: CreateInitiativeInput): Initiati
   const now = nowTimestamp();
   try {
     transaction(db, () => {
-      db.prepare("INSERT INTO initiatives (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)").run(
-        id,
-        name,
-        now,
-        now,
-      );
+      db.prepare(
+        "INSERT INTO initiatives (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ).run(id, name, description, now, now);
       repos.forEach((repo, index) => {
         db.prepare(
           `INSERT INTO initiative_repos (id, initiative_id, directory, label, is_primary, position, created_at)
@@ -1154,7 +1173,7 @@ export function createInitiative(db: Db, input: CreateInitiativeInput): Initiati
   }
 
   const initiative = getInitiative(db, id);
-  if (!initiative) return { ok: false, error: "iniciativa não encontrado após a criação" };
+  if (!initiative) return { ok: false, error: "iniciativa não encontrada após a criação" };
   return { ok: true, initiative };
 }
 
@@ -1207,7 +1226,6 @@ export function removeInitiativeRepo(
   if (!initiative) return { ok: false, error: `iniciativa não encontrado: ${initiativeID}` };
   const repo = initiative.repos.find((item) => item.id === repoID);
   if (!repo) return { ok: false, error: "repositório não encontrado neste iniciativa" };
-  if (initiative.repos.length === 1) return { ok: false, error: "a iniciativa precisa de pelo menos um repositório" };
 
   const counted = db.prepare("SELECT COUNT(*) AS c FROM work_items WHERE repo_id = ?").get(repoID) as
     | { c?: number }

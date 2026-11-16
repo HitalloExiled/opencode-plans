@@ -17,13 +17,15 @@ import { createEffect, createRoot, createSignal, onCleanup, onMount, Show } from
 import { Portal } from "solid-js/web";
 import { usePlugin } from "@opencode/plugin/gui";
 import type { Context } from "@opencode/plugin/gui";
-import { PlansRpc } from "./contract";
+import { PlansRpc, type Initiative } from "./contract";
 import { useT } from "./i18n";
 import { builtinServer, globalTarget } from "./page";
 import { closePlansOverlay, openPlansOverlay, plansOverlayOpen } from "./overlay-state";
 import type { PlansTarget } from "./view";
 import { PlansBody } from "./view";
 import { ViewSwitch, WorkBody, workWideMode, type ViewMode } from "./work";
+import { InitiativesBody } from "./initiatives";
+import { initiativeSelection } from "./initiative-selection";
 
 const CSS = `
 .plans-modal-scrim {
@@ -144,9 +146,63 @@ export function PlansPill(props: { active: boolean }) {
 function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
   const ctx = usePlugin();
   const t = useT();
-  const [mode, setMode] = createSignal<ViewMode>("work");
+  const [mode, setMode] = createSignal<ViewMode>("initiatives");
+  const selection = initiativeSelection(ctx);
+  const [initiativeId, setInitiativeId] = createSignal<string | null>(selection.value?.id ?? null);
+  const [initiatives, setInitiatives] = createSignal<Initiative[]>([]);
+  const [initiativesLoading, setInitiativesLoading] = createSignal(true);
+  const [initiativesError, setInitiativesError] = createSignal<string | null>(null);
+  const [initiativesRevision, setInitiativesRevision] = createSignal(0);
   let panel: HTMLDivElement | undefined;
   let previous: Element | null = null;
+
+  const select = (id: string) => {
+    setInitiativeId(id);
+    selection.set({ id });
+  };
+
+  const upsert = (initiative: Initiative) => {
+    setInitiatives((list) => {
+      const exists = list.some((entry) => entry.id === initiative.id);
+      return exists
+        ? list.map((entry) => (entry.id === initiative.id ? initiative : entry))
+        : [...list, initiative];
+    });
+  };
+
+  createEffect(() => {
+    const stored = selection.value;
+    if (stored !== undefined && stored.id !== initiativeId()) setInitiativeId(stored.id);
+  });
+
+  createEffect(() => {
+    void initiativesRevision();
+    setInitiativesLoading(true);
+    setInitiativesError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .listInitiatives({})
+      .then((list) => setInitiatives(list as Initiative[]))
+      .catch((cause: unknown) => setInitiativesError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setInitiativesLoading(false));
+  });
+
+  createEffect(() => {
+    const off = props.target()
+      .server.client.rpc(PlansRpc)
+      .events.on("changed", () => {
+        setInitiativesRevision((n) => n + 1);
+      });
+    onCleanup(off);
+  });
+
+  // Resolve a missing/stale selection to the first initiative.
+  createEffect(() => {
+    const list = initiatives();
+    if (list.length === 0) return;
+    const id = initiativeId();
+    if (!id || !list.some((entry) => entry.id === id)) select(list[0]!.id);
+  });
 
   onMount(() => {
     previous = document.activeElement;
@@ -200,7 +256,7 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
       <div
         ref={panel}
         class="plans-modal"
-        classList={{ "is-board": workWideMode() }}
+        classList={{ "is-board": mode() === "work" && workWideMode() }}
         role="dialog"
         aria-modal="true"
         aria-label={t("page.title")}
@@ -210,22 +266,42 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
       >
         <div class="plans-modal-head">
           <div class="plans-modal-title-row">
-            <h2 class="plans-modal-title">{t("page.title")}</h2>
             <ViewSwitch mode={mode} onChange={setMode} />
           </div>
           <ctx.ui.IconButton icon="close" label={t("close")} onClick={() => props.onClose()} />
         </div>
         <div class="plans-modal-body">
-          <Show
-            when={mode() === "work"}
-            fallback={<PlansBody target={props.target} />}
-          >
+          <Show when={mode() === "initiatives"}>
+            <InitiativesBody
+              server={props.target().server}
+              initiatives={initiatives()}
+              loading={initiativesLoading()}
+              error={initiativesError()}
+              onOpen={(id) => {
+                select(id);
+                setMode("work");
+              }}
+              onCreated={(initiative) => {
+                upsert(initiative);
+                select(initiative.id);
+                setMode("work");
+              }}
+            />
+          </Show>
+          <Show when={mode() === "work"}>
             <WorkBody
               target={() => ({
                 server: props.target().server,
                 visible: () => true,
               })}
+              initiativeID={initiativeId() ?? undefined}
+              initiatives={initiatives()}
+              onSelectInitiative={select}
+              onInitiativeChanged={upsert}
             />
+          </Show>
+          <Show when={mode() === "plans"}>
+            <PlansBody target={props.target} />
           </Show>
         </div>
       </div>

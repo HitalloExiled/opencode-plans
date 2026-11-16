@@ -43,7 +43,7 @@ import { WorkGraph } from "./graph";
 import { openInitiativeDialog } from "./initiative-dialog";
 import { closePlansOverlay } from "./overlay-state";
 
-export type ViewMode = "work" | "plans";
+export type ViewMode = "initiatives" | "work" | "plans";
 
 export type WorkViewMode = "list" | "board" | "graph";
 
@@ -255,6 +255,13 @@ export function ViewSwitch(props: { mode: Accessor<ViewMode>; onChange: (mode: V
       <div class="plans-view-switch" role="group" aria-label={t("view.label")}>
         <ctx.ui.Button
           size="small"
+          variant={props.mode() === "initiatives" ? "neutral" : "ghost"}
+          onClick={() => props.onChange("initiatives")}
+        >
+          {t("view.initiatives")}
+        </ctx.ui.Button>
+        <ctx.ui.Button
+          size="small"
           variant={props.mode() === "work" ? "neutral" : "ghost"}
           onClick={() => props.onChange("work")}
         >
@@ -286,17 +293,22 @@ const planTone = (status: PlanSummary["status"]): ChipTone =>
 const statusTone = (status: WorkItemStatus): ChipTone =>
   status === "doing" ? "info" : status === "ready" || status === "done" ? "success" : status === "blocked" ? "danger" : "neutral";
 
-export function WorkBody(props: { target: () => WorkTarget }) {
+export function WorkBody(props: {
+  target: () => WorkTarget;
+  /** The single initiative this surface works on. */
+  initiativeID: string | undefined;
+  initiatives: Initiative[];
+  onSelectInitiative: (id: string) => void;
+  onInitiativeChanged: (initiative: Initiative) => void;
+}) {
   const ctx = usePlugin();
   const t = useT();
   const [groups, setGroups] = createSignal<WorkGroup[]>([]);
-  const [initiatives, setInitiatives] = createSignal<Initiative[]>([]);
   const [activePlans, setActivePlans] = createSignal<Plan[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [reload, setReload] = createSignal(0);
 
-  const [initiativeFilter, setInitiativeFilter] = createSignal<string>("all");
   const [selectedID, setSelectedID] = createSignal<string | undefined>(undefined);
   const [detail, setDetail] = createSignal<WorkItemDetail | null>(null);
   const [fullPlan, setFullPlan] = createSignal<Plan | null>(null);
@@ -343,13 +355,11 @@ export function WorkBody(props: { target: () => WorkTarget }) {
 
     void Promise.all([
       target.server.client.rpc(PlansRpc).listWorkItems({ scope: "all" }),
-      target.server.client.rpc(PlansRpc).listInitiatives({}),
       target.server.client.rpc(PlansRpc).list({ scope: "all", status: "active" }),
     ])
-      .then(([itemGroups, projectList, plans]) => {
+      .then(([itemGroups, plans]) => {
         if (current !== generation) return;
         setGroups(itemGroups as WorkGroup[]);
-        setInitiatives(projectList as Initiative[]);
         setActivePlans(plans as Plan[]);
         setLoading(false);
       })
@@ -416,7 +426,9 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       });
   });
 
-  const selectedInitiative = createMemo(() => initiatives().find((initiative) => initiative.id === initiativeFilter()));
+  const selectedInitiative = createMemo(() =>
+    props.initiatives.find((initiative) => initiative.id === props.initiativeID),
+  );
 
   /** Run settings and monitor are per selected project. */
   createEffect(() => {
@@ -561,10 +573,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
           setRunError(result.error ?? t("work.run.settingsError"));
           return;
         }
-        if (result.initiative) {
-          const updated = result.initiative;
-          setInitiatives((list) => list.map((entry) => (entry.id === updated.id ? updated : entry)));
-        }
+        if (result.initiative) props.onInitiativeChanged(result.initiative);
         setSettingsOpen(false);
         ctx.toast.show({ title: t("work.run.settingsSaved"), variant: "success" });
       })
@@ -582,8 +591,8 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   });
 
   const initiativeGroups = createMemo(() => {
-    const id = initiativeFilter();
-    return id === "all" ? groups() : groups().filter((group) => group.initiative.id === id);
+    const id = props.initiativeID;
+    return id ? groups().filter((group) => group.initiative.id === id) : [];
   });
 
   const visibleGroups = createMemo(() =>
@@ -623,7 +632,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       items: groups.flatMap((group) =>
         group.items
           .filter((item) => item.status === status)
-          .map((item) => ({ item, initiative: group.initiative.name })),
+          .map((item) => ({ item })),
       ),
     }));
   });
@@ -660,13 +669,13 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   };
 
   const empty = () => {
+    if (!props.initiativeID) {
+      return { title: t("work.initiative.selectTitle"), hint: t("work.initiative.selectHint") };
+    }
     if (agentOnly()) {
       return { title: t("work.empty.agent.title"), hint: t("work.empty.agent.hint") };
     }
-    if (initiativeFilter() !== "all") {
-      return { title: t("work.initiative.empty.title"), hint: t("work.initiative.empty.hint") };
-    }
-    return { title: t("work.empty.title"), hint: t("work.empty.hint") };
+    return { title: t("work.initiative.empty.title"), hint: t("work.initiative.empty.hint") };
   };
 
   const openItem = (id: string) => {
@@ -952,27 +961,6 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       .finally(() => setStatusSaving(false));
   };
 
-  const upsertInitiative = (initiative: Initiative) => {
-    setInitiatives((list) => {
-      const exists = list.some((entry) => entry.id === initiative.id);
-      return exists ? list.map((entry) => (entry.id === initiative.id ? initiative : entry)) : [...list, initiative];
-    });
-    setReload((n) => n + 1);
-  };
-
-  const openNewInitiative = () => {
-    openInitiativeDialog({
-      ctx,
-      server: props.target().server,
-      mode: "create",
-      onChanged: (initiative) => {
-        upsertInitiative(initiative);
-        setInitiativeFilter(initiative.id);
-        ctx.toast.show({ title: t("work.initiative.created"), variant: "success" });
-      },
-    });
-  };
-
   const openManageInitiative = () => {
     const initiative = selectedInitiative();
     if (!initiative) return;
@@ -981,7 +969,10 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       server: props.target().server,
       mode: "edit",
       initiative,
-      onChanged: (updated) => upsertInitiative(updated),
+      onChanged: (updated) => {
+        props.onInitiativeChanged(updated);
+        setReload((n) => n + 1);
+      },
     });
   };
 
@@ -1017,18 +1008,15 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                   {t("work.view.graph")}
                 </ctx.ui.Button>
               </div>
-              <Show when={initiatives().length > 0}>
+              <Show when={props.initiatives.length > 0}>
                 <ctx.ui.Menu
                   trigger="button"
                   icon="workspace"
-                  label={selectedInitiative()?.name ?? t("work.initiatives.all")}
-                  items={[
-                    { label: t("work.initiatives.all"), onSelect: () => setInitiativeFilter("all") },
-                    ...initiatives().map((initiative) => ({
-                      label: initiative.name,
-                      onSelect: () => setInitiativeFilter(initiative.id),
-                    })),
-                  ]}
+                  label={selectedInitiative()?.name ?? t("work.initiative.select")}
+                  items={props.initiatives.map((initiative) => ({
+                    label: initiative.name,
+                    onSelect: () => props.onSelectInitiative(initiative.id),
+                  }))}
                 />
               </Show>
               <Show when={selectedInitiative()}>
@@ -1041,9 +1029,6 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                   {t("work.initiative.manage")}
                 </ctx.ui.Button>
               </Show>
-              <ctx.ui.Button size="small" variant="neutral" icon="plus" onClick={openNewInitiative}>
-                {t("work.initiative.new")}
-              </ctx.ui.Button>
               <Show when={hasAgentItems()}>
                 <ctx.ui.Button
                   size="small"
@@ -1066,7 +1051,16 @@ export function WorkBody(props: { target: () => WorkTarget }) {
               </Show>
           </div>
 
-          <Show when={selectedInitiative()}>
+          <Show when={selectedInitiative()?.repos.length === 0}>
+            <div class="work-new">
+              <span class="work-dep-label">{t("work.initiative.noRepo")}</span>
+              <ctx.ui.Button size="small" variant="neutral" icon="settings-gear" onClick={openManageInitiative}>
+                {t("work.initiative.manage")}
+              </ctx.ui.Button>
+            </div>
+          </Show>
+
+          <Show when={selectedInitiative() && (selectedInitiative()?.repos.length ?? 0) > 0}>
             <div class="work-new">
               <ctx.ui.TextInput
                 value={newTitle()}
@@ -1452,9 +1446,6 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                               >
                                 <div class="work-card-main">
                                   <span class="work-card-title">{entry.item.title}</span>
-                                  <Show when={initiativeFilter() === "all"}>
-                                    <span class="work-card-initiative">{entry.initiative}</span>
-                                  </Show>
                                   <Show when={plansByItem().get(entry.item.id)}>
                                     {(plan) => (
                                       <span class="work-card-progress">

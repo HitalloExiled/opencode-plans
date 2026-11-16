@@ -57,7 +57,7 @@ import {
   recomputeImplicitDeps,
   removeInitiativeRepo,
   removeWorkItemDep as removeDepRow,
-  renameInitiative,
+  updateInitiative as updateInitiativeRow,
   requireStore,
   resolveInitiative,
   savePlan,
@@ -119,6 +119,7 @@ const toInitiativeRepo = (repo: StoreInitiative["repos"][number]) => ({
 const toInitiative = (initiative: StoreInitiative): Initiative => ({
   id: initiative.id,
   name: initiative.name,
+  ...(initiative.description ? { description: initiative.description } : {}),
   createdAt: initiative.created_at,
   updatedAt: initiative.updated_at,
   ...(initiative.base_branch ? { baseBranch: initiative.base_branch } : {}),
@@ -441,7 +442,8 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const store = await requireStore();
       const result = createInitiative(store.db, {
         name: input.name,
-        repos: input.repos.map((repo) => ({
+        description: input.description,
+        repos: (input.repos ?? []).map((repo) => ({
           directory: repo.directory,
           ...(repo.label ? { label: repo.label } : {}),
         })),
@@ -449,9 +451,13 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       return result.ok ? initiativeOk(result.initiative) : initiativeError(result.error);
     },
 
-    renameInitiative: async (input) => {
+    updateInitiative: async (input) => {
       const store = await requireStore();
-      const result = renameInitiative(store.db, input.id, input.name);
+      const result = updateInitiativeRow(store.db, {
+        id: input.id,
+        name: input.name,
+        description: input.description,
+      });
       return result.ok ? initiativeOk(result.initiative) : initiativeError(result.error);
     },
 

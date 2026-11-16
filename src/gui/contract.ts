@@ -104,6 +104,7 @@ export type InitiativeRepo = {
 export type Initiative = {
   id: string;
   name: string;
+  description?: string | undefined;
   createdAt: string;
   updatedAt: string;
   repos: readonly InitiativeRepo[];
@@ -317,6 +318,7 @@ export const initiativeRepoSchema = Schema.Struct({
 export const initiativeSchema = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
+  description: optString,
   createdAt: Schema.String,
   updatedAt: Schema.String,
   repos: Schema.Array(initiativeRepoSchema),
@@ -335,12 +337,14 @@ export const initiativeResultSchema = Schema.Struct({
 
 export const createInitiativeInputSchema = Schema.Struct({
   name: Schema.String,
-  repos: Schema.Array(Schema.Struct({ directory: Schema.String, label: optString })),
+  description: optString,
+  repos: Schema.optional(Schema.Array(Schema.Struct({ directory: Schema.String, label: optString }))),
 });
 
-export const renameInitiativeInputSchema = Schema.Struct({
+export const updateInitiativeInputSchema = Schema.Struct({
   id: Schema.String,
-  name: Schema.String,
+  name: optString,
+  description: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 export const initiativeRepoInputSchema = Schema.Struct({
@@ -807,8 +811,8 @@ export const PlansRpc = Rpc.define({
       input: Schema.toStandardSchemaV1(createInitiativeInputSchema),
       output: Schema.toStandardSchemaV1(initiativeResultSchema),
     },
-    renameInitiative: {
-      input: Schema.toStandardSchemaV1(renameInitiativeInputSchema),
+    updateInitiative: {
+      input: Schema.toStandardSchemaV1(updateInitiativeInputSchema),
       output: Schema.toStandardSchemaV1(initiativeResultSchema),
     },
     addInitiativeRepo: {
