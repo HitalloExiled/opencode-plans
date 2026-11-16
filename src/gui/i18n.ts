@@ -76,6 +76,7 @@ const EN = {
   "work.plan.prompt":
     'Plan the work item "{0}" (id: {1}).\n\nThe body below is the need, not the implementation: decide how to build it.\n\n---\n{2}\n---\n\nDiscuss anything ambiguous and save the plan with plans.save, passing workItemID: "{1}" so the plan is linked to this item. Do not implement anything in this session.',
   "work.plan.error": "Could not open the planning session.",
+  "work.execute.planFirst": "Plan first",
   "work.replan.title": "Replan: {0}",
   "work.replan.prompt":
     'Replan the work item "{0}" (id: {1}).\n\nThe plan "{3}" (id: {2}) already exists: read it with plans.get, adjust how to build it (the body below is the need, not the implementation) and save the SAME plan with plans.save({ id: "{2}"; workItemID: "{1}" }). Do not create another plan; an item has one. If the plan was done, the new body reopens it as active.\n\n---\n{4}\n---\n\nDo not implement anything in this session.',
@@ -262,6 +263,7 @@ const PT: Record<keyof typeof EN, string> = {
   "work.plan.prompt":
     'Planeje o work item "{0}" (id: {1}).\n\nO corpo abaixo é a necessidade, não a implementação: decida o como.\n\n---\n{2}\n---\n\nDiscuta o que estiver ambíguo e salve o plano com plans.save, passando workItemID: "{1}" para vincular o plano a este item. Não implemente nada nesta sessão.',
   "work.plan.error": "Não foi possível abrir a sessão de planejamento.",
+  "work.execute.planFirst": "Planeje primeiro",
   "work.replan.title": "Replanejar: {0}",
   "work.replan.prompt":
     'Replaneje o work item "{0}" (id: {1}).\n\nO plano "{3}" (id: {2}) já existe: leia-o com plans.get, ajuste o como (o corpo abaixo é a necessidade, não a implementação) e salve o MESMO plano com plans.save({ id: "{2}"; workItemID: "{1}" }). Não crie outro plano; um item tem um plano só. Se o plano estava concluído, o novo corpo o reabre como ativo.\n\n---\n{4}\n---\n\nNão implemente nada nesta sessão.',

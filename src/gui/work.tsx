@@ -24,6 +24,7 @@ import {
   PlansRpc,
   WORK_ITEM_TRANSITIONS,
   WORK_STATUS_ORDER,
+  type Plan,
   type PlanSummary,
   type Project,
   type WorkGroup,
@@ -31,6 +32,7 @@ import {
   type WorkItemStatus,
 } from "./contract";
 import { useT } from "./i18n";
+import { executionFor, planTarget } from "./execution";
 import { filterWorkGroups } from "../work-filter";
 import { planWorkItem } from "./plan-item";
 
@@ -144,6 +146,16 @@ const WORK_CSS = `
 }
 .work-editor-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .work-error-detail { font-size: 11px; color: var(--v2-text-text-muted); overflow-wrap: anywhere; }
+.work-pause-icon { display: inline-flex; align-items: center; gap: 3px; margin-right: 5px; }
+.work-pause-icon::before, .work-pause-icon::after {
+  content: "";
+  display: block;
+  width: 4px;
+  height: 12px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.work-run-hint { font-size: 10.5px; color: var(--v2-text-text-faint); }
 `;
 
 /** The overlay switch: Trabalho | Planos (Global -> Work and Global -> Plan). */
@@ -199,6 +211,8 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const [projectFilter, setProjectFilter] = createSignal<string>("all");
   const [selectedID, setSelectedID] = createSignal<string | undefined>(undefined);
   const [detail, setDetail] = createSignal<WorkItemDetail | null>(null);
+  const [fullPlan, setFullPlan] = createSignal<Plan | null>(null);
+  const [runningPlan, setRunningPlan] = createSignal(false);
   const [detailLoading, setDetailLoading] = createSignal(false);
   const [detailError, setDetailError] = createSignal<string | null>(null);
   const [detailReload, setDetailReload] = createSignal(0);
@@ -260,6 +274,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
     const target = props.target();
     if (!id) {
       setDetail(null);
+      setFullPlan(null);
       setDetailLoading(false);
       return;
     }
@@ -271,8 +286,26 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       .getWorkItem({ id })
       .then((value) => {
         if (current !== detailGeneration) return;
-        setDetail(value as WorkItemDetail | null);
+        const next = value as WorkItemDetail | null;
+        setDetail(next);
         setDetailLoading(false);
+        const summary = next?.plan;
+        if (!summary) {
+          setFullPlan(null);
+          return;
+        }
+        // The summary is enough for display; executing needs the full plan.
+        void target.server.client
+          .rpc(PlansRpc)
+          .get(summary.id)
+          .then((plan) => {
+            if (current !== detailGeneration) return;
+            setFullPlan(plan as Plan | null);
+          })
+          .catch(() => {
+            if (current !== detailGeneration) return;
+            setFullPlan(null);
+          });
       })
       .catch((cause: unknown) => {
         if (current !== detailGeneration) return;
@@ -439,6 +472,34 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       })
       .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setDepSaving(false));
+  };
+
+  /** Only an active plan is executable; a done one needs a replan first. */
+  const activePlan = (): Plan | undefined => {
+    const plan = fullPlan();
+    return plan && plan.status === "active" ? plan : undefined;
+  };
+
+  // Executing from the global surface runs the plan in its own session (the
+  // session that wrote it) and never moves it, like the overlay.
+  const execution = (plan: Plan) =>
+    executionFor(ctx, planTarget(props.target().server, plan));
+
+  const isExecuting = (plan: Plan) => execution(plan).isExecuting(plan);
+
+  const runDisabled = (plan: Plan): boolean =>
+    runningPlan() || (!isExecuting(plan) && (plan.steps.length === 0 || execution(plan).busy()));
+
+  const toggleRun = async (plan: Plan) => {
+    if (runningPlan()) return;
+    setRunningPlan(true);
+    setActionError(null);
+    try {
+      if (isExecuting(plan)) await execution(plan).pause(plan, t);
+      else await execution(plan).execute(plan, t);
+    } finally {
+      setRunningPlan(false);
+    }
   };
 
   const planDetail = (current: WorkItemDetail) => {
@@ -730,9 +791,28 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                 <div class="work-detail-head">
                   <ctx.ui.IconButton icon="arrow-left" label={t("work.back")} onClick={closeDetail} />
                   <h2 class="work-detail-title">{current().item.title}</h2>
+                  <Show
+                    when={activePlan()}
+                    fallback={<span class="work-run-hint">{t("work.execute.planFirst")}</span>}
+                  >
+                    {(plan) => (
+                      <ctx.ui.Button
+                        size="small"
+                        variant="contrast"
+                        icon={isExecuting(plan()) ? undefined : "fill-triangle-down"}
+                        disabled={runDisabled(plan())}
+                        onClick={() => void toggleRun(plan())}
+                      >
+                        <Show when={isExecuting(plan())}>
+                          <span class="work-pause-icon" />
+                        </Show>
+                        {isExecuting(plan()) ? t("pause") : t("execute")}
+                      </ctx.ui.Button>
+                    )}
+                  </Show>
                   <ctx.ui.Button
                     size="small"
-                    variant="contrast"
+                    variant="neutral"
                     icon="brain"
                     busy={planning()}
                     onClick={() => planDetail(current())}
