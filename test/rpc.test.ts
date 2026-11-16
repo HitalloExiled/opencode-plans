@@ -532,3 +532,37 @@ describe("work item without repository", () => {
     expect(saved.item.repoID).toBeUndefined();
   });
 });
+
+describe("setPlanWorkItem", () => {
+  test("adopts a saved plan into an item, then unlinks it", async () => {
+    const created = await h.createInitiative({ name: "Adoption" });
+    if (!created.ok || !created.initiative) throw new Error("initiative");
+    const saved = await h.saveWorkItem({ initiativeID: created.initiative.id, title: "Adopt me" });
+    if (!saved.ok || !saved.item) throw new Error("item");
+    const plan = await makePlan("# Adopted\n\n- [ ] One\n");
+
+    const linked = await h.setPlanWorkItem({ id: plan.id, workItemID: saved.item.id });
+    expect(linked.ok).toBe(true);
+    const detail = await h.getWorkItem({ id: saved.item.id });
+    expect(detail?.plan?.id).toBe(plan.id);
+
+    const unlinked = await h.setPlanWorkItem({ id: plan.id, workItemID: null });
+    expect(unlinked.ok).toBe(true);
+    const after = await h.getWorkItem({ id: saved.item.id });
+    expect(after?.plan ?? null).toBeNull();
+  });
+
+  test("refuses an item another plan already owns", async () => {
+    const created = await h.createInitiative({ name: "Adoption clash" });
+    if (!created.ok || !created.initiative) throw new Error("initiative");
+    const saved = await h.saveWorkItem({ initiativeID: created.initiative.id, title: "Clash" });
+    if (!saved.ok || !saved.item) throw new Error("item");
+    const first = await makePlan("# First\n\n- [ ] One\n");
+    const second = await makePlan("# Second\n\n- [ ] One\n");
+
+    expect((await h.setPlanWorkItem({ id: first.id, workItemID: saved.item.id })).ok).toBe(true);
+    const clash = await h.setPlanWorkItem({ id: second.id, workItemID: saved.item.id });
+    expect(clash.ok).toBe(false);
+    expect((await h.getWorkItem({ id: saved.item.id }))?.plan?.id).toBe(first.id);
+  });
+});

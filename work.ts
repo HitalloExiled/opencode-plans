@@ -59,6 +59,7 @@ const listInput = z.object({
     .default("all")
     .describe("Status filter; hides dropped by default."),
   limit: z.number().int().min(1).max(100).optional().describe("Max items (default 50)."),
+  initiativeID: z.string().min(1).optional().describe("Defaults to the workspace initiative."),
 });
 
 // Same shape as plans.get: a bare id is accepted, the schema stays an object.
@@ -72,12 +73,18 @@ const getInput = z.preprocess(
 export function listWorkTool(ctx: Ctx) {
   return {
     name: "list",
-    description: "List work items of this project: id, title, status, rank, deps and plan.",
+    description: "List work items of an initiative: id, title, status, deps and plan.",
     input: listInput,
     async execute(input: z.infer<typeof listInput>): Promise<ToolResult> {
       try {
         const store = await requireStore();
-        const resolved = resolveInitiative(store.db, workspaceDirectory(ctx));
+        const explicit = input.initiativeID ? getInitiative(store.db, input.initiativeID) : undefined;
+        if (input.initiativeID && !explicit) {
+          return fail(`iniciativa não encontrada: ${input.initiativeID}`);
+        }
+        const resolved = explicit
+          ? { initiative: explicit, repo: undefined }
+          : resolveInitiative(store.db, workspaceDirectory(ctx));
         if (!resolved) {
           return {
             content:
@@ -168,6 +175,7 @@ const budgets = new Map<string, BudgetEntry>();
 const needBody = z.string().max(8000).optional().describe("Need body (data).");
 
 const saveInput = z.object({
+  initiativeID: z.string().min(1).optional().describe("Defaults to the workspace initiative."),
   items: z
     .array(
       z.object({
@@ -194,7 +202,7 @@ const updateInput = z.object({
 export function saveWorkTool(ctx: Ctx) {
   return {
     name: "save",
-    description: "Create up to 3 work items from needs; dedupes by title and parent.",
+    description: "Create up to 3 needs in an initiative; dedupes by title and parent.",
     input: saveInput,
     async execute(input: z.infer<typeof saveInput>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
@@ -208,8 +216,26 @@ export function saveWorkTool(ctx: Ctx) {
           );
         }
 
-        const ensured = ensureInitiativeForDirectory(store.db, workspaceDirectory(ctx));
-        if (!ensured.ok) return fail(ensured.error);
+        // An explicit initiative skips the workspace resolution: the agent is
+        // filing needs for an initiative no directory owns.
+        const explicit = input.initiativeID ? getInitiative(store.db, input.initiativeID) : undefined;
+        if (input.initiativeID && !explicit) {
+          return fail(`iniciativa não encontrada: ${input.initiativeID}`);
+        }
+        let initiativeID: string;
+        let initiativeName: string;
+        let targetRepoID: string | undefined;
+        if (explicit) {
+          initiativeID = explicit.id;
+          initiativeName = explicit.name;
+          targetRepoID = (explicit.repos.find((repo) => repo.primary) ?? explicit.repos[0])?.id;
+        } else {
+          const ensured = ensureInitiativeForDirectory(store.db, workspaceDirectory(ctx));
+          if (!ensured.ok) return fail(ensured.error);
+          initiativeID = ensured.initiative.id;
+          initiativeName = ensured.initiative.name;
+          targetRepoID = ensured.repo.id;
+        }
 
         const results: { id: string; title: string; status: WorkItemStatus; existing: boolean }[] = [];
         for (const entry of input.items) {
@@ -217,7 +243,7 @@ export function saveWorkTool(ctx: Ctx) {
           if (parentID) {
             const parent = getWorkItem(store.db, parentID);
             if (!parent) return fail(`work item não encontrado: ${parentID}`);
-            if (parent.initiative_id !== ensured.initiative.id) {
+            if (parent.initiative_id !== initiativeID) {
               return fail("os itens precisam pertencer à mesma iniciativa");
             }
             if (parent.parent_id) {
@@ -225,7 +251,7 @@ export function saveWorkTool(ctx: Ctx) {
             }
           }
 
-          const duplicate = findDuplicateItem(listWorkItems(store.db, ensured.initiative.id), {
+          const duplicate = findDuplicateItem(listWorkItems(store.db, initiativeID), {
             title: entry.title,
             parentID,
           });
@@ -240,8 +266,8 @@ export function saveWorkTool(ctx: Ctx) {
           }
 
           const created = createWorkItem(store.db, {
-            initiativeID: ensured.initiative.id,
-            repoID: ensured.repo.id,
+            initiativeID,
+            repoID: targetRepoID,
             title: entry.title,
             body: entry.body,
             // The agent never writes as the user.
@@ -264,7 +290,7 @@ export function saveWorkTool(ctx: Ctx) {
         const createdCount = results.filter((item) => !item.existing).length;
         return {
           content: [
-            `Work items (iniciativa "${ensured.initiative.name}"): ${createdCount} criados, ${results.length - createdCount} existentes`,
+            `Work items (iniciativa "${initiativeName}"): ${createdCount} criados, ${results.length - createdCount} existentes`,
             ...results.map(
               (item) =>
                 `- ${item.existing ? "existente" : "criado"}: ${item.title} (id=${item.id}, status=${item.status})`,
@@ -273,7 +299,7 @@ export function saveWorkTool(ctx: Ctx) {
             "Use work.update para mudar status, ordem, pai ou dependências.",
           ].join("\n"),
           metadata: {
-            initiativeID: ensured.initiative.id,
+            initiativeID,
             created: createdCount,
             existing: results.length - createdCount,
             itemIDs: results.map((item) => item.id),

@@ -69,6 +69,7 @@ import {
   setInitiativePrimary,
   setInitiativeRunSettings,
   setStep,
+  setPlanWorkItem as setPlanWorkItemRow,
   setWorkItemRepo as setWorkItemRepoRow,
   setWorkItemParent as setParentRow,
   setWorkItemStatus as setStatusRow,
@@ -639,6 +640,14 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         ...(edge.reason ? { reason: edge.reason } : {}),
       }));
       return { nodes, edges };
+    },
+
+    setPlanWorkItem: async (input) => {
+      const store = await requireStore();
+      const result = setPlanWorkItemRow(store.db, { id: input.id, workItemID: input.workItemID });
+      if (!result.ok) return { ok: false, error: result.error };
+      emitPlanChange({ sessionID: "", planID: input.id });
+      return { ok: true };
     },
 
     deleteWorkItem: async (input) => {

@@ -27,7 +27,8 @@ import {
   WORK_ITEMS_OPEN,
   type InjectMessage,
 } from "./src/inject.js";
-import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
+import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, linkTool, listTool, saveTool, updateTool } from "./plans.js";
+import { INITIATIVE_NAMESPACE, createInitiativeTool, listInitiativeTool } from "./initiative.js";
 import { WORK_NAMESPACE, getWorkTool, listWorkTool, saveWorkTool, updateWorkTool } from "./work.js";
 import { MERGE_NAMESPACE, mergeDoneTool, mergeFailTool, mergeListTool, mergeNextTool } from "./merge.js";
 import { registerAgents } from "./src/agents.js";
@@ -94,8 +95,15 @@ export async function registerTools(ctx: Ctx) {
     editor.add({ ...listTool(ctx), options: { namespace: "plans", pinned: true } });
     editor.add({ ...getTool(ctx), options: { namespace: "plans", pinned: true } });
     editor.add({ ...updateTool(ctx), options: { namespace: "plans", pinned: true } });
+    editor.add({ ...linkTool(ctx), options: { namespace: "plans", pinned: true } });
     editor.add({ ...deleteTool(ctx), options: { namespace: "plans" } });
     editor.add({ ...doctorTool(ctx), options: { namespace: "plans" } });
+
+    // Initiatives group the needs across repositories. The agent creates and
+    // lists them; renaming and the description stay in the panel.
+    editor.namespace(INITIATIVE_NAMESPACE);
+    editor.add({ ...listInitiativeTool(ctx), options: { namespace: "initiative", pinned: true } });
+    editor.add({ ...createInitiativeTool(ctx), options: { namespace: "initiative", pinned: true } });
 
     // Work items are the needs; plans are the how. A separate group keeps the
     // backlog tools out of the plan catalog budget.

@@ -26,6 +26,7 @@ import {
   renderPlanSummary,
   requireStore,
   savePlan,
+  setPlanWorkItem,
   setStep,
   updatePlan,
   type PlanStatus,
@@ -400,6 +401,40 @@ export function deleteTool(ctx: Ctx) {
         return {
           content: `Plano removido: ${result.plan.title} (${result.plan.id})`,
           metadata: { planID: result.plan.id, deleted: true },
+        };
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : String(error));
+      }
+    },
+  };
+}
+
+/**
+ * Adopts a saved plan into a work item (or unlinks it with `workItemID: null`).
+ * Plans created by `plans.save` are born unlinked; this is the way back.
+ */
+export function linkTool(ctx: Ctx) {
+  const linkInput = z.object({
+    id: z.string().min(1).describe("Plan id."),
+    workItemID: z.string().nullable().describe("Item to link; null unlinks."),
+  });
+  return {
+    name: "link",
+    description: "Link a saved plan to a work item; one active plan per item.",
+    input: linkInput,
+    async execute(input: z.infer<typeof linkInput>): Promise<ToolResult> {
+      try {
+        const store = await requireStore();
+        const plan = getPlan(store.db, input.id);
+        if (!plan) return fail(`plano não encontrado: ${input.id}`);
+        const result = setPlanWorkItem(store.db, { id: plan.id, workItemID: input.workItemID });
+        if (!result.ok) return fail(result.error);
+        emitPlanChange({ sessionID: plan.session_id, planID: plan.id });
+        return {
+          content: input.workItemID
+            ? `Plano "${plan.title}" vinculado ao item ${input.workItemID}.`
+            : `Plano "${plan.title}" desvinculado do item.`,
+          metadata: { planID: plan.id, workItemID: input.workItemID },
         };
       } catch (error) {
         return fail(error instanceof Error ? error.message : String(error));

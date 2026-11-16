@@ -561,6 +561,11 @@ export const updateInputSchema = Schema.Struct({
   locale: optString,
 });
 
+export const setPlanWorkItemInputSchema = Schema.Struct({
+  id: Schema.String,
+  workItemID: Schema.NullOr(Schema.String),
+});
+
 export const saveInputSchema = Schema.Struct({
   id: optString,
   title: Schema.String,
@@ -779,6 +784,10 @@ export const PlansRpc = Rpc.define({
     update: {
       input: Schema.toStandardSchemaV1(updateInputSchema),
       output: Schema.toStandardSchemaV1(planResultSchema),
+    },
+    setPlanWorkItem: {
+      input: Schema.toStandardSchemaV1(setPlanWorkItemInputSchema),
+      output: Schema.toStandardSchemaV1(opResultSchema),
     },
     setStep: {
       input: Schema.toStandardSchemaV1(stepInputSchema),

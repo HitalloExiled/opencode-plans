@@ -29,7 +29,8 @@ describe("plans tool registration", () => {
       added
         .filter((tool) => tool.options?.pinned && tool.options?.namespace === namespace)
         .map((tool) => tool.name);
-    expect(pinned("plans")).toEqual(["save", "list", "get", "update"]);
+    expect(pinned("plans")).toEqual(["save", "list", "get", "update", "link"]);
+    expect(pinned("initiative")).toEqual(["list", "create"]);
     expect(pinned("work")).toEqual(["list", "get", "save", "update"]);
     expect(pinned("merge")).toEqual(["list", "next", "done", "fail"]);
   });

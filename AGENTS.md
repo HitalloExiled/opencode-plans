@@ -26,7 +26,8 @@ Everything reads/writes a single SQLite DB **directly** via `node:sqlite`
 
 ```
 index.ts                 registers the plans.* tools, /save-plan, RPC and plan-change events
-plans.ts                 tool definitions (save/list/get/update/delete/doctor)
+plans.ts                 tool definitions (save/list/get/update/link/delete/doctor)
+initiative.ts            tool definitions for initiatives (list/create)
 src/store.ts             SHARED data layer: node:sqlite, schema v2, migrations, SQL.
                          Used by the tools and by the server RPC.
 src/plan-body.ts         PURE step parsing/template/reassembly helpers (server + GUI)
@@ -236,6 +237,16 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   by normalized title + parent + non-terminal status and always writes
   `origin=agent`; `update` moves status/order/parent/deps (cycles rejected) and
   only the planner/user closes an item.
+- **`initiativeID` on `work.list`/`work.save`** files and reads needs for an
+  initiative no directory owns (the Planner-style backlog); without it the
+  workspace resolution is unchanged. An item created there takes the
+  initiative's primary repo, or none when it has no repos.
+- **Initiative tools** (`initiative.*`): `list` (id, name, repos, item counts)
+  and `create` (name + optional description). Renaming and the description stay
+  in the panel; repositories are born from the plan picker.
+- **`plans.link`** adopts a saved plan into an item (`workItemID: null`
+  unlinks), enforcing one plan per item exactly like `savePlan`. It is the way
+  back for a plan created before its item existed.
 - **Three overlay screens**: **Iniciativa | Trabalho | Planos**, chosen by the
   titlebar selector and shared through `overlay-state.ts`. `initiatives.tsx`
   lists every initiative and is the only creation entry point; the cards carry

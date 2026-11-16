@@ -632,6 +632,42 @@ export function getPlanByWorkItem(db: Db, workItemID: string): Plan | undefined 
 /* Writes                                                              */
 /* ------------------------------------------------------------------ */
 
+export type SetPlanWorkItemInput = {
+  id: string;
+  workItemID: string | null;
+};
+
+/**
+ * Links a saved plan to a work item, or unlinks it with `workItemID: null`.
+ * Same rule as `savePlan`: adopting an item that another plan already owns is
+ * refused, so one item never points at two plans.
+ */
+export function setPlanWorkItem(db: Db, input: SetPlanWorkItemInput): Ok | WriteError {
+  const plan = getPlan(db, input.id);
+  if (!plan) return { ok: false, error: `plano não encontrado: ${input.id}` };
+  if (input.workItemID !== null) {
+    if (!getWorkItem(db, input.workItemID)) {
+      return { ok: false, error: `work item não encontrado: ${input.workItemID}` };
+    }
+    const linked = db.prepare("SELECT id FROM plans WHERE work_item_id = ?").get(input.workItemID) as
+      | { id?: string }
+      | undefined;
+    if (linked?.id !== undefined && linked.id !== plan.id) {
+      return { ok: false, error: "este work item já tem um plano; edite o plano existente" };
+    }
+  }
+  try {
+    db.prepare("UPDATE plans SET work_item_id = ?, updated_at = ? WHERE id = ?").run(
+      input.workItemID,
+      nowTimestamp(),
+      plan.id,
+    );
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
 export type SavePlanInput = {
   id?: string | undefined;
   title?: string | undefined;

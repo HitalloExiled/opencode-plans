@@ -200,7 +200,8 @@ interativa e o body é exibido sem o checklist extraído.
 ### Nomes e permissões
 
 - **Code Mode:** `tools.plans.save`, `tools.plans.list`, `tools.plans.get`,
-  `tools.plans.update`, `tools.plans.delete`, `tools.plans.doctor`.
+  `tools.plans.update`, `tools.plans.link`, `tools.plans.delete`,
+  `tools.plans.doctor`.
 - **Sessões regulares:** nomes efetivos `plans_save`, `plans_list`, ... —
   `options: { namespace: "plans" }` é o que prefixa o nome no catálogo.
 - O Plan agent é instruído a chamar `plans.save` ao apresentar o plano final;
@@ -212,7 +213,14 @@ interativa e o body é exibido sem o checklist extraído.
   pelo diretório (corpo do item em `<work-item-body>`, tratado como dado) e
   `work.save`/`work.update` escrevem — no máximo **3 itens por pedido**, dedupe
   por título normalizado + pai + status não-terminal, `origin=agent`; fechar
-  (`done`/`dropped`) só com o planner ou o usuário.
+  (`done`/`dropped`) só com o planner ou o usuário. `work.save` e `work.list`
+  aceitam `initiativeID` para operar numa iniciativa sem diretório dono.
+- **Iniciativas pelo agente** (`initiative.*`): `initiative.list` mostra id,
+  nome, repositórios e nº de itens; `initiative.create` cria com nome e
+  descrição opcional. Editar nome/descrição continua no painel.
+- **Vínculo plano↔item**: `plans.link` adota um plano já salvo num item
+  (`workItemID: null` desvincula), com a mesma regra de um plano por item do
+  `plans.save`; a criação segue pelo Planejar.
 - **Iniciativas**: o overlay tem três telas — **Iniciativa | Trabalho | Planos**
   — escolhidas pelo seletor da barra de título. A tela **Iniciativa** lista
   todas com nome, descrição, nº de repositórios e de itens; os cards têm **lápis**

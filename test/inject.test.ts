@@ -25,10 +25,12 @@ import {
   deleteTool,
   doctorTool,
   getTool,
+  linkTool,
   listTool,
   saveTool,
   updateTool,
 } from "../plans";
+import { INITIATIVE_NAMESPACE, createInitiativeTool, listInitiativeTool } from "../initiative";
 import { WORK_NAMESPACE, getWorkTool, listWorkTool, saveWorkTool, updateWorkTool } from "../work";
 import { MERGE_NAMESPACE, mergeDoneTool, mergeFailTool, mergeListTool, mergeNextTool } from "../merge";
 
@@ -291,8 +293,11 @@ describe("catalog budget", () => {
     listTool({} as never),
     getTool({} as never),
     updateTool({} as never),
+    linkTool({} as never),
     deleteTool({} as never),
     doctorTool({} as never),
+    listInitiativeTool({} as never),
+    createInitiativeTool({} as never),
     listWorkTool({} as never),
     getWorkTool({} as never),
     saveWorkTool({} as never),
@@ -313,6 +318,7 @@ describe("catalog budget", () => {
 
   test("every tool and the namespace fit the budget", () => {
     expect(PLANS_NAMESPACE.description.length).toBeLessThanOrEqual(BUDGET);
+    expect(INITIATIVE_NAMESPACE.description.length).toBeLessThanOrEqual(BUDGET);
     expect(WORK_NAMESPACE.description.length).toBeLessThanOrEqual(BUDGET);
     expect(MERGE_NAMESPACE.description.length).toBeLessThanOrEqual(BUDGET);
     for (const tool of allTools()) {
