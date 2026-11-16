@@ -25,7 +25,7 @@ import {
   type InjectMessage,
 } from "./src/inject.js";
 import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
-import { WORK_NAMESPACE, getWorkTool, listWorkTool } from "./work.js";
+import { WORK_NAMESPACE, getWorkTool, listWorkTool, saveWorkTool, updateWorkTool } from "./work.js";
 import { registerAgents } from "./src/agents.js";
 import { getFlow } from "./src/flow.js";
 import { planMessageAgents } from "./src/flow-rules.js";
@@ -87,6 +87,8 @@ export async function registerTools(ctx: Ctx) {
     editor.namespace(WORK_NAMESPACE);
     editor.add({ ...listWorkTool(ctx), options: { namespace: "work", pinned: true } });
     editor.add({ ...getWorkTool(ctx), options: { namespace: "work", pinned: true } });
+    editor.add({ ...saveWorkTool(ctx), options: { namespace: "work", pinned: true } });
+    editor.add({ ...updateWorkTool(ctx), options: { namespace: "work", pinned: true } });
   });
 }
 

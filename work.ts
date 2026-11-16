@@ -8,19 +8,30 @@
  */
 
 import { Plugin } from "@opencode/plugin";
+import type { ToolContext } from "@opencode/plugin/promise/tool";
 import { z } from "zod";
 import {
+  addWorkItemDep,
+  createWorkItem,
+  ensureProjectForDirectory,
   getPlanByWorkItem,
   getProject,
   getWorkItem,
   listWorkItems,
+  moveWorkItem,
+  removeWorkItemDep,
   requireStore,
   resolveProject,
+  setWorkItemParent,
+  setWorkItemStatus,
+  updateWorkItem,
   workItemChildren,
   workItemDeps,
   type WorkItemStatus,
 } from "./src/store.js";
-import { renderWorkItemDetail, renderWorkItemList } from "./src/work-render.js";
+import { emitPlanChange } from "./src/plan-events.js";
+import { renderWorkItemDetail, renderWorkItemLine, renderWorkItemList } from "./src/work-render.js";
+import { MAX_ITEMS_PER_REQUEST, claimItems, findDuplicateItem, type BudgetEntry } from "./src/work-write.js";
 
 type ToolResult = { content: string; metadata?: Record<string, unknown> };
 type Ctx = Plugin.Context;
@@ -138,6 +149,210 @@ export function getWorkTool(ctx: Ctx) {
             itemID: item.id,
             projectID: project.id,
             status: item.status as WorkItemStatus,
+            planID: plan?.id ?? null,
+          },
+        };
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : String(error));
+      }
+    },
+  };
+}
+
+/** Agents allowed to close an item: the planner decides, the executor proposes. */
+const CLOSING_AGENTS = new Set(["planner", "plan"]);
+
+/** Per-request creation budget, keyed by session + message. */
+const budgets = new Map<string, BudgetEntry>();
+
+const needBody = z.string().max(8000).optional().describe("Need body (data).");
+
+const saveInput = z.object({
+  items: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(200).describe("Need title."),
+        body: needBody,
+        parentID: z.string().optional().describe("Root parent id."),
+      }),
+    )
+    .min(1)
+    .max(MAX_ITEMS_PER_REQUEST)
+    .describe("Needs to create."),
+});
+
+const updateInput = z.object({
+  id: z.string().min(1).describe("Work item id."),
+  status: WORK_STATUS.optional().describe("New status (transitions apply)."),
+  title: z.string().min(1).max(200).optional().describe("New title."),
+  body: needBody,
+  parentID: z.string().nullable().optional().describe("Root parent; null clears."),
+  blockedBy: z.array(z.string()).optional().describe("Replace the dependency set."),
+  move: z.enum(["up", "down"]).optional().describe("Move one place in status."),
+});
+
+export function saveWorkTool(ctx: Ctx) {
+  return {
+    name: "save",
+    description: "Create up to 3 work items from needs; dedupes by title and parent.",
+    input: saveInput,
+    async execute(input: z.infer<typeof saveInput>, toolCtx: ToolContext): Promise<ToolResult> {
+      try {
+        const store = await requireStore();
+        const key = `${String(toolCtx.sessionID)}:${String(toolCtx.messageID)}`;
+        // Reserve the whole batch up front: a partial claim would let the next
+        // call of the same message see an inconsistent budget.
+        if (claimItems(budgets, key, input.items.length, Date.now()) === undefined) {
+          return fail(
+            `limite de ${MAX_ITEMS_PER_REQUEST} work items por pedido; agrupe as necessidades restantes no próximo pedido`,
+          );
+        }
+
+        const project = ensureProjectForDirectory(store.db, workspaceDirectory(ctx));
+        if (!project.ok) return fail(project.error);
+
+        const results: { id: string; title: string; status: WorkItemStatus; existing: boolean }[] = [];
+        for (const entry of input.items) {
+          const parentID = entry.parentID ?? null;
+          if (parentID) {
+            const parent = getWorkItem(store.db, parentID);
+            if (!parent) return fail(`work item não encontrado: ${parentID}`);
+            if (parent.project_id !== project.project.id) {
+              return fail("os itens precisam pertencer ao mesmo projeto");
+            }
+            if (parent.parent_id) {
+              return fail("profundidade máxima de 1: o pai escolhido já é filho de outro item");
+            }
+          }
+
+          const duplicate = findDuplicateItem(listWorkItems(store.db, project.project.id), {
+            title: entry.title,
+            parentID,
+          });
+          if (duplicate) {
+            results.push({
+              id: duplicate.id,
+              title: duplicate.title,
+              status: duplicate.status,
+              existing: true,
+            });
+            continue;
+          }
+
+          const created = createWorkItem(store.db, {
+            projectID: project.project.id,
+            locationID: project.location.id,
+            title: entry.title,
+            body: entry.body,
+            // The agent never writes as the user.
+            origin: "agent",
+          });
+          if (!created.ok) return fail(created.error);
+          if (parentID) {
+            const parented = setWorkItemParent(store.db, { id: created.item.id, parentID });
+            if (!parented.ok) return fail(parented.error);
+          }
+          results.push({
+            id: created.item.id,
+            title: created.item.title,
+            status: created.item.status,
+            existing: false,
+          });
+        }
+
+        emitPlanChange({ sessionID: String(toolCtx.sessionID) });
+        const createdCount = results.filter((item) => !item.existing).length;
+        return {
+          content: [
+            `Work items (projeto "${project.project.name}"): ${createdCount} criados, ${results.length - createdCount} existentes`,
+            ...results.map(
+              (item) =>
+                `- ${item.existing ? "existente" : "criado"}: ${item.title} (id=${item.id}, status=${item.status})`,
+            ),
+            "",
+            "Use work.update para mudar status, ordem, pai ou dependências.",
+          ].join("\n"),
+          metadata: {
+            projectID: project.project.id,
+            created: createdCount,
+            existing: results.length - createdCount,
+            itemIDs: results.map((item) => item.id),
+          },
+        };
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : String(error));
+      }
+    },
+  };
+}
+
+export function updateWorkTool(ctx: Ctx) {
+  return {
+    name: "update",
+    description: "Update a work item: status, title, body, parent, deps or order.",
+    input: updateInput,
+    async execute(input: z.infer<typeof updateInput>, toolCtx: ToolContext): Promise<ToolResult> {
+      try {
+        const store = await requireStore();
+        const item = getWorkItem(store.db, input.id);
+        if (!item) return fail(`work item não encontrado: ${input.id}`);
+
+        const closing = input.status === "done" || input.status === "dropped";
+        if (closing && !CLOSING_AGENTS.has(String(toolCtx.agent))) {
+          return fail(
+            "done/dropped só por decisão do planner ou do usuário; proponha o aceite e deixe o item em doing",
+          );
+        }
+
+        if (input.title !== undefined || input.body !== undefined) {
+          const edited = updateWorkItem(store.db, { id: input.id, title: input.title, body: input.body });
+          if (!edited.ok) return fail(edited.error);
+        }
+
+        if (input.parentID !== undefined) {
+          const parented = setWorkItemParent(store.db, { id: input.id, parentID: input.parentID });
+          if (!parented.ok) return fail(parented.error);
+        }
+
+        if (input.status !== undefined) {
+          const moved = setWorkItemStatus(store.db, { id: input.id, status: input.status });
+          if (!moved.ok) return fail(moved.error);
+        }
+
+        if (input.blockedBy !== undefined) {
+          const current = new Set(workItemDeps(store.db, input.id).blockedBy.map((dep) => dep.id));
+          const wanted = new Set(input.blockedBy);
+          for (const dep of current) {
+            if (wanted.has(dep)) continue;
+            const removed = removeWorkItemDep(store.db, { itemID: input.id, blocksID: dep });
+            if (!removed.ok) return fail(removed.error);
+          }
+          for (const dep of wanted) {
+            if (current.has(dep)) continue;
+            const added = addWorkItemDep(store.db, { itemID: input.id, blocksID: dep });
+            if (!added.ok) return fail(added.error);
+          }
+        }
+
+        if (input.move !== undefined) {
+          const moved = moveWorkItem(store.db, { id: input.id, direction: input.move });
+          if (!moved.ok) return fail(moved.error);
+        }
+
+        emitPlanChange({ sessionID: String(toolCtx.sessionID) });
+        const updated = getWorkItem(store.db, input.id);
+        if (!updated) return fail(`work item não encontrado após a atualização: ${input.id}`);
+        const deps = workItemDeps(store.db, updated.id);
+        const plan = getPlanByWorkItem(store.db, updated.id);
+
+        return {
+          content: [
+            "Work item atualizado.",
+            renderWorkItemLine(updated, { blockedBy: deps.blockedBy, plan }),
+          ].join("\n"),
+          metadata: {
+            itemID: updated.id,
+            status: updated.status,
             planID: plan?.id ?? null,
           },
         };

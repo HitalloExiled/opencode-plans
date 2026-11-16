@@ -26,7 +26,7 @@ import {
   saveTool,
   updateTool,
 } from "../plans";
-import { WORK_NAMESPACE, getWorkTool, listWorkTool } from "../work";
+import { WORK_NAMESPACE, getWorkTool, listWorkTool, saveWorkTool, updateWorkTool } from "../work";
 
 const user = (text: string): InjectMessage => ({ role: "user", content: [{ type: "text", text }] });
 const assistant = (text: string): InjectMessage => ({
@@ -275,6 +275,8 @@ describe("catalog budget", () => {
     doctorTool({} as never),
     listWorkTool({} as never),
     getWorkTool({} as never),
+    saveWorkTool({} as never),
+    updateWorkTool({} as never),
   ];
 
   function shapeOf(input: unknown): Record<string, { description?: string }> {

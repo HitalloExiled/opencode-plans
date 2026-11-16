@@ -30,6 +30,6 @@ describe("plans tool registration", () => {
         .filter((tool) => tool.options?.pinned && tool.options?.namespace === namespace)
         .map((tool) => tool.name);
     expect(pinned("plans")).toEqual(["save", "list", "get", "update"]);
-    expect(pinned("work")).toEqual(["list", "get"]);
+    expect(pinned("work")).toEqual(["list", "get", "save", "update"]);
   });
 });
