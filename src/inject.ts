@@ -1,7 +1,7 @@
 /**
  * Context layers the plugin adds to the model request.
  *
- * Two rules, both driven by the provider's prefix cache:
+ * All of them are driven by the provider's prefix cache:
  *
  * - The routing rule is a CONSTANT string pushed as its own trailing system
  *   part on every request. Re-pushing the same bytes keeps the head of the
@@ -10,6 +10,9 @@
  * - The plan block is DYNAMIC (progress, step ids), so it never touches
  *   `system`: it is appended to the tail of the last user message, and only
  *   after a compaction, when the plan text is no longer in the conversation.
+ * - The `<plans-flow>` block is the dedicated flow's extension: constant, in
+ *   the tail, so the Plan/Build clone keeps the exact system the native agents
+ *   send. The reminder itself (also a tail message) lives in `plan-reminder.ts`.
  */
 
 import { planProgress, type Plan } from "./store.js";
@@ -24,50 +27,45 @@ export const PLANS_ROUTING_RULE = [
   '- Track progress with plans.update (stepID + stepStatus: "doing" then "done"); never rewrite the body to change status.',
 ].join("\n");
 
+export const PLANS_CONTEXT_OPEN = "<plans-context>";
+export const PLANS_CONTEXT_CLOSE = "</plans-context>";
+
 /**
- * The plugin's own agents share one system prompt (`COMMON_SYSTEM` in
- * agents.ts), byte for byte, so switching between them keeps the cached prefix.
- * Their role lives here, in a constant trailing system part: the only bytes
- * that change on a switch.
+ * The extension: the only bytes the dedicated flow adds on top of the Plan /
+ * Build clone. It rides the request tail (never `system`, never the reminder)
+ * so the parity above survives byte for byte and a planner <-> executor switch
+ * only re-prefills the new tail.
  */
-export const PLANNER_ROLE = [
-  "Planner role (read-only, like the native Plan agent):",
-  "- Explore, ask, and discuss the plan in the conversation. Never modify files: edit is denied.",
-  "- Keep shell commands read-only (no redirects, no tee, no file writes).",
-  "- Do not implement: tell the user to switch to the Executor agent or run the plan from the Plans panel.",
+export const PLANS_FLOW_OPEN = "<plans-flow>";
+
+const PLANS_FLOW_COMMON = [
+  "Persisted plans flow (plans.db is the plan record; markdown files under ~/.opencode/plan are scratch):",
+  "- Saving is expected, not optional: when you present a final plan with no blocking question, call plans.save in the same turn. Never wait for the user to ask.",
+  "- Save at most one plan per request: if this request already saved one, update it with plans.update instead of saving another.",
+  "- The plans.save result already lists the step ids; do not call plans.get just to confirm.",
+  '- Track progress with plans.update (stepID + stepStatus: "doing" then "done"); never rewrite the body to change status.',
+];
+
+export const PLANNER_FLOW = [
+  "Role: planner.",
+  "- The Plan-mode reminder above still governs: implement nothing and tell the user to switch to the Executor agent (or to run the plan from the Plans panel).",
+  "- When the user states requirements, keep them in the plan under construction: add steps or amend it.",
 ].join("\n");
 
-export const EXECUTOR_ROLE = [
-  "Executor role:",
+export const EXECUTOR_FLOW = [
+  "Role: executor.",
   "- The user message names the plan id. Read it with plans.get and follow its steps in order.",
   "- Before working a step, mark it doing with plans.update (id + stepID + stepStatus); when it is done, mark it done.",
   "- If a step is blocked, stop and explain instead of silently skipping it.",
 ].join("\n");
 
-export const AGENT_ROLE_OPEN = "<agent-role>";
-
-/**
- * The role block for the plugin's own agents. It is appended to the TAIL of the
- * request (like the native Plan reminder), never pushed as a system part: the
- * agent system is the first system part, so any difference there would
- * invalidate the cached prefix and the whole history on a planner <-> executor
- * switch.
- */
-export function agentRoleBlock(agent: string | undefined): string | undefined {
-  const role = agent === "planner" ? PLANNER_ROLE : agent === "executor" ? EXECUTOR_ROLE : undefined;
-  return role ? `${AGENT_ROLE_OPEN}\n${role}\n</agent-role>` : undefined;
+/** The flow block for the dedicated agents, wrapped in its own tag. */
+export function plansFlowBlock(agent: string | undefined): string | undefined {
+  const role = agent === "planner" ? PLANNER_FLOW : agent === "executor" ? EXECUTOR_FLOW : undefined;
+  if (!role) return undefined;
+  return [PLANS_FLOW_OPEN, ...PLANS_FLOW_COMMON, role, "</plans-flow>"].join("\n");
 }
 
-/**
- * Whether the plugin's agent owns its own routing text. Native agents get the
- * constant routing rule; ours get the shared system plus their role part.
- */
-export function ownsRoutingRule(agent: string | undefined): boolean {
-  return agent === "planner" || agent === "executor";
-}
-
-export const PLANS_CONTEXT_OPEN = "<plans-context>";
-export const PLANS_CONTEXT_CLOSE = "</plans-context>";
 
 const MAX_PENDING_STEPS = 8;
 const MAX_STEP_TEXT = 240;
@@ -94,10 +92,14 @@ export function hasCompaction(messages: readonly InjectMessage[]): boolean {
  * summary can quote the tag mid-text; treating that as the block would make
  * the injection refuse itself for the rest of the session.
  */
-export function hasPlanBlock(messages: readonly InjectMessage[]): boolean {
+export function hasBlock(messages: readonly InjectMessage[], open: string): boolean {
   return messages.some((message) =>
-    message.content.some((part) => part.type === "text" && (part.text ?? "").trimStart().startsWith(PLANS_CONTEXT_OPEN)),
+    message.content.some((part) => part.type === "text" && (part.text ?? "").trimStart().startsWith(open)),
   );
+}
+
+export function hasPlanBlock(messages: readonly InjectMessage[]): boolean {
+  return hasBlock(messages, PLANS_CONTEXT_OPEN);
 }
 
 /**
@@ -106,10 +108,10 @@ export function hasPlanBlock(messages: readonly InjectMessage[]): boolean {
  * block rides a new user message instead of rewriting tool output or breaking
  * role alternation.
  */
-export function appendTailBlock(messages: InjectMessage[], text: string): boolean {
+export function appendTailBlock(messages: InjectMessage[], text: string, open = PLANS_CONTEXT_OPEN): boolean {
   const last = messages.at(-1);
   if (!last) return false;
-  if (hasPlanBlock(messages)) return false;
+  if (hasBlock(messages, open)) return false;
   if (last.role === "user") {
     last.content.push({ type: "text", text });
     return true;

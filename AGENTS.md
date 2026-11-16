@@ -65,17 +65,16 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   `PlansRpc.save` (editor) are the explicit entry points. The hint button only
   sends a user-message nudge asking the agent to call `plans.save`; it never
   captures the last message itself.
-- **Switching planner <-> executor must keep the cached prefix.** The agent
-  system is the FIRST system part (`baseTranscript`), so any difference there
-  invalidates the instructions and the whole history — the native plan <-> build
-  switch pays exactly that. Both of our agents therefore share byte-identical
-  `COMMON_SYSTEM`, and the role is injected as an `<agent-role>` block in the
-  request TAIL (same trick as the native Plan reminder), which only re-prefills
-  the new tail. Never put role text in the agent `system`.
-- **The routing rule is skipped for our own agents.** `planner`/`executor`
-  carry the flow in their system prompt; pushing the constant rule there would
-  duplicate the save contract and mix in Plan-mode wording (`ownsRoutingRule`).
-  Native agents keep the rule.
+- **The clones carry no `system`.** Plan and Build have none either: Plan's
+  behavior comes from its permission set plus the reminder the core injects per
+  request. Giving `planner`/`executor` a system prompt would be a byte the
+  native agents never send, so the dedicated flow could never match. The
+  system is the FIRST system part (`baseTranscript`); keep it identical and put
+  everything flow-specific in the request tail.
+- **The routing rule goes to every agent, in both flows.** It is constant and
+  re-pushed VERBATIM on every request — never conditionally, never only on the
+  first one: a shrinking head forces a full re-prefill of the conversation.
+  The dedicated agents get it exactly like the native ones.
 - **Injection is cache-first, in two layers.** The routing rule is constant and
   re-pushed VERBATIM on every request — never conditionally, never only on the
   first one: a shrinking head forces a full re-prefill of the conversation
@@ -90,19 +89,34 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
 - **Two agent flows, toggled by the "Experimental agents flow" switch in the GUI and stored server-side.** `flow.json`
   next to `plans.db` (RPC `getFlow`/`setFlow`, cached in memory) holds
   `native` (default) or `dedicated`. `native` reproduces the pre-agents
-  behavior exactly (commit fb70c25): the routing rule on every agent,
-  `/save-plan` capturing only `plan`, execute -> `build`, pause -> `plan`.
-  `dedicated` uses our agents, the conditional rule, the `<agent-role>` tail,
-  and execute -> `executor` / pause -> `planner`. Never key behavior off the
-  agent name alone; read the flow.
-- **The plugin owns two primary agents** (`src/agents.ts`, registered with
-  `ctx.agent.transform`; `update` upserts, so a new id is created). `planner`
-  mirrors the native Plan agent: `edit` denied, **shell allowed** (read-only by
-  instruction), and its system saves the plan with `plans.save` in the same
-  turn, at most one plan per request (else `plans.update`), only when presenting
-  it. `executor` works the plan step by step with `plans.update`. Executing
-  from the panel/pill switches the session to `executor`; pausing returns it to
-  `planner`. `/save-plan` captures the last message of `plan` **or** `planner`.
+  behavior exactly (commit fb70c25): `/save-plan` capturing only `plan`,
+  execute -> `build`, pause -> `plan`. `dedicated` uses our agents (execute ->
+  `executor`, pause -> `planner`, `/save-plan` also accepting `planner`) plus
+  the reminder and the `<plans-flow>` tail. Never key behavior off the agent
+  name alone; read the flow.
+- **`planner` is Plan and `executor` is Build, replicated by behavior.** Both
+  live in `src/agents.ts` (registered with `ctx.agent.transform`; `update`
+  upserts). They copy the native descriptions and permission sets — `planner`:
+  `edit * deny` + `edit ~/.opencode/plan/* allow`; `executor`: editing open —
+  and carry **no `system`**. Shell stays allowed on the planner, exactly like
+  Plan: read-only is an instruction, not a permission, so a shell redirect can
+  still write. `src/plan-reminder.ts` replicates the core's `enter`/`leave`
+  text byte for byte and splices it before the user's prompt on every request
+  (also after a compaction); `index.ts` replicates Plan's `tool.hook` so a
+  denied `edit`/`write`/`patch` reports `Cannot use <tool> to modify files
+  outside the Plan directory: <dir>`.
+- **The reminder is spliced, never persisted.** The text is byte-identical to
+  the core's, so a synthetic copy would be indistinguishable from Plan's own
+  reminder; the core's reconciler would then treat it as stale for any agent
+  other than `plan` and append `leave` on every request, which our hook would
+  answer with `enter` again — an endless enter/leave ping-pong. Splicing into
+  `event.messages` gives the model the same bytes without leaving a copy the
+  core can fight.
+- **The extension is a `<plans-flow>` tail block.** `src/inject.ts` holds the
+  shared contract (save in the same turn, one plan per request, step tracking)
+  plus the per-agent role; `index.ts` appends it in the dedicated flow only.
+  It never touches `system` or the reminder, so the clone above stays intact
+  and a planner <-> executor switch only re-prefills the new tail.
 - **Saving is the expected behavior, not a permission.** The routing rule says
   it imperatively and spells out that the core Plan-mode reminder about "plan
   files" does not cover `plans.save`/`plans.update` (it means markdown under

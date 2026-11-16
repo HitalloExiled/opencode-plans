@@ -57,10 +57,15 @@ e o `npm run gui:build`).
 1. **Dois fluxos, com toggle na GUI**: **Nativo** (padrão) usa Plan/Build
    exatamente como antes; **Dedicado** usa os agentes próprios. A escolha fica
    em `flow.json`, ao lado do `plans.db`, e vale para a instalação.
-2. **Dois agentes próprios** (fluxo dedicado): **Planner** (read-only, fala sobre o plano e o
-   salva com `plans.save` no mesmo turno) e **Executor** (lê o plano com
-   `plans.get` e marca `doing`/`done` com `plans.update`). O Executar do painel
-   troca a sessão para o Executor; pausar volta ao Planner.
+2. **Dois agentes próprios** (fluxo dedicado), **clones por comportamento** do
+   Plan e do Build: mesmas permissões, mesmas descrições, **sem system**. O
+   **Planner** recebe o mesmo reminder que o core injeta no Plan (antes do
+   prompt, inclusive depois de compactação) e o mesmo erro para edição fora de
+   `~/.opencode/plan`; o **Executor** edita e roda como o Build. Por cima do
+   clone, um bloco `<plans-flow>` na cauda pede para salvar o plano no mesmo
+   turno (`plans.save`, um por pedido) e marcar progresso (`plans.update`,
+   `doing` -> `done`). O Executar do painel troca a sessão para o Executor;
+   pausar volta ao Planner.
 3. **Persiste um plano** (`plans.save`) com título, Markdown, passos e vínculo
    ao projeto/sessão. O `plans.save` aceita `id` para **substituir o
    texto/estrutura** de um plano existente: isso recria os passos e reinicia

@@ -13,12 +13,13 @@
 
 import { Plugin } from "@opencode/plugin";
 import type { SessionContext } from "@opencode/plugin/promise/session";
+import { Tool } from "@opencode/schema/tool";
 import { findLastPlanMessage, type SessionMessageLike } from "./src/capture.js";
 import {
   appendTailBlock,
   hasCompaction,
-  agentRoleBlock,
-  ownsRoutingRule,
+  PLANS_FLOW_OPEN,
+  plansFlowBlock,
   pushRoutingRule,
   renderPlanContext,
   type InjectMessage,
@@ -27,6 +28,7 @@ import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, listTool, saveTool, u
 import { registerAgents } from "./src/agents.js";
 import { getFlow } from "./src/flow.js";
 import { planMessageAgents } from "./src/flow-rules.js";
+import { applyPlanReminder, PLAN_DIR } from "./src/plan-reminder.js";
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
 import { onPlanChange } from "./src/plan-events.js";
@@ -141,6 +143,36 @@ async function registerCommand(ctx: Ctx) {
   });
 }
 
+/** Tools whose permission denial Plan rewrites into a Plan-directory message. */
+const PLAN_EDIT_TOOLS = new Set(["edit", "write", "patch"]);
+
+/** The core's Plan plugin only rewrites denials, not arbitrary failures. */
+function isPermissionBlocked(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { _tag?: unknown })._tag === "Permission.BlockedError"
+  );
+}
+
+/**
+ * Replica of Plan's `tool.hook`: a denied edit outside the plan directory gets
+ * the same actionable message the native Plan produces. Dedicated flow only;
+ * the core already handles the native Plan.
+ */
+async function registerPlanToolHook(ctx: Ctx) {
+  return ctx.tool.hook("execute.after", (event) => {
+    if (getFlow() !== "dedicated") return;
+    if (String(event.agent) !== "planner") return;
+    if (event.status !== "error") return;
+    if (!PLAN_EDIT_TOOLS.has(event.tool)) return;
+    if (!isPermissionBlocked(event.error.error)) return;
+    event.error = new Tool.Error({
+      message: `Cannot use ${event.tool} to modify files outside the Plan directory: ${PLAN_DIR}`,
+    });
+  });
+}
+
 /**
  * Two layers, one cache rule: the routing rule is constant and re-pushed on
  * every request, so the head of the prompt stays byte-identical; the plan
@@ -150,22 +182,34 @@ async function registerCommand(ctx: Ctx) {
 async function onContext(ctx: Ctx, event: SessionContext) {
   const agent = String(event.agent);
   const dedicated = getFlow() === "dedicated";
-  // Outside the try/catch: a broken database must not drop the rule. In the
-  // native flow the rule goes to every agent (the pre-agents behavior); in the
-  // dedicated flow our own agents carry the contract and skip it.
-  if (!dedicated || !ownsRoutingRule(agent)) pushRoutingRule(event.system);
+  // Outside the try/catch: a broken database must not drop the rule. The rule
+  // is constant and goes to every agent, exactly like the native flow: the
+  // planner/executor clone Plan/Build, so their system must match too.
+  pushRoutingRule(event.system);
 
   if (agent === "plan") return;
   try {
     const messages = event.messages as InjectMessage[];
     const last = messages.at(-1);
-    const structural = hasCompaction(messages);
-    // Dedicated flow: our agents carry their role in the request tail, not in
-    // `system` (the cached prefix); the tail is new bytes anyway.
+    // The dedicated flow replicates Plan mode for the planner: the same
+    // reminder the core injects before the prompt, reconciled per request so a
+    // compaction or revert cannot strip it.
+    //
+    // It is deliberately NOT persisted as a synthetic message. The text is
+    // byte-identical to the core's, so a persisted copy is indistinguishable
+    // from Plan's own reminder; the core's reconciler would then treat it as
+    // stale for any agent other than `plan` and append `leave` on every
+    // request, which our hook would answer with `enter` again — an endless
+    // enter/leave ping-pong. Splicing per request gives the model the same
+    // bytes without leaving a copy the core can fight.
     if (dedicated) {
-      const role = agentRoleBlock(agent);
-      if (role) appendTailBlock(messages, role);
+      applyPlanReminder(messages, agent);
+      // The extension rides the tail too: the Plan/Build clone stays byte
+      // identical, only the new bytes are appended.
+      const flowBlock = plansFlowBlock(agent);
+      if (flowBlock) appendTailBlock(messages, flowBlock, PLANS_FLOW_OPEN);
     }
+    const structural = hasCompaction(messages);
     const flagged = compactedSessions.has(String(event.sessionID));
     // The compaction hook fires for the summarization request itself; that
     // request has no conversation tail, and injecting there would put the plan
@@ -214,6 +258,7 @@ export default Plugin.define({
     const registrations = await Promise.all([
       registerTools(ctx),
       registerCommand(ctx),
+      registerPlanToolHook(ctx),
       ctx.session.hook("compaction", (event) => {
         compactedSessions.add(String(event.sessionID));
       }),

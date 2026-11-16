@@ -7,12 +7,11 @@ import {
   appendTailBlock,
   hasCompaction,
   hasPlanBlock,
-  AGENT_ROLE_OPEN,
-  agentRoleBlock,
-  EXECUTOR_ROLE,
-  ownsRoutingRule,
-  PLANNER_ROLE,
+  EXECUTOR_FLOW,
+  PLANNER_FLOW,
+  PLANS_FLOW_OPEN,
   PLANS_ROUTING_RULE,
+  plansFlowBlock,
   pushRoutingRule,
   renderPlanContext,
   type InjectMessage,
@@ -97,42 +96,46 @@ describe("routing rule", () => {
   });
 });
 
-describe("ownsRoutingRule / agentRoleBlock", () => {
-  test("our own agents get their role in the tail instead of the routing rule", () => {
-    expect(ownsRoutingRule("planner")).toBe(true);
-    expect(ownsRoutingRule("executor")).toBe(true);
-    expect(agentRoleBlock("planner")).toContain(PLANNER_ROLE);
-    expect(agentRoleBlock("executor")).toContain(EXECUTOR_ROLE);
-    expect(agentRoleBlock("planner")!.startsWith(AGENT_ROLE_OPEN)).toBe(true);
-    // The role is a message-tail block, never a system part: a system
-    // difference would invalidate the cached prefix on a switch.
-    expect(PLANNER_ROLE).not.toBe(EXECUTOR_ROLE);
+describe("plans-flow extension", () => {
+  test("carries the shared contract plus the role", () => {
+    const planner = plansFlowBlock("planner")!;
+    expect(planner.startsWith(PLANS_FLOW_OPEN)).toBe(true);
+    expect(planner.endsWith("</plans-flow>")).toBe(true);
+    expect(planner).toContain("call plans.save in the same turn");
+    expect(planner).toContain("Save at most one plan per request");
+    expect(planner).toContain("do not call plans.get just to confirm");
+    expect(planner).toContain("plans.update");
+    expect(planner).toContain(PLANNER_FLOW);
+    expect(planner).not.toContain(EXECUTOR_FLOW);
   });
 
-  test("the role block rides the tail like the plan block", () => {
-    const messages = [user("hi")];
-    expect(appendTailBlock(messages, agentRoleBlock("planner")!)).toBe(true);
-    expect(messages).toHaveLength(1);
-    expect(messages[0]!.content.at(-1)?.text).toContain(AGENT_ROLE_OPEN);
+  test("the planner keeps Plan mode and the executor reads the plan", () => {
+    expect(PLANNER_FLOW).toContain("switch to the Executor agent");
+    expect(EXECUTOR_FLOW).toContain("plans.get");
+    expect(EXECUTOR_FLOW).toContain("doing");
+    expect(EXECUTOR_FLOW).toContain("done");
   });
 
-  test("native agents and subagents keep the constant rule", () => {
-    expect(ownsRoutingRule("plan")).toBe(false);
-    expect(ownsRoutingRule("build")).toBe(false);
-    expect(ownsRoutingRule(undefined)).toBe(false);
-    expect(agentRoleBlock("plan")).toBeUndefined();
-    expect(agentRoleBlock(undefined)).toBeUndefined();
+  test("native agents and subagents get no block", () => {
+    expect(plansFlowBlock("plan")).toBeUndefined();
+    expect(plansFlowBlock("build")).toBeUndefined();
+    expect(plansFlowBlock(undefined)).toBeUndefined();
   });
 
-  test("the planner role is read-only", () => {
-    expect(PLANNER_ROLE).toContain("Never modify files");
-    expect(PLANNER_ROLE).toContain("Keep shell commands read-only");
+  test("rides the tail and coexists with the plan context", () => {
+    const messages = [user("a")];
+    expect(appendTailBlock(messages, plansFlowBlock("planner")!, PLANS_FLOW_OPEN)).toBe(true);
+    // A second layer can still append its own block.
+    expect(appendTailBlock(messages, BLOCK)).toBe(true);
+    expect(messages[0]!.content.at(-1)?.text).toBe(BLOCK);
+    expect(messages[0]!.content.at(-2)?.text).toContain(PLANS_FLOW_OPEN);
   });
 
-  test("the executor role reads and tracks the plan", () => {
-    expect(EXECUTOR_ROLE).toContain("plans.get");
-    expect(EXECUTOR_ROLE).toContain("plans.update");
-    expect(EXECUTOR_ROLE).toContain("doing");
+  test("is idempotent per tag", () => {
+    const messages = [user("a")];
+    expect(appendTailBlock(messages, plansFlowBlock("executor")!, PLANS_FLOW_OPEN)).toBe(true);
+    expect(appendTailBlock(messages, plansFlowBlock("executor")!, PLANS_FLOW_OPEN)).toBe(false);
+    expect(messages[0]!.content).toHaveLength(2);
   });
 });
 
