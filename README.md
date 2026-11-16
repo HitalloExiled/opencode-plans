@@ -66,7 +66,10 @@ e o `npm run gui:build`).
    compactação. Por cima do clone, um bloco `<plans-flow>` na cauda pede para
    salvar o plano no mesmo turno (`plans.save`, um por pedido) e marcar
    progresso (`plans.update`, `doing` -> `done`). O Executar do painel troca a
-   sessão para o Executor; pausar volta ao Planner.
+   sessão para o Executor; pausar volta ao Planner. No fluxo dedicado a
+   mensagem de execução só nomeia o plano (e o item) e a de planejamento o item
+   e o corpo: o contrato vai na cauda `<plans-flow>`. O fluxo nativo, sem cauda,
+   mantém os prompts completos.
 3. **Persiste um plano** (`plans.save`) com título, Markdown, passos e vínculo
    ao projeto/sessão. O `plans.save` aceita `id` para **substituir o
    texto/estrutura** de um plano existente: isso recria os passos e reinicia

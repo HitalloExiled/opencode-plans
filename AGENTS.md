@@ -123,6 +123,10 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
 - **The extension is a `<plans-flow>` tail block.** `src/inject.ts` holds the
   shared contract (save in the same turn, one plan per request, step tracking)
   plus the per-agent role; `index.ts` appends it in the dedicated flow only.
+  **Dedicated seeds are short on purpose**: execute names only the plan (and the
+  work item), plan/replan names the item, the body and the `plans.save` call;
+  the tail carries the rest. The native flow has no tail and keeps the long
+  prompts (`execute.prompt*`, `work.plan.prompt`, `work.replan.prompt`).
   It never touches `system` or the reminder, so the clone above stays intact
   and a planner <-> executor switch only re-prefills the new tail.
 - **Saving is the expected behavior, not a permission.** The routing rule says

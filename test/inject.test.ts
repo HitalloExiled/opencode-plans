@@ -126,6 +126,9 @@ describe("plans-flow extension", () => {
     expect(EXECUTOR_FLOW).toContain("plans.get");
     expect(EXECUTOR_FLOW).toContain("doing");
     expect(EXECUTOR_FLOW).toContain("done");
+    // The short dedicated prompt relies on the tail for these rules.
+    expect(EXECUTOR_FLOW).toContain("source of truth");
+    expect(EXECUTOR_FLOW).toContain("do not replan");
     // The executor proposes acceptance; done/dropped stay a human decision.
     expect(EXECUTOR_FLOW).toContain("ready for acceptance");
     expect(EXECUTOR_FLOW).toContain("do not mark the work item done");
@@ -357,7 +360,7 @@ describe("work items context", () => {
     expect(text.split("\n").filter((line) => line.startsWith("- [")).length).toBe(12);
     expect(text).not.toContain("secret body");
     expect(text).not.toContain("closed");
-    expect(text).toContain("project \"App\"");
+    expect(text).toContain("initiative \"App\"");
   });
 
   test("shows the plan status and progress of each item", () => {

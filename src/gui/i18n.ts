@@ -176,6 +176,8 @@ const EN = {
   "work.plan.title": "Plan: {0}",
   "work.plan.prompt":
     'Plan the work item "{0}" (id: {1}).\n\nThe body below is the need, not the implementation: decide how to build it.\n\n---\n{2}\n---\n\nDiscuss anything ambiguous and save the plan with plans.save, passing workItemID: "{1}" so the plan is linked to this item. Do not implement anything in this session.',
+  "work.plan.promptShort":
+    'Plan the work item "{0}" (id: {1}). The body below is the need; discuss anything ambiguous and save with plans.save({ workItemID: "{1}" }).\n\n---\n{2}\n---',
   "work.plan.error": "Could not open the planning session.",
   "work.plan.dialog.title": "Plan: {0}",
   "work.plan.dialog.hint":
@@ -191,6 +193,8 @@ const EN = {
   "work.plan.repoError": "Could not set the item's repository.",
   "work.execute.planFirst": "Plan first",
   "work.accept": "Accept",
+  "work.replan.promptShort":
+    'Replan the work item "{0}" (id: {1}); the plan "{3}" (id: {2}) already exists. Read it with plans.get and save the SAME plan with plans.save({ id: "{2}", workItemID: "{1}" }). The body below is the need.\n\n---\n{4}\n---',
   "work.replan.title": "Replan: {0}",
   "work.replan.prompt":
     'Replan the work item "{0}" (id: {1}).\n\nThe plan "{3}" (id: {2}) already exists: read it with plans.get, adjust how to build it (the body below is the need, not the implementation) and save the SAME plan with plans.save({ id: "{2}"; workItemID: "{1}" }). Do not create another plan; an item has one. If the plan was done, the new body reopens it as active.\n\n---\n{4}\n---\n\nDo not implement anything in this session.',
@@ -297,6 +301,8 @@ const EN = {
     'Execute or resume the plan "{0}" (id: {1}) from where it is. If the plan is not already in the conversation, read it with plans.get; otherwise use the text and step ids you already have. Do the remaining steps and mark each with plans.update ("doing" then "done"). The plan is the source of truth: do not replan or rewrite the body. When every step is done and nothing is blocked, do not close the work item: summarize the result and say it is ready for acceptance; the item stays doing, since done and dropped are the user\'s call.',
   "execute.promptItem":
     'Execute or resume the plan "{0}" (id: {1}), which serves the work item "{2}" (id: {3}), from where it is. If the plan is not already in the conversation, read it with plans.get; otherwise use the text and step ids you already have. Do the remaining steps and mark each with plans.update ("doing" then "done"). The plan is the source of truth: do not replan or rewrite the body. When every step is done and nothing is blocked, do not close the work item: summarize the result and say it is ready for acceptance; the item stays doing, since done and dropped are the user\'s call.',
+  "execute.promptShort": 'Execute or resume the plan "{0}" (id: {1}).',
+  "execute.promptItemShort": 'Execute or resume the plan "{0}" (id: {1}) for the work item "{2}" (id: {3}).',
   "execute.pill": "Run plan",
   "execute.pillTitle": 'Run the plan "{0}"',
   "toast.pausing": "Pausing plan…",
@@ -480,6 +486,8 @@ const PT: Record<keyof typeof EN, string> = {
   "work.plan.title": "Planejar: {0}",
   "work.plan.prompt":
     'Planeje o work item "{0}" (id: {1}).\n\nO corpo abaixo é a necessidade, não a implementação: decida o como.\n\n---\n{2}\n---\n\nDiscuta o que estiver ambíguo e salve o plano com plans.save, passando workItemID: "{1}" para vincular o plano a este item. Não implemente nada nesta sessão.',
+  "work.plan.promptShort":
+    'Planeje o work item "{0}" (id: {1}). O corpo abaixo é a necessidade; discuta o que estiver ambíguo e salve com plans.save({ workItemID: "{1}" }).\n\n---\n{2}\n---',
   "work.plan.error": "Não foi possível abrir a sessão de planejamento.",
   "work.plan.dialog.title": "Planejar: {0}",
   "work.plan.dialog.hint":
@@ -495,6 +503,8 @@ const PT: Record<keyof typeof EN, string> = {
   "work.plan.repoError": "Não foi possível definir o repositório do item.",
   "work.execute.planFirst": "Planeje primeiro",
   "work.accept": "Aceitar",
+  "work.replan.promptShort":
+    'Replaneje o work item "{0}" (id: {1}); o plano "{3}" (id: {2}) já existe. Leia com plans.get e salve o MESMO plano com plans.save({ id: "{2}", workItemID: "{1}" }). O corpo abaixo é a necessidade.\n\n---\n{4}\n---',
   "work.replan.title": "Replanejar: {0}",
   "work.replan.prompt":
     'Replaneje o work item "{0}" (id: {1}).\n\nO plano "{3}" (id: {2}) já existe: leia-o com plans.get, ajuste o como (o corpo abaixo é a necessidade, não a implementação) e salve o MESMO plano com plans.save({ id: "{2}"; workItemID: "{1}" }). Não crie outro plano; um item tem um plano só. Se o plano estava concluído, o novo corpo o reabre como ativo.\n\n---\n{4}\n---\n\nNão implemente nada nesta sessão.',
@@ -601,6 +611,8 @@ const PT: Record<keyof typeof EN, string> = {
     'Execute ou retome o plano "{0}" (id: {1}) do ponto atual. Se o plano ainda não estiver na conversa, leia com plans.get; caso contrário, use o texto e os IDs que você já tem. Faça os passos restantes e marque cada um com plans.update ("doing" e depois "done"). O plano é a fonte da verdade: não replaneje nem reescreva o body. Quando todos os passos estiverem concluídos e nada estiver bloqueado, não feche o work item: resuma o resultado e diga que está pronto para aceite; o item continua doing, porque done e dropped são decisão do usuário.',
   "execute.promptItem":
     'Execute ou retome o plano "{0}" (id: {1}), que atende ao work item "{2}" (id: {3}), do ponto atual. Se o plano ainda não estiver na conversa, leia com plans.get; caso contrário, use o texto e os IDs que você já tem. Faça os passos restantes e marque cada um com plans.update ("doing" e depois "done"). O plano é a fonte da verdade: não replaneje nem reescreva o body. Quando todos os passos estiverem concluídos e nada estiver bloqueado, não feche o work item: resuma o resultado e diga que está pronto para aceite; o item continua doing, porque done e dropped são decisão do usuário.',
+  "execute.promptShort": 'Execute ou retome o plano "{0}" (id: {1}).',
+  "execute.promptItemShort": 'Execute ou retome o plano "{0}" (id: {1}) para o work item "{2}" (id: {3}).',
   "execute.pill": "Executar plano",
   "execute.pillTitle": 'Executar o plano "{0}"',
   "toast.pausing": "Pausando plano…",

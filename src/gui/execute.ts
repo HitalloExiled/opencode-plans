@@ -68,17 +68,27 @@ export async function runPlan(input: {
         .catch(() => null)
     : null;
 
-  // The flow setting picks the agent (one tested mapping, `runAgent`).
+  // The flow setting picks the agent (one tested mapping, `runAgent`). The
+  // dedicated agents get the contract from the <plans-flow> tail, so the seed
+  // only names the plan (and the item); the native flow has no tail and keeps
+  // the full prompt.
   const flow = await target.client.rpc(PlansRpc).getFlow({});
   await target.client.session.switchAgent({
     sessionID: target.sessionID,
     agent: runAgent(flow),
   });
+  const short = flow === "dedicated";
   await target.client.session.prompt({
     sessionID: target.sessionID,
     text: detail
-      ? t("execute.promptItem", current.title, current.id, detail.item.title, detail.item.id)
-      : t("execute.prompt", current.title, current.id),
+      ? t(
+          short ? "execute.promptItemShort" : "execute.promptItem",
+          current.title,
+          current.id,
+          detail.item.title,
+          detail.item.id,
+        )
+      : t(short ? "execute.promptShort" : "execute.prompt", current.title, current.id),
   });
 
   return { plan: current, moved };

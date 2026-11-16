@@ -27,9 +27,26 @@ export async function planWorkItem(input: {
   const body = detail.item.body.trim() || t("work.detail.noBody");
   const plan = detail.plan;
 
+  // The dedicated planner gets the contract from the <plans-flow> tail, so the
+  // seed only carries the item, the body and the save call. Native keeps the
+  // full prompt: it has no tail.
+  const flow = await target.server.client.rpc(PlansRpc).getFlow({});
+  const short = flow === "dedicated";
   const seed = plan
-    ? t("work.replan.prompt", detail.item.title, detail.item.id, plan.id, plan.title, body)
-    : t("work.plan.prompt", detail.item.title, detail.item.id, body);
+    ? t(
+        short ? "work.replan.promptShort" : "work.replan.prompt",
+        detail.item.title,
+        detail.item.id,
+        plan.id,
+        plan.title,
+        body,
+      )
+    : t(
+        short ? "work.plan.promptShort" : "work.plan.prompt",
+        detail.item.title,
+        detail.item.id,
+        body,
+      );
 
   // Replanning continues in the session that wrote the plan, when it still
   // exists; a missing session falls through to a fresh one.
@@ -49,7 +66,6 @@ export async function planWorkItem(input: {
   const directory = input.directory?.trim() || repo?.directory;
   if (!directory) throw new Error(t("work.plan.error"));
 
-  const flow = await target.server.client.rpc(PlansRpc).getFlow({});
   const agent = pauseAgent(flow);
 
   const session = await target.server.client.session.create({
