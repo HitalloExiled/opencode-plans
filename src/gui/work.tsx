@@ -30,6 +30,7 @@ import {
   type WorkItemStatus,
 } from "./contract";
 import { useT } from "./i18n";
+import { filterWorkGroups } from "../work-filter";
 
 export type ViewMode = "work" | "plans";
 
@@ -108,6 +109,7 @@ const WORK_CSS = `
 .work-card:hover { background-image: linear-gradient(var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)); }
 .work-card:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: -2px; }
 .work-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-toolbar { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .work-new { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .work-new > :first-child { flex: 1; min-width: 0; }
 .work-detail { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
@@ -202,6 +204,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const [newTitle, setNewTitle] = createSignal("");
   const [creating, setCreating] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
+  const [agentOnly, setAgentOnly] = createSignal(false);
 
   const scope = () => (props.target().mode === "panel" && props.target().session ? "project" : "all");
   const directory = () => props.target().session?.directory;
@@ -276,8 +279,12 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       });
   });
 
-  const total = createMemo(() => groups().reduce((sum, group) => sum + group.items.length, 0));
+  const visibleGroups = createMemo(() => filterWorkGroups(groups(), agentOnly()));
+  const total = createMemo(() => visibleGroups().reduce((sum, group) => sum + group.items.length, 0));
   const projectMissing = createMemo(() => scope() === "project" && groups().length === 0);
+  const hasAgentItems = createMemo(() =>
+    groups().some((group) => group.items.some((item) => item.origin === "agent")),
+  );
 
   const nav = createScrollNav({
     hasMore: () => false,
@@ -296,6 +303,9 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const empty = () => {
     if (projectMissing()) {
       return { title: t("work.noProject.title"), hint: t("work.noProject.hint") };
+    }
+    if (agentOnly()) {
+      return { title: t("work.empty.agent.title"), hint: t("work.empty.agent.hint") };
     }
     if (scope() === "project") {
       return { title: t("work.project.empty.title"), hint: t("work.project.empty.hint") };
@@ -502,6 +512,19 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       <style>{SHARED_CSS + WORK_CSS}</style>
       <div class="work" classList={{ "is-modal": isModal() }}>
         <Show when={!selectedID()}>
+          <Show when={hasAgentItems()}>
+            <div class="work-toolbar">
+              <ctx.ui.Button
+                size="small"
+                variant={agentOnly() ? "neutral" : "ghost"}
+                icon="review"
+                onClick={() => setAgentOnly((value) => !value)}
+              >
+                {t("work.filter.agent")}
+              </ctx.ui.Button>
+            </div>
+          </Show>
+
           <Show when={!isModal() && directory()}>
             <div class="work-new">
               <ctx.ui.TextInput
@@ -539,7 +562,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
 
           <Show when={!loading() && !error()}>
             <Show
-              when={groups().length > 0 && total() > 0}
+              when={visibleGroups().length > 0 && total() > 0}
               fallback={<EmptyState icon="checklist" title={empty().title} hint={empty().hint} />}
             >
               <div class="work-body">
@@ -551,7 +574,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                   role="region"
                   aria-label={t("work.region")}
                 >
-                  <For each={groups()}>
+                  <For each={visibleGroups()}>
                     {(group) => (
                       <div class="work-project">
                         <h3 class="work-project-name">
