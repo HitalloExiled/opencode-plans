@@ -10,6 +10,7 @@
 
 import type { Context, MountedSession } from "@opencode/plugin/gui";
 import { PlansRpc, type Plan } from "./contract";
+import { runAgent } from "../flow-rules.js";
 
 /** The translation function `useT()` returns; the panel and the setup share it. */
 export type Translate = (key: string, ...args: unknown[]) => string;
@@ -58,12 +59,11 @@ export async function runPlan(input: {
     moved = true;
   }
 
-  // The flow setting picks the agent: native keeps Plan/Build, dedicated uses
-  // the plugin's own executor.
+  // The flow setting picks the agent (one tested mapping, `runAgent`).
   const flow = await target.client.rpc(PlansRpc).getFlow({});
   await target.client.session.switchAgent({
     sessionID: target.sessionID,
-    agent: flow === "dedicated" ? "executor" : "build",
+    agent: runAgent(flow),
   });
   await target.client.session.prompt({
     sessionID: target.sessionID,

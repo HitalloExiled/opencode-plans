@@ -13,6 +13,7 @@ import { createEffect, createRoot, createSignal, onCleanup } from "solid-js";
 import { Schema } from "effect";
 import type { Context, MountedSession, Persisted, ServerRef } from "@opencode/plugin/gui";
 import { PlansRpc, type Plan } from "./contract";
+import { pauseAgent } from "../flow-rules.js";
 import { runPlan, type ExecutionTarget, type RunPlanResult, type Translate } from "./execute";
 import {
   EXECUTION_INITIAL,
@@ -158,7 +159,7 @@ export function executionFor(ctx: Context, target: ExecutionTarget): ExecutionHa
           const flow = await target.client.rpc(PlansRpc).getFlow({});
           await target.client.session.switchAgent({
             sessionID: target.sessionID,
-            agent: flow === "dedicated" ? "planner" : "plan",
+            agent: pauseAgent(flow),
           });
           if (!interrupted.interrupted) store.set(EXECUTION_INITIAL);
           notify(t("toast.pausing"), "success");

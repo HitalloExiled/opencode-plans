@@ -26,6 +26,7 @@ import {
 import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
 import { registerAgents } from "./src/agents.js";
 import { getFlow } from "./src/flow.js";
+import { planMessageAgents } from "./src/flow-rules.js";
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
 import { onPlanChange } from "./src/plan-events.js";
@@ -92,7 +93,7 @@ async function registerCommand(ctx: Ctx) {
           // dedicated agents existed; dedicated also accepts the planner.
           const captured = findLastPlanMessage(messages as unknown as SessionMessageLike[], {
             requireSteps: true,
-            agents: getFlow() === "dedicated" ? ["plan", "planner"] : ["plan"],
+            agents: planMessageAgents(getFlow()),
           });
           if (!captured) {
             await ctx.session.synthetic({

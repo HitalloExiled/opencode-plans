@@ -200,6 +200,21 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   back to `plan`; a new Execute resumes from the current steps. It is not a
   server tool.
 
+## Manual UI checklist (agent flow)
+
+The renderer owns Execute/Pause (`runPlan`, the pause path); no API call drives
+them, so verify the wiring by hand after touching the flow:
+
+1. Switch **off** (native): Execute a plan -> the session agent becomes
+   **Build**; Pause -> **Plan**.
+2. Switch **on** (experimental): Execute -> **Executor**; Pause -> **Planner**.
+3. Toggle **during** a run: Pause reads the flow at click time, so it follows
+   the switch (documented behavior; pin it at run start if that ever changes).
+4. `flow.json` survives a plugin reload and a service restart.
+
+The agent ids themselves are covered by `test/flow-rules.test.ts` (`runAgent`,
+`pauseAgent`, `planMessageAgents`); only the click stays manual.
+
 ## GUI guideline (shared kit)
 
 The visual and behavioral contract for the side panels is
