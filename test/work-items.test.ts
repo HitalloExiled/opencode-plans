@@ -21,6 +21,7 @@ import {
   listWorkItemsAll,
   removeProjectLocation,
   renameProject,
+  SCHEMA_VERSION,
   schemaVersion,
   setPrimaryLocation,
   updateWorkItem,
@@ -42,8 +43,8 @@ function project(db: Db, name = "OpenCode Tools", locations = ["/work/app", "/wo
   return result.project;
 }
 
-describe("schema v3", () => {
-  test("migrates a v2 database to v3 keeping the plans intact", () => {
+describe("schema migrations", () => {
+  test("migrates a v2 database to the current schema keeping the plans intact", () => {
     const db = new DatabaseSync(":memory:") as Db;
     initSchema(db); // current schema, so a plan can be written
 
@@ -54,6 +55,7 @@ describe("schema v3", () => {
     ).run("plan-1", "opencode-1", "/work/app", "session-1", "v2 plan", "# v2 plan", "active", "2026-01-01", "2026-01-01");
 
     // Simulate the v2 file: the work-item tables do not exist yet.
+    db.prepare("DROP TABLE work_item_deps").run();
     db.prepare("DROP TABLE work_items").run();
     db.prepare("DROP TABLE project_locations").run();
     db.prepare("DROP TABLE projects").run();
@@ -61,7 +63,7 @@ describe("schema v3", () => {
     expect(schemaVersion(db)).toBe(2);
 
     initSchema(db);
-    expect(schemaVersion(db)).toBe(3);
+    expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
     expect((db.prepare("SELECT title FROM plans WHERE id = 'plan-1'").get() as { title: string }).title).toBe(
       "v2 plan",
     );
@@ -69,7 +71,7 @@ describe("schema v3", () => {
 
     // Re-running the migration is a no-op.
     initSchema(db);
-    expect(schemaVersion(db)).toBe(3);
+    expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
   });
 });
 

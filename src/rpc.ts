@@ -27,6 +27,7 @@ import { notificationLocale, tn } from "./notifications.js";
 import { emitPlanChange } from "./plan-events.js";
 import {
   addProjectLocation,
+  addWorkItemDep as addDepRow,
   countPlans,
   createProject,
   deletePlan,
@@ -43,6 +44,7 @@ import {
   planProgress,
   plansDbPath,
   removeProjectLocation,
+  removeWorkItemDep as removeDepRow,
   renameProject,
   requireStore,
   resolveProject,
@@ -53,6 +55,7 @@ import {
   setWorkItemStatus as setStatusRow,
   updatePlan,
   updateWorkItem,
+  workItemDeps,
   type Plan as StorePlan,
   type Project as StoreProject,
   type SaveOk,
@@ -443,7 +446,13 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       if (!item) return null;
       const project = getProject(store.db, item.project_id);
       if (!project) return null;
-      return { item: toWorkItemFull(item), project: toProject(project) };
+      const deps = workItemDeps(store.db, item.id);
+      return {
+        item: toWorkItemFull(item),
+        project: toProject(project),
+        blockedBy: deps.blockedBy.map(toWorkItem),
+        blocks: deps.blocks.map(toWorkItem),
+      };
     },
 
     saveWorkItem: async (input) => {
@@ -473,6 +482,18 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const store = await requireStore();
       const result = moveWorkItemRow(store.db, { id: input.id, direction: input.direction });
       return result.ok ? { ok: true, item: toWorkItem(result.item) } : { ok: false, error: result.error };
+    },
+
+    addWorkItemDep: async (input) => {
+      const store = await requireStore();
+      const result = addDepRow(store.db, { itemID: input.itemID, blocksID: input.blocksID });
+      return result.ok ? { ok: true } : { ok: false, error: result.error };
+    },
+
+    removeWorkItemDep: async (input) => {
+      const store = await requireStore();
+      const result = removeDepRow(store.db, { itemID: input.itemID, blocksID: input.blocksID });
+      return result.ok ? { ok: true } : { ok: false, error: result.error };
     },
   };
 }

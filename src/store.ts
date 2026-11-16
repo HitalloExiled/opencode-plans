@@ -125,7 +125,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -189,6 +189,18 @@ const BASE_SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id)`,
   `CREATE INDEX IF NOT EXISTS idx_work_items_project_status ON work_items(project_id, status, rank)`,
   `CREATE INDEX IF NOT EXISTS idx_work_items_location ON work_items(location_id)`,
+  // v4 — dependencies: `item_id` is blocked by `blocks_id`. `kind`/`reason`
+  // are ready for the implicit dependencies of the project runner (F4).
+  `CREATE TABLE IF NOT EXISTS work_item_deps (
+    item_id TEXT NOT NULL,
+    blocks_id TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'explicit',
+    reason TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (item_id, blocks_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_work_item_deps_item ON work_item_deps(item_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_work_item_deps_blocks ON work_item_deps(blocks_id)`,
 ];
 
 function apply(db: Db, statements: readonly string[]): void {
@@ -1142,6 +1154,95 @@ export type MoveWorkItemInput = {
  * Moves the item one place inside its status and renumbers the group 1..N.
  * At the edges it is a no-op; the caller decides whether to disable the action.
  */
+export type WorkItemDepInput = {
+  /** The item that waits. */
+  itemID: string;
+  /** The item it depends on. */
+  blocksID: string;
+};
+
+export type WorkItemDeps = {
+  /** Items this one depends on. */
+  blockedBy: WorkItemRow[];
+  /** Items that depend on this one. */
+  blocks: WorkItemRow[];
+};
+
+/** Whether `from` depends on `target`, directly or transitively. */
+function dependsOn(db: Db, from: string, target: string): boolean {
+  const seen = new Set<string>();
+  const stack = [from];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (current === target) return true;
+    if (seen.has(current)) continue;
+    seen.add(current);
+    const rows = db.prepare("SELECT blocks_id FROM work_item_deps WHERE item_id = ?").all(current) as {
+      blocks_id: string;
+    }[];
+    for (const row of rows) stack.push(row.blocks_id);
+  }
+  return false;
+}
+
+/** A depends on B. Same project only; cycles are rejected; duplicates are no-ops. */
+export function addWorkItemDep(db: Db, input: WorkItemDepInput): Ok | WorkStoreError {
+  if (input.itemID === input.blocksID) {
+    return { ok: false, error: "um work item não pode depender de si mesmo" };
+  }
+  const item = getWorkItem(db, input.itemID);
+  if (!item) return { ok: false, error: `work item não encontrado: ${input.itemID}` };
+  const blocker = getWorkItem(db, input.blocksID);
+  if (!blocker) return { ok: false, error: `work item não encontrado: ${input.blocksID}` };
+  if (item.project_id !== blocker.project_id) {
+    return { ok: false, error: "os itens precisam pertencer ao mesmo projeto" };
+  }
+
+  const exists = db
+    .prepare("SELECT 1 AS one FROM work_item_deps WHERE item_id = ? AND blocks_id = ?")
+    .get(input.itemID, input.blocksID) as { one?: number } | undefined;
+  if (exists) return { ok: true };
+
+  if (dependsOn(db, input.blocksID, input.itemID)) {
+    return { ok: false, error: `dependência circular: ${blocker.title} já depende de ${item.title}` };
+  }
+
+  try {
+    db.prepare(
+      "INSERT INTO work_item_deps (item_id, blocks_id, kind, reason, created_at) VALUES (?, ?, 'explicit', NULL, ?)",
+    ).run(input.itemID, input.blocksID, nowTimestamp());
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
+export function removeWorkItemDep(db: Db, input: WorkItemDepInput): Ok | WorkStoreError {
+  try {
+    db.prepare("DELETE FROM work_item_deps WHERE item_id = ? AND blocks_id = ?").run(
+      input.itemID,
+      input.blocksID,
+    );
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
+export function workItemDeps(db: Db, itemID: string): WorkItemDeps {
+  const blockedBy = db
+    .prepare(
+      "SELECT w.* FROM work_item_deps d JOIN work_items w ON w.id = d.blocks_id WHERE d.item_id = ? ORDER BY w.title ASC",
+    )
+    .all(itemID) as WorkItemRow[];
+  const blocks = db
+    .prepare(
+      "SELECT w.* FROM work_item_deps d JOIN work_items w ON w.id = d.item_id WHERE d.blocks_id = ? ORDER BY w.title ASC",
+    )
+    .all(itemID) as WorkItemRow[];
+  return { blockedBy, blocks };
+}
+
 export function moveWorkItem(db: Db, input: MoveWorkItemInput): WorkItemOk | WorkStoreError {
   const current = getWorkItem(db, input.id);
   if (!current) return { ok: false, error: `work item não encontrado: ${input.id}` };

@@ -180,6 +180,10 @@ export type WorkListInput = {
 export type WorkItemDetail = {
   item: WorkItem & { body: string; closedAt?: string | undefined };
   project: Project;
+  /** Items this one depends on. */
+  blockedBy: readonly WorkItem[];
+  /** Items that depend on this one. */
+  blocks: readonly WorkItem[];
 };
 
 export type SaveWorkItemInput = {
@@ -199,6 +203,11 @@ export type WorkItemResult = {
 export type MoveWorkItemInput = {
   id: string;
   direction: "up" | "down";
+};
+
+export type WorkItemDepInput = {
+  itemID: string;
+  blocksID: string;
 };
 
 /* ------------------------------------------------------------------ */
@@ -351,6 +360,13 @@ export const workItemFullSchema = Schema.Struct({
 export const workItemDetailSchema = Schema.Struct({
   item: workItemFullSchema,
   project: projectSchema,
+  blockedBy: Schema.Array(workItemSchema),
+  blocks: Schema.Array(workItemSchema),
+});
+
+export const opResultSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  error: optString,
 });
 
 export const workItemResultSchema = Schema.Struct({
@@ -378,6 +394,11 @@ export const setWorkItemStatusInputSchema = Schema.Struct({
 export const moveWorkItemInputSchema = Schema.Struct({
   id: Schema.String,
   direction: Schema.Union([Schema.Literal("up"), Schema.Literal("down")]),
+});
+
+export const workItemDepInputSchema = Schema.Struct({
+  itemID: Schema.String,
+  blocksID: Schema.String,
 });
 
 export const listOptionsSchema = Schema.Struct({
@@ -552,6 +573,14 @@ export const PlansRpc = Rpc.define({
     moveWorkItem: {
       input: Schema.toStandardSchemaV1(moveWorkItemInputSchema),
       output: Schema.toStandardSchemaV1(workItemResultSchema),
+    },
+    addWorkItemDep: {
+      input: Schema.toStandardSchemaV1(workItemDepInputSchema),
+      output: Schema.toStandardSchemaV1(opResultSchema),
+    },
+    removeWorkItemDep: {
+      input: Schema.toStandardSchemaV1(workItemDepInputSchema),
+      output: Schema.toStandardSchemaV1(opResultSchema),
     },
   },
   events: {

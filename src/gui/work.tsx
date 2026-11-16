@@ -115,6 +115,20 @@ const WORK_CSS = `
 .work-detail-title { flex: 1; min-width: 0; margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .work-detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--v2-text-text-muted); font-size: 11px; }
 .work-detail-body { flex: 1; min-height: 0; overflow-y: auto; }
+.work-deps { display: flex; flex-direction: column; gap: 6px; }
+.work-deps-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.work-deps-title {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--v2-text-text-muted);
+}
+.work-dep-label { font-size: 10.5px; color: var(--v2-text-text-faint); }
+.work-dep-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.work-dep-row .work-dot { flex: 0 0 auto; }
+.work-deps-empty { font-size: 11px; color: var(--v2-text-text-muted); }
 .work-detail-empty { color: var(--v2-text-text-muted); font-size: 11.5px; }
 .work-editor { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
 .work-editor textarea {
@@ -183,6 +197,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
   const [saving, setSaving] = createSignal(false);
   const [statusSaving, setStatusSaving] = createSignal(false);
   const [moving, setMoving] = createSignal(false);
+  const [depSaving, setDepSaving] = createSignal(false);
   const [newTitle, setNewTitle] = createSignal("");
   const [creating, setCreating] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
@@ -330,6 +345,53 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       })
       .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setSaving(false));
+  };
+
+  const depCandidates = createMemo(() => {
+    const current = detail();
+    if (!current) return [];
+    const group = groups().find((entry) => entry.project.id === current.item.projectID);
+    if (!group) return [];
+    const existing = new Set(current.blockedBy.map((item) => item.id));
+    return group.items.filter((item) => item.id !== current.item.id && !existing.has(item.id));
+  });
+
+  const addDep = (blocksID: string) => {
+    const id = selectedID();
+    if (!id || depSaving()) return;
+    setDepSaving(true);
+    setActionError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .addWorkItemDep({ itemID: id, blocksID }, rpcOptions())
+      .then((result) => {
+        if (!result.ok) {
+          setActionError(result.error ?? t("work.deps.error"));
+          return;
+        }
+        setDetailReload((n) => n + 1);
+      })
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setDepSaving(false));
+  };
+
+  const removeDep = (blocksID: string) => {
+    const id = selectedID();
+    if (!id || depSaving()) return;
+    setDepSaving(true);
+    setActionError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .removeWorkItemDep({ itemID: id, blocksID }, rpcOptions())
+      .then((result) => {
+        if (!result.ok) {
+          setActionError(result.error ?? t("work.deps.error"));
+          return;
+        }
+        setDetailReload((n) => n + 1);
+      })
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setDepSaving(false));
   };
 
   const statusPosition = createMemo(() => {
@@ -566,6 +628,61 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                     disabled={moving() || (statusPosition()?.index ?? 0) >= (statusPosition()?.total ?? 1) - 1}
                     onClick={() => move("down")}
                   />
+                </div>
+
+                <div class="work-deps">
+                  <div class="work-deps-head">
+                    <h3 class="work-deps-title">{t("work.deps.title")}</h3>
+                    <Show when={depCandidates().length > 0}>
+                      <ctx.ui.Menu
+                        trigger="button"
+                        icon="plus"
+                        label={t("work.deps.add")}
+                        disabled={depSaving()}
+                        items={depCandidates().map((item) => ({
+                          label: item.title,
+                          onSelect: () => addDep(item.id),
+                        }))}
+                      />
+                    </Show>
+                  </div>
+
+                  <Show
+                    when={current().blockedBy.length > 0}
+                    fallback={<div class="work-deps-empty">{t("work.deps.none")}</div>}
+                  >
+                    <span class="work-dep-label">{t("work.deps.blockedBy")}</span>
+                    <For each={current().blockedBy}>
+                      {(dep) => (
+                        <div class="work-dep-row">
+                          <span class={`work-dot is-${dep.status}`} />
+                          <ctx.ui.Button size="small" variant="ghost" onClick={() => openItem(dep.id)}>
+                            {dep.title}
+                          </ctx.ui.Button>
+                          <ctx.ui.IconButton
+                            icon="close-small"
+                            label={t("work.deps.remove", dep.title)}
+                            disabled={depSaving()}
+                            onClick={() => removeDep(dep.id)}
+                          />
+                        </div>
+                      )}
+                    </For>
+                  </Show>
+
+                  <Show when={current().blocks.length > 0}>
+                    <span class="work-dep-label">{t("work.deps.blocks")}</span>
+                    <For each={current().blocks}>
+                      {(dep) => (
+                        <div class="work-dep-row">
+                          <span class={`work-dot is-${dep.status}`} />
+                          <ctx.ui.Button size="small" variant="ghost" onClick={() => openItem(dep.id)}>
+                            {dep.title}
+                          </ctx.ui.Button>
+                        </div>
+                      )}
+                    </For>
+                  </Show>
                 </div>
 
                 <Show when={actionError()}>
