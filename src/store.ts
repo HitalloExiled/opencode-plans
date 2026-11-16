@@ -397,10 +397,13 @@ export function deriveStatus(steps: readonly { status: StepStatus }[], current: 
 
 /** Preserve `done`/`doing` when a plan body is saved again. */
 function mergeSteps(existing: readonly StepRow[], parsed: readonly ParsedStep[]): ParsedStep[] {
+  // Statuses follow the step TEXT, never its position: a replanned step with a
+  // new text starts from its own status (todo), so a done plan reopens instead
+  // of inheriting "done" from whatever used to sit at that index.
   const byText = new Map<string, StepRow>();
   for (const step of existing) byText.set(normalizeStepText(step.text), step);
-  return parsed.map((step, index) => {
-    const match = byText.get(normalizeStepText(step.text)) ?? existing[index];
+  return parsed.map((step) => {
+    const match = byText.get(normalizeStepText(step.text));
     const status: StepStatus =
       step.status === "done" || match?.status === "done"
         ? "done"

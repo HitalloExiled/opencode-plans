@@ -90,6 +90,50 @@ describe("plan <-> work item link", () => {
     expect(unlinked.ok && unlinked.plan.work_item_id === null).toBe(true);
   });
 
+  test("editing a done plan with a new body reopens it as active", () => {
+    const { db, item } = setup();
+    const done = savePlan(db, {
+      title: "Done plan",
+      body: "# Done plan\n\n- [x] finished",
+      projectID: "opencode-1",
+      projectDirectory: "/work/app",
+      sessionID: "session-1",
+      workItemID: item.id,
+    });
+    if (!done.ok) throw new Error(done.error);
+    expect(done.plan.status).toBe("done");
+
+    const reopened = savePlan(db, {
+      id: done.plan.id,
+      title: "Done plan",
+      body: "# Done plan\n\n- [ ] new approach",
+      projectID: "opencode-1",
+      projectDirectory: "/work/app",
+      sessionID: "session-1",
+    });
+    expect(reopened.ok).toBe(true);
+    if (!reopened.ok) return;
+    expect(reopened.plan.id).toBe(done.plan.id);
+    expect(reopened.plan.status).toBe("active");
+    expect(reopened.plan.work_item_id).toBe(item.id);
+  });
+
+  test("editing with its own workItemID keeps the link", () => {
+    const { db, item } = setup();
+    const saved = plan(db, item.id);
+    if (!saved.ok) throw new Error(saved.error);
+
+    const edited = plan(db, item.id, {
+      id: saved.plan.id,
+      title: "Still linked",
+      body: "# Still linked\n\n- [ ] do it",
+    });
+    expect(edited.ok).toBe(true);
+    if (!edited.ok) return;
+    expect(edited.plan.id).toBe(saved.plan.id);
+    expect(edited.plan.work_item_id).toBe(item.id);
+  });
+
   test("migrates a v4 database, adding the column and the unique index", () => {
     const db = new DatabaseSync(":memory:") as Db;
     db.prepare(
