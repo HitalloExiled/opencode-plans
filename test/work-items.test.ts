@@ -23,6 +23,7 @@ import {
   renameProject,
   schemaVersion,
   setPrimaryLocation,
+  updateWorkItem,
   type Db,
 } from "../src/store";
 
@@ -222,6 +223,29 @@ describe("work item containment", () => {
 
     const wrong = createWorkItem(db, { projectID: app.id, locationID: other.locations[0]!.id, title: "Need" });
     expect(wrong).toEqual({ ok: false, error: "o workspace não pertence a este projeto" });
+  });
+
+  test("updates the need, preserving what is omitted", () => {
+    const db = open();
+    const app = project(db);
+    const created = createWorkItem(db, { projectID: app.id, title: "Need", body: "why" });
+    if (!created.ok) throw new Error(created.error);
+    const id = created.item.id;
+
+    const titleOnly = updateWorkItem(db, { id, title: "  Better need  " });
+    expect(titleOnly.ok).toBe(true);
+    if (!titleOnly.ok) return;
+    expect(titleOnly.item.title).toBe("Better need");
+    expect(titleOnly.item.body).toBe("why");
+
+    const bodyOnly = updateWorkItem(db, { id, body: "new context" });
+    expect(bodyOnly.ok && bodyOnly.item.title === "Better need" && bodyOnly.item.body === "new context").toBe(true);
+
+    expect(updateWorkItem(db, { id, title: "   " })).toEqual({
+      ok: false,
+      error: "o título do work item é obrigatório",
+    });
+    expect(updateWorkItem(db, { id: "missing", title: "x" }).ok).toBe(false);
   });
 
   test("listWorkItemsAll returns items from every project", () => {

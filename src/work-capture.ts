@@ -16,6 +16,7 @@ import {
 export type CaptureWorkInput = {
   directory: string;
   title: string;
+  body?: string | undefined;
 };
 
 export type CaptureWorkResult =
@@ -33,6 +34,7 @@ export function captureWorkItem(db: Db, input: CaptureWorkInput): CaptureWorkRes
     projectID: project.project.id,
     locationID: project.location.id,
     title,
+    body: input.body,
     origin: "user",
   });
   if (!item.ok) return item;

@@ -18,9 +18,11 @@ import {
   type ProjectResult,
   type Status,
   type WorkItem,
+  type WorkItemDetail,
 } from "./gui/contract.js";
 import { getFlow, setFlow as persistFlow } from "./flow.js";
 import { sortWorkItems } from "./work-list.js";
+import { captureWorkItem } from "./work-capture.js";
 import { notificationLocale, tn } from "./notifications.js";
 import { emitPlanChange } from "./plan-events.js";
 import {
@@ -31,6 +33,7 @@ import {
   getPlan,
   getProject,
   getStore,
+  getWorkItem as getWorkItemRow,
   listPlans,
   listProjects,
   listWorkItems as listProjectWorkItems,
@@ -47,6 +50,7 @@ import {
   setPrimaryLocation,
   setStep,
   updatePlan,
+  updateWorkItem,
   type Plan as StorePlan,
   type Project as StoreProject,
   type SaveOk,
@@ -116,6 +120,12 @@ const toWorkItem = (item: StoreWorkItemRow): WorkItem => ({
   origin: item.origin,
   createdAt: item.created_at,
   updatedAt: item.updated_at,
+});
+
+const toWorkItemFull = (item: StoreWorkItemRow): WorkItemDetail["item"] => ({
+  ...toWorkItem(item),
+  body: item.body,
+  ...(item.closed_at ? { closedAt: item.closed_at } : {}),
 });
 
 
@@ -423,6 +433,32 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         .filter((group) => group.items.length > 0)
         .sort((a, b) => a.project.name.localeCompare(b.project.name))
         .map((group) => ({ project: toProject(group.project), items: group.items.map(toWorkItem) }));
+    },
+
+    getWorkItem: async (input) => {
+      const store = await requireStore();
+      const item = getWorkItemRow(store.db, input.id);
+      if (!item) return null;
+      const project = getProject(store.db, item.project_id);
+      if (!project) return null;
+      return { item: toWorkItemFull(item), project: toProject(project) };
+    },
+
+    saveWorkItem: async (input) => {
+      const store = await requireStore();
+      if (input.id) {
+        const result = updateWorkItem(store.db, { id: input.id, title: input.title, body: input.body });
+        return result.ok ? { ok: true, item: toWorkItem(result.item) } : { ok: false, error: result.error };
+      }
+      if (!input.directory) {
+        return { ok: false, error: "directory é obrigatório para criar um work item" };
+      }
+      const result = captureWorkItem(store.db, {
+        directory: input.directory,
+        title: input.title,
+        body: input.body,
+      });
+      return result.ok ? { ok: true, item: toWorkItem(result.item) } : { ok: false, error: result.error };
     },
   };
 }

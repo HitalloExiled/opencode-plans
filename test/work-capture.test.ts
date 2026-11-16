@@ -23,7 +23,11 @@ describe("captureWorkItem", () => {
 
   test("creates the project on first use and starts the item in the backlog", () => {
     const db = open();
-    const result = captureWorkItem(db, { directory: "/work/new-repo", title: "  First need  " });
+    const result = captureWorkItem(db, {
+      directory: "/work/new-repo",
+      title: "  First need  ",
+      body: "  what needs to exist  ",
+    });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -31,6 +35,7 @@ describe("captureWorkItem", () => {
     expect(result.project.name).toBe("new-repo");
     expect(result.project.locations.map((location) => location.directory)).toEqual(["/work/new-repo"]);
     expect(result.item.title).toBe("First need");
+    expect(result.item.body).toBe("what needs to exist");
     expect(result.item.status).toBe("backlog");
     expect(result.item.origin).toBe("user");
     expect(result.item.project_id).toBe(result.project.id);

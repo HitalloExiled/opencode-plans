@@ -167,6 +167,25 @@ export type WorkListInput = {
   directory?: string | undefined;
 };
 
+export type WorkItemDetail = {
+  item: WorkItem & { body: string; closedAt?: string | undefined };
+  project: Project;
+};
+
+export type SaveWorkItemInput = {
+  id?: string | undefined;
+  /** Required when creating: resolves (or creates) the project. */
+  directory?: string | undefined;
+  title: string;
+  body?: string | undefined;
+};
+
+export type WorkItemResult = {
+  ok: boolean;
+  error?: string | undefined;
+  item?: WorkItem | undefined;
+};
+
 /* ------------------------------------------------------------------ */
 /* Schemas                                                             */
 /* ------------------------------------------------------------------ */
@@ -306,6 +325,34 @@ export const workGroupSchema = Schema.Struct({
 export const workListInputSchema = Schema.Struct({
   scope: Schema.Union([Schema.Literal("project"), Schema.Literal("all")]),
   directory: optString,
+});
+
+export const workItemFullSchema = Schema.Struct({
+  ...workItemSchema.fields,
+  body: Schema.String,
+  closedAt: optString,
+});
+
+export const workItemDetailSchema = Schema.Struct({
+  item: workItemFullSchema,
+  project: projectSchema,
+});
+
+export const workItemResultSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  error: optString,
+  item: Schema.optional(workItemSchema),
+});
+
+export const workItemIdInputSchema = Schema.Struct({
+  id: Schema.String,
+});
+
+export const saveWorkItemInputSchema = Schema.Struct({
+  id: optString,
+  directory: optString,
+  title: Schema.String,
+  body: optString,
 });
 
 export const listOptionsSchema = Schema.Struct({
@@ -464,6 +511,14 @@ export const PlansRpc = Rpc.define({
     listWorkItems: {
       input: Schema.toStandardSchemaV1(workListInputSchema),
       output: Schema.toStandardSchemaV1(Schema.Array(workGroupSchema)),
+    },
+    getWorkItem: {
+      input: Schema.toStandardSchemaV1(workItemIdInputSchema),
+      output: Schema.toStandardSchemaV1(Schema.NullOr(workItemDetailSchema)),
+    },
+    saveWorkItem: {
+      input: Schema.toStandardSchemaV1(saveWorkItemInputSchema),
+      output: Schema.toStandardSchemaV1(workItemResultSchema),
     },
   },
   events: {

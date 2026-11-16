@@ -1084,7 +1084,7 @@ function nextRank(db: Db, projectID: string, status: WorkItemStatus): number {
  */
 export function createWorkItem(db: Db, input: CreateWorkItemInput): WorkItemOk | WorkStoreError {
   const title = input.title.trim();
-  if (!title) return { ok: false, error: "o título do item é obrigatório" };
+  if (!title) return { ok: false, error: "o título do work item é obrigatório" };
   if (!input.projectID) return { ok: false, error: "projectID é obrigatório" };
   const project = db.prepare("SELECT id FROM projects WHERE id = ?").get(input.projectID) as
     | { id?: string }
@@ -1130,6 +1130,37 @@ export function createWorkItem(db: Db, input: CreateWorkItemInput): WorkItemOk |
 
 export function getWorkItem(db: Db, id: string): WorkItemRow | undefined {
   return db.prepare("SELECT * FROM work_items WHERE id = ?").get(id) as WorkItemRow | undefined;
+}
+
+export type UpdateWorkItemInput = {
+  id: string;
+  title?: string | undefined;
+  body?: string | undefined;
+};
+
+/** Edits the need (title/body). Status, rank, parent and deps have their own USs. */
+export function updateWorkItem(db: Db, input: UpdateWorkItemInput): WorkItemOk | WorkStoreError {
+  const current = getWorkItem(db, input.id);
+  if (!current) return { ok: false, error: `work item não encontrado: ${input.id}` };
+  const title = input.title === undefined ? current.title : input.title.trim();
+  if (!title) return { ok: false, error: "o título do work item é obrigatório" };
+  const body = input.body === undefined ? current.body : input.body;
+
+  const now = nowTimestamp();
+  try {
+    db.prepare("UPDATE work_items SET title = ?, body = ?, updated_at = ? WHERE id = ?").run(
+      title,
+      body,
+      now,
+      input.id,
+    );
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+
+  const item = getWorkItem(db, input.id);
+  if (!item) return { ok: false, error: "item não encontrado após a atualização" };
+  return { ok: true, item };
 }
 
 export function listWorkItems(db: Db, projectID: string): WorkItemRow[] {
