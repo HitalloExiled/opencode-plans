@@ -17,9 +17,9 @@ import { findLastPlanMessage, type SessionMessageLike } from "./src/capture.js";
 import {
   appendTailBlock,
   hasCompaction,
+  agentRoleBlock,
   ownsRoutingRule,
   pushRoutingRule,
-  roleRule,
   renderPlanContext,
   type InjectMessage,
 } from "./src/inject.js";
@@ -147,18 +147,17 @@ async function onContext(ctx: Ctx, event: SessionContext) {
   // Outside the try/catch: a broken database must not drop the rule. Our own
   // agents carry the flow in their system prompt, so the constant rule is
   // skipped there instead of duplicating/conflicting with it.
-  if (ownsRoutingRule(agent)) {
-    const role = roleRule(agent);
-    if (role) event.system.push({ type: "text", text: role });
-  } else {
-    pushRoutingRule(event.system);
-  }
+  if (!ownsRoutingRule(agent)) pushRoutingRule(event.system);
 
   if (agent === "plan") return;
   try {
     const messages = event.messages as InjectMessage[];
     const last = messages.at(-1);
     const structural = hasCompaction(messages);
+    // Our agents carry their role in the request tail, not in `system`: the
+    // system is the cached prefix, the tail is new bytes anyway.
+    const role = agentRoleBlock(agent);
+    if (role) appendTailBlock(messages, role);
     const flagged = compactedSessions.has(String(event.sessionID));
     // The compaction hook fires for the summarization request itself; that
     // request has no conversation tail, and injecting there would put the plan

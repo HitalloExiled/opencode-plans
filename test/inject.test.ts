@@ -7,10 +7,11 @@ import {
   appendTailBlock,
   hasCompaction,
   hasPlanBlock,
+  AGENT_ROLE_OPEN,
+  agentRoleBlock,
   EXECUTOR_ROLE,
   ownsRoutingRule,
   PLANNER_ROLE,
-  roleRule,
   PLANS_ROUTING_RULE,
   pushRoutingRule,
   renderPlanContext,
@@ -96,22 +97,31 @@ describe("routing rule", () => {
   });
 });
 
-describe("ownsRoutingRule / roleRule", () => {
-  test("our own agents get their role instead of the routing rule", () => {
+describe("ownsRoutingRule / agentRoleBlock", () => {
+  test("our own agents get their role in the tail instead of the routing rule", () => {
     expect(ownsRoutingRule("planner")).toBe(true);
     expect(ownsRoutingRule("executor")).toBe(true);
-    expect(roleRule("planner")).toBe(PLANNER_ROLE);
-    expect(roleRule("executor")).toBe(EXECUTOR_ROLE);
-    // The roles differ: they are the only bytes that change on a switch.
+    expect(agentRoleBlock("planner")).toContain(PLANNER_ROLE);
+    expect(agentRoleBlock("executor")).toContain(EXECUTOR_ROLE);
+    expect(agentRoleBlock("planner")!.startsWith(AGENT_ROLE_OPEN)).toBe(true);
+    // The role is a message-tail block, never a system part: a system
+    // difference would invalidate the cached prefix on a switch.
     expect(PLANNER_ROLE).not.toBe(EXECUTOR_ROLE);
+  });
+
+  test("the role block rides the tail like the plan block", () => {
+    const messages = [user("hi")];
+    expect(appendTailBlock(messages, agentRoleBlock("planner")!)).toBe(true);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.content.at(-1)?.text).toContain(AGENT_ROLE_OPEN);
   });
 
   test("native agents and subagents keep the constant rule", () => {
     expect(ownsRoutingRule("plan")).toBe(false);
     expect(ownsRoutingRule("build")).toBe(false);
     expect(ownsRoutingRule(undefined)).toBe(false);
-    expect(roleRule("plan")).toBeUndefined();
-    expect(roleRule(undefined)).toBeUndefined();
+    expect(agentRoleBlock("plan")).toBeUndefined();
+    expect(agentRoleBlock(undefined)).toBeUndefined();
   });
 
   test("the planner role is read-only", () => {

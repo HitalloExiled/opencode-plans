@@ -44,11 +44,18 @@ export const EXECUTOR_ROLE = [
   "- If a step is blocked, stop and explain instead of silently skipping it.",
 ].join("\n");
 
-/** The role text appended for the plugin's own agents, or undefined. */
-export function roleRule(agent: string | undefined): string | undefined {
-  if (agent === "planner") return PLANNER_ROLE;
-  if (agent === "executor") return EXECUTOR_ROLE;
-  return undefined;
+export const AGENT_ROLE_OPEN = "<agent-role>";
+
+/**
+ * The role block for the plugin's own agents. It is appended to the TAIL of the
+ * request (like the native Plan reminder), never pushed as a system part: the
+ * agent system is the first system part, so any difference there would
+ * invalidate the cached prefix and the whole history on a planner <-> executor
+ * switch.
+ */
+export function agentRoleBlock(agent: string | undefined): string | undefined {
+  const role = agent === "planner" ? PLANNER_ROLE : agent === "executor" ? EXECUTOR_ROLE : undefined;
+  return role ? `${AGENT_ROLE_OPEN}\n${role}\n</agent-role>` : undefined;
 }
 
 /**
