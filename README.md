@@ -101,7 +101,7 @@ e o `npm run gui:build`).
    isso é a sessão de origem do plano, não a sessão que está visualizando.
 9. **Executa o plano**: no card e no detalhe de um plano **active**, o botão
    **Executar** move o plano para a sessão atual quando necessário, troca o
-   agente da sessão para **Build** e envia um prompt para o agente ler o plano
+   agente da sessão para o **Executor** e envia um prompt para o agente ler o plano
    com `plans.get`, seguir os passos e atualizar o estado com `plans.update`.
    O prompt é uma mensagem de usuário normal (sem `delivery: "queue"`), então
    inicia o turno imediatamente; o botão só habilita com a sessão ociosa. O
@@ -110,8 +110,8 @@ e o `npm run gui:build`).
    Enquanto executa, o botão
    vira **Pausar**: ele interrompe o turno (`session.interrupt`), grava uma
    mensagem sintética avisando que o usuário pausou o plano e volta o agente
-   para **Plan**. Clicar em Executar novamente retoma do estado atual. Normal
-   completion mantém o agente em Build.
+   para o **Planner**. Clicar em Executar novamente retoma do estado atual. Normal
+   completion mantém o agente no Executor.
 10. **Executar pela pill do composer**: quando a sessão está ociosa e tem um
    plano **active**, uma pill **Executar plano** aparece na linha acima do
    composer (com o progresso `done/total`). O clique chama o mesmo
