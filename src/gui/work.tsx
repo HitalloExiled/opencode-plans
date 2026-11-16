@@ -170,6 +170,8 @@ const WORK_CSS = `
   background: currentColor;
 }
 .work-run-hint { font-size: 10.5px; color: var(--v2-text-text-faint); }
+/* Same play glyph as the plan Execute: the down triangle rotated into a play. */
+.work-run-play svg { transform: rotate(-90deg); color: var(--v2-state-fg-success); }
 .work-view-switch { display: flex; align-items: center; gap: 4px; }
 .work-board { display: flex; gap: 8px; flex: 1; min-height: 0; overflow-x: auto; padding-bottom: 4px; }
 .work-col {
@@ -1013,6 +1015,7 @@ export function WorkBody(props: {
               <ctx.ui.Button
                 size="small"
                 variant="neutral"
+                class="work-run-play"
                 icon="fill-triangle-down"
                 busy={preflightBusy()}
                 onClick={openPreflight}
