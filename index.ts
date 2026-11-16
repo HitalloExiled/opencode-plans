@@ -31,9 +31,10 @@ import { planMessageAgents } from "./src/flow-rules.js";
 import { applyPlanReminder } from "./src/plan-reminder.js";
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
-import { onPlanChange } from "./src/plan-events.js";
+import { emitPlanChange, onPlanChange } from "./src/plan-events.js";
 import { createRpcHandlers } from "./src/rpc.js";
 import { listPlans, planProgress, requireStore, savePlan } from "./src/store.js";
+import { captureWorkItem } from "./src/work-capture.js";
 
 type Ctx = Plugin.Context;
 
@@ -136,6 +137,50 @@ async function registerCommand(ctx: Ctx) {
           await ctx.session.synthetic({
             sessionID,
             text: tn(locale, "save.failed", errorText(error)),
+          }).catch(() => undefined);
+        }
+      },
+    });
+
+    editor.add({
+      name: "work",
+      description: "Cria um work item a partir de uma frase (título)",
+      async execute({ sessionID, prompt }) {
+        const locale = await commandLocale(ctx);
+        const title = (prompt.text ?? "").trim();
+        if (!title) {
+          await ctx.session.synthetic({ sessionID, text: tn(locale, "work.titleRequired") });
+          return;
+        }
+
+        try {
+          const session = await ctx.session.get({ sessionID });
+          const store = await requireStore();
+          const result = captureWorkItem(store.db, {
+            directory: String(session.location.directory),
+            title,
+          });
+          if (!result.ok) {
+            await ctx.session.synthetic({
+              sessionID,
+              text: tn(locale, "work.failed", result.error),
+            });
+            return;
+          }
+
+          emitPlanChange({ sessionID: String(sessionID) });
+          await ctx.session.synthetic({
+            sessionID,
+            text: [
+              tn(locale, "work.created", result.item.title),
+              tn(locale, "work.project", result.project.name),
+              tn(locale, "work.id", result.item.id),
+            ].join("\n"),
+          });
+        } catch (error) {
+          await ctx.session.synthetic({
+            sessionID,
+            text: tn(locale, "work.failed", errorText(error)),
           }).catch(() => undefined);
         }
       },

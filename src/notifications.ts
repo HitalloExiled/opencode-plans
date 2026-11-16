@@ -37,6 +37,11 @@ const EN: Record<string, string> = {
   "save.saved": "Plan saved: {0}",
   "save.id": "id: {0}",
   "save.progress": "{0}/{1} steps completed",
+  "work.titleRequired": "Use /work <title> to name the work item.",
+  "work.created": 'Work item created: "{0}"',
+  "work.project": "project: {0}",
+  "work.id": "id: {0}",
+  "work.failed": "Failed to create the work item: {0}",
 };
 
 const PT: Record<string, string> = {
@@ -70,6 +75,11 @@ const PT: Record<string, string> = {
   "save.saved": "Plano salvo: {0}",
   "save.id": "id: {0}",
   "save.progress": "{0}/{1} passos concluídos",
+  "work.titleRequired": "Use /work <título> para nomear o work item.",
+  "work.created": 'Work item criado: "{0}"',
+  "work.project": "projeto: {0}",
+  "work.id": "id: {0}",
+  "work.failed": "Falha ao criar o work item: {0}",
 };
 
 const TABLES: Record<NotificationLocale, Record<string, string>> = {

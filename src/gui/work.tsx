@@ -7,7 +7,7 @@
  * and executing arrive in the following USs.
  */
 
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 import { usePlugin } from "@opencode/plugin/gui";
 import type { MountedSession, ServerRef } from "@opencode/plugin/gui";
@@ -167,6 +167,15 @@ export function WorkBody(props: { target: () => WorkTarget }) {
         setError(cause instanceof Error ? cause.message : String(cause));
         setLoading(false);
       });
+  });
+
+  // The command and the agent write outside this component; re-read on the
+  // shared change event instead of waiting for a remount.
+  createEffect(() => {
+    const off = props.target().server.client.rpc(PlansRpc).events.on("changed", () => {
+      setReload((n) => n + 1);
+    });
+    onCleanup(off);
   });
 
   const total = createMemo(() => groups().reduce((sum, group) => sum + group.items.length, 0));
