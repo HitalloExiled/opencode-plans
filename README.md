@@ -201,16 +201,21 @@ interativa e o body é exibido sem o checklist extraído.
 - O Plan agent é instruído a chamar `plans.save` ao apresentar o plano final;
   a tool só escreve no `plans.db`, nunca no repositório.
 
-## Work items e execução de projeto (F4)
+## Work items, iniciativas e execução (F4)
 
-- **Backlog** (`work.*`): `work.list`/`work.get` leem o projeto resolvido pelo
-  diretório (corpo do item em `<work-item-body>`, tratado como dado) e
+- **Backlog** (`work.*`): `work.list`/`work.get` leem a **iniciativa** resolvida
+  pelo diretório (corpo do item em `<work-item-body>`, tratado como dado) e
   `work.save`/`work.update` escrevem — no máximo **3 itens por pedido**, dedupe
   por título normalizado + pai + status não-terminal, `origin=agent`; fechar
   (`done`/`dropped`) só com o planner ou o usuário.
-- **Superfície Trabalho** (overlay): lista e quadro por status, filtros e, com
-  um projeto selecionado, **Executar projeto**.
-- **Run**: o pré-voo exige repo git, `base_ref`, nenhum run ativo, itens `ready`
+- **Superfície Trabalho** (overlay): lista, quadro por status e **grafo de
+dependências**; com uma iniciativa selecionada, **Executar iniciativa**. O
+  grafo cria/remove dependências explícitas (seta do dependente para a
+  dependência) e mostra as implícitas tracejadas, read-only.
+- **Planejar**: sem plano, um popup lista os **projetos do OpenCode** e aceita um
+  caminho novo; o path vira repositório da iniciativa, fica no item e a sessão
+  abre nele. Com plano, o Planejar reabre a sessão do plano.
+- **Run**: o pré-voo exige repositório git, `base_ref`, nenhum run ativo, itens `ready`
   com plano `active` e grafo acíclico. O run cria `run/<id>` (integração) e, por
   item, um worktree + branch `wi/<item>` a partir do **tip da integração**; a
   sessão do executor roda nesse diretório e o plano é a fonte da verdade.
@@ -234,7 +239,7 @@ interativa e o body é exibido sem o checklist extraído.
 $PLANS_DB                                # override (testes/isolamento)
 ```
 
-Schema (v6):
+Schema (v7):
 
 - `plans` — id, project_id, project_directory, session_id, message_id, title,
   body (template com `<!-- plans:steps -->`), status, created_at, updated_at,
@@ -242,11 +247,11 @@ Schema (v6):
 - `plan_steps` — plan_id, position, step_id, text, status
   (`todo` | `doing` | `done`).
 - `plan_touches` — plan_id, path (footprint declarado).
-- `projects` / `project_locations` — projeto do usuário (N workspaces) e
+- `initiatives` / `initiative_repos` — iniciativa (N repositórios) e
   `base_branch`, `max_parallel`, `verify_command`.
 - `work_items`, `work_item_deps` (kind/reason) — necessidades, hierarquia,
   ordem e dependências explícitas/implícitas.
-- `runs`, `run_items`, `merge_queue` — execução de projeto (F4).
+- `runs`, `run_items`, `merge_queue` — execução da iniciativa (F4).
 
 O banco é criado no primeiro uso; as migrações são idempotentes e controladas
 por `PRAGMA user_version`. Nada de `*.db` no repositório.

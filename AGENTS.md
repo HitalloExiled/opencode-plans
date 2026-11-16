@@ -222,11 +222,34 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   back to `plan`; a new Execute resumes from the current steps. It is not a
   server tool.
 
-## Project runs (F4)
+## Work items and initiatives
 
-The run layer executes a whole project, not one item. Files:
+- **Initiative** is the user's grouping (N repositories); **project** means the
+  OpenCode project only (`plans.project_id`). Never use "project" for ours.
+  Schema v7: `initiatives` / `initiative_repos`, `work_items.initiative_id` /
+  `repo_id`, `runs.initiative_id`; the migration renames in place and repairs a
+  half-migrated database with empty new tables.
+- **Tools** (`work.*`): `list`/`get` resolve the initiative by directory and
+  render `<work-item-body>` as data; `save` caps at 3 items per request, dedupes
+  by normalized title + parent + non-terminal status and always writes
+  `origin=agent`; `update` moves status/order/parent/deps (cycles rejected) and
+  only the planner/user closes an item.
+- **Surfaces**: the overlay has Lista | Quadro | **Grafo** (per initiative).
+  The graph lays dependencies left and dependents right (`src/work-graph.ts`
+  pure and tested), drag from a node's + handle creates an explicit dependency,
+  clicking a solid edge removes it, implicit edges are dashed and read-only.
+- **Plan picker**: planning an item without a plan opens `plan-dialog.tsx`,
+  which lists `project.list()` and accepts an absolute path; the path is ensured
+  as an initiative repository (`ensureInitiativeRepo`), stored on the item
+  (`setWorkItemRepo`) and used as the session location. Replanning skips it.
+- The kanban card has no "Move to" menu: drag changes status and rank, and the
+  item detail is the keyboard path.
 
-- `src/store.ts` — schema v6: `runs`, `run_items`, `merge_queue`,
+## Initiative runs (F4)
+
+The run layer executes a whole initiative, not one item. Files:
+
+- `src/store.ts` — schema v7: `runs`, `run_items`, `merge_queue`,
   `plan_touches`, plus `projects.base_branch/max_parallel/verify_command`.
   One active run per project (partial unique index); `claimNextMerge` is the
   single transactional FIFO claim; `stopMergeQueue` is the failure brake.
