@@ -125,7 +125,7 @@ describe("preflightRun", () => {
     const result = await preflightRun(db, app.id, dir);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.blockers.join(" ")).toContain("nenhum item ready com plano ativo");
+    expect(result.blockers.map((entry) => entry.code)).toContain("no_ready_item");
   });
 
   test("a done plan does not run", async () => {
@@ -151,7 +151,7 @@ describe("preflightRun", () => {
     const result = await preflightRun(db, app.id, dir);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.blockers.join(" ")).toContain("outro repositório");
+    expect(result.blockers.map((entry) => entry.code)).toContain("item_other_repo");
   });
 
   test("an active run blocks a new one", async () => {
@@ -165,7 +165,18 @@ describe("preflightRun", () => {
     const result = await preflightRun(db, app.id, dir);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.blockers.join(" ")).toContain("run ativo");
+    expect(result.blockers.map((entry) => entry.code)).toContain("active_run");
+  });
+
+  test("an initiative without a repository blocks with a single clear code", async () => {
+    const db = open();
+    const created = createInitiative(db, { name: "No repos" });
+    if (!created.ok) throw new Error(created.error);
+
+    const result = await preflightRun(db, created.initiative.id, "");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.blockers).toEqual([{ code: "no_repo" }]);
   });
 
   test("a directory without git blocks the run", async () => {
@@ -177,7 +188,7 @@ describe("preflightRun", () => {
     const result = await preflightRun(db, app.id, dir);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.blockers.join(" ")).toContain("repositório git");
+    expect(result.blockers.map((entry) => entry.code)).toContain("not_git");
   });
 });
 

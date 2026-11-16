@@ -76,7 +76,24 @@ export type Preflight = {
   items: PreflightItem[];
 };
 
-export type PreflightResult = { ok: true; value: Preflight } | { ok: false; blockers: string[] };
+/** Why a run cannot start, as data: the UI translates `code` and fills `args`. */
+export type BlockerCode =
+  | "initiative_missing"
+  | "no_repo"
+  | "directory_not_in_initiative"
+  | "not_git"
+  | "no_base_ref"
+  | "base_ref_missing"
+  | "active_run"
+  | "no_ready_item"
+  | "plan_without_steps"
+  | "item_other_repo"
+  | "dep_not_in_run"
+  | "cycle";
+
+export type PreflightBlocker = { code: BlockerCode; args?: readonly string[] };
+
+export type PreflightResult = { ok: true; value: Preflight } | { ok: false; blockers: PreflightBlocker[] };
 
 /** The repositório the run operates on: the session's repo when it is one. */
 function runLocation(initiative: Initiative, directory: string): Initiative["repos"][number] | undefined {
@@ -98,21 +115,29 @@ function runLocation(initiative: Initiative, directory: string): Initiative["rep
  * simply not part of this run.
  */
 export async function preflightRun(db: Db, initiativeID: string, directory: string): Promise<PreflightResult> {
-  const blockers: string[] = [];
+  const blockers: PreflightBlocker[] = [];
   const initiative = getInitiative(db, initiativeID);
-  if (!initiative) return { ok: false, blockers: [`iniciativa não encontrada: ${initiativeID}`] };
+  if (!initiative) {
+    return { ok: false, blockers: [{ code: "initiative_missing", args: [initiativeID] }] };
+  }
+  // Nothing can run without a repository — and the plan picker is what
+  // associates one, so a repo-less initiative has no planned item either.
+  if (initiative.repos.length === 0) return { ok: false, blockers: [{ code: "no_repo" }] };
 
   const repoEntry = runLocation(initiative, directory);
   const repo = normalizeWorkspaceDirectory(repoEntry?.directory ?? directory);
-  if (!repoEntry) blockers.push(`o diretório não é um repositório da iniciativa: ${directory}`);
+  if (!repo) return { ok: false, blockers: [{ code: "no_repo" }] };
+  if (!repoEntry && directory.trim()) {
+    blockers.push({ code: "directory_not_in_initiative", args: [directory] });
+  }
 
-  if (!(await isGitRepo(repo))) blockers.push(`não é um repositório git: ${repo}`);
+  if (!(await isGitRepo(repo))) blockers.push({ code: "not_git", args: [repo] });
   const baseRef = initiative.base_branch?.trim() || (await defaultBranch(repo));
-  if (!baseRef) blockers.push("base_ref não definido e nenhuma branch padrão encontrada");
-  else if (!(await refExists(repo, baseRef))) blockers.push(`base_ref não existe: ${baseRef}`);
+  if (!baseRef) blockers.push({ code: "no_base_ref" });
+  else if (!(await refExists(repo, baseRef))) blockers.push({ code: "base_ref_missing", args: [baseRef] });
 
   const active = activeRun(db, initiativeID);
-  if (active) blockers.push(`já existe um run ativo: ${active.id}`);
+  if (active) blockers.push({ code: "active_run", args: [active.id] });
 
   // The footprint may have changed since the last plan save; the scheduler
   // depends on it being current.
@@ -125,12 +150,12 @@ export async function preflightRun(db: Db, initiativeID: string, directory: stri
     const plan = getPlanByWorkItem(db, item.id);
     if (!plan || plan.status !== "active") continue;
     if (plan.steps.length === 0) {
-      blockers.push(`plano sem passos: ${item.title}`);
+      blockers.push({ code: "plan_without_steps", args: [item.title] });
       continue;
     }
     const itemRepo = item.repo_id ? initiative.repos.find((entry) => entry.id === item.repo_id) : repoEntry;
     if (itemRepo && normalizeWorkspaceDirectory(itemRepo.directory) !== repo) {
-      blockers.push(`item em outro repositório: ${item.title}`);
+      blockers.push({ code: "item_other_repo", args: [item.title] });
       continue;
     }
 
@@ -141,16 +166,16 @@ export async function preflightRun(db: Db, initiativeID: string, directory: stri
         continue;
       }
       if (dep.status === "done" || dep.status === "dropped") continue;
-      blockers.push(`"${item.title}" depende de "${dep.title}", que não entra no run`);
+      blockers.push({ code: "dep_not_in_run", args: [item.title, dep.title] });
     }
     selected.push({ item, plan, deps });
   }
-  if (selected.length === 0) blockers.push("nenhum item ready com plano ativo");
+  if (selected.length === 0) blockers.push({ code: "no_ready_item" });
 
   const cycle = findDependencyCycle(
     selected.flatMap((entry) => entry.deps.map((dep) => ({ itemID: entry.item.id, blocksID: dep }))),
   );
-  if (cycle) blockers.push(`ciclo de dependências: ${cycle.join(" -> ")}`);
+  if (cycle) blockers.push({ code: "cycle", args: [cycle.join(" -> ")] });
 
   if (blockers.length > 0) return { ok: false, blockers };
   return {
@@ -185,7 +210,10 @@ function runRepo(db: Db, run: RunRow): string {
 }
 
 export type StartRunInput = { initiativeID: string; directory: string };
-export type StartRunResult = { ok: true; runID: string } | { ok: false; error: string };
+/** A preflight failure comes back as `blockers`; anything else as `error`. */
+export type StartRunResult =
+  | { ok: true; runID: string }
+  | { ok: false; error?: string; blockers?: readonly PreflightBlocker[] };
 
 /**
  * Starts a initiative run: preflight, the run row, the integration worktree and
@@ -194,7 +222,7 @@ export type StartRunResult = { ok: true; runID: string } | { ok: false; error: s
  */
 export async function startProjectRun(ctx: Ctx, db: Db, input: StartRunInput): Promise<StartRunResult> {
   const pre = await preflightRun(db, input.initiativeID, input.directory);
-  if (!pre.ok) return { ok: false, error: pre.blockers.join("; ") };
+  if (!pre.ok) return { ok: false, blockers: pre.blockers };
 
   const created = createRun(db, {
     initiativeID: input.initiativeID,

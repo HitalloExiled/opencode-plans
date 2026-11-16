@@ -661,9 +661,12 @@ export type RunView = {
   queue: MergeEntryView[];
 };
 
+/** A blocker as data: the UI translates `code` and fills `args`. */
+export type BlockerView = { code: string; args?: readonly string[] };
+
 export type PreflightView = {
   ok: boolean;
-  blockers: string[];
+  blockers: readonly BlockerView[];
   baseRef?: string | undefined;
   maxParallel?: number | undefined;
   items: {
@@ -713,9 +716,14 @@ export const runViewSchema = Schema.Struct({
   queue: Schema.Array(mergeEntryViewSchema),
 });
 
+export const blockerSchema = Schema.Struct({
+  code: Schema.String,
+  args: Schema.optional(Schema.Array(Schema.String)),
+});
+
 export const preflightViewSchema = Schema.Struct({
   ok: Schema.Boolean,
-  blockers: Schema.Array(Schema.String),
+  blockers: Schema.Array(blockerSchema),
   baseRef: optString,
   maxParallel: Schema.optional(Schema.Number),
   items: Schema.Array(
@@ -733,6 +741,7 @@ export const runStartViewSchema = Schema.Struct({
   ok: Schema.Boolean,
   error: optString,
   runID: optString,
+  blockers: Schema.optional(Schema.Array(blockerSchema)),
 });
 
 export const runIDInputSchema = Schema.Struct({ runID: Schema.String });

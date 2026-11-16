@@ -170,6 +170,8 @@ const WORK_CSS = `
   background: currentColor;
 }
 .work-run-hint { font-size: 10.5px; color: var(--v2-text-text-faint); }
+.work-run-field { display: flex; flex-direction: column; gap: 3px; }
+.work-run-field-label { font-size: 11px; font-weight: 600; color: var(--v2-text-text-base); }
 /* Same play glyph as the plan Execute: the down triangle rotated into a play. */
 .work-run-play svg { transform: rotate(-90deg); color: var(--v2-state-fg-success); }
 .work-view-switch { display: flex; align-items: center; gap: 4px; }
@@ -414,6 +416,11 @@ export function WorkBody(props: {
     return map;
   });
 
+  // Blockers travel as data (code + args); the copy lives in i18n so both
+  // locales render the same preflight.
+  const blockerText = (blocker: { code: string; args?: readonly string[] }): string =>
+    t(`work.run.blocker.${blocker.code}`, ...(blocker.args ?? []));
+
   const directoryOf = (initiative: Initiative): string =>
     initiative.repos.find((repo) => repo.primary)?.directory ?? initiative.repos[0]?.directory ?? "";
 
@@ -431,7 +438,7 @@ export function WorkBody(props: {
 
   const openPreflight = () => {
     const initiative = selectedInitiative();
-    if (!initiative) return;
+    if (!initiative || initiative.repos.length === 0) return;
     setPreflightBusy(true);
     setRunError(null);
     setPreflight(null);
@@ -453,6 +460,12 @@ export function WorkBody(props: {
       .runStart({ initiativeID: initiative.id, directory: directoryOf(initiative) })
       .then((result) => {
         if (!result.ok) {
+          // A preflight failure keeps its structured blockers: show them in the
+          // same panel instead of a joined string.
+          if (result.blockers && result.blockers.length > 0) {
+            setPreflight({ ok: false, blockers: result.blockers, items: [] } as PreflightView);
+            return;
+          }
           setRunError(result.error ?? t("work.run.startError"));
           return;
         }
@@ -512,7 +525,7 @@ export function WorkBody(props: {
   const syncSettings = () => {
     const initiative = selectedInitiative();
     if (!initiative) return;
-    setBaseInput(initiative.baseBranch ?? "");
+    setBaseInput(initiative.baseBranch ?? "main");
     setParallelInput(String(initiative.maxParallel ?? 2));
     setVerifyInput(initiative.verifyCommand ?? "");
   };
@@ -1018,6 +1031,7 @@ export function WorkBody(props: {
                 class="work-run-play"
                 icon="fill-triangle-down"
                 busy={preflightBusy()}
+                disabled={selectedInitiative()?.repos.length === 0}
                 onClick={openPreflight}
               >
                 {t("work.run.button")}
@@ -1033,6 +1047,9 @@ export function WorkBody(props: {
               >
                 {t("work.run.settings")}
               </ctx.ui.Button>
+              <Show when={selectedInitiative()?.repos.length === 0}>
+                <span class="work-run-hint">{t("work.run.noRepo")}</span>
+              </Show>
               <Show when={run()}>
                 {(current) => (
                   <>
@@ -1063,7 +1080,7 @@ export function WorkBody(props: {
                     when={view().ok}
                     fallback={
                       <div class="work-run-blockers">
-                        <For each={view().blockers}>{(blocker) => <div>• {blocker}</div>}</For>
+                        <For each={view().blockers}>{(blocker) => <div>• {blockerText(blocker)}</div>}</For>
                       </div>
                     }
                   >
@@ -1175,22 +1192,34 @@ export function WorkBody(props: {
 
             <Show when={settingsOpen()}>
               <div class="work-run-panel">
-                <ctx.ui.TextInput
-                  value={baseInput()}
-                  onInput={(value) => setBaseInput(value)}
-                  label={t("work.run.base")}
-                  placeholder={t("work.run.baseHint")}
-                />
-                <ctx.ui.TextInput
-                  value={parallelInput()}
-                  onInput={(value) => setParallelInput(value)}
-                  label={t("work.run.parallel")}
-                />
-                <ctx.ui.TextInput
-                  value={verifyInput()}
-                  onInput={(value) => setVerifyInput(value)}
-                  label={t("work.run.verify")}
-                />
+                <div class="work-run-field">
+                  <span class="work-run-field-label">{t("work.run.base")}</span>
+                  <ctx.ui.TextInput
+                    value={baseInput()}
+                    onInput={(value) => setBaseInput(value)}
+                    label={t("work.run.base")}
+                    placeholder={t("work.run.baseHint")}
+                  />
+                  <span class="work-run-hint">{t("work.run.baseDescription")}</span>
+                </div>
+                <div class="work-run-field">
+                  <span class="work-run-field-label">{t("work.run.parallel")}</span>
+                  <ctx.ui.TextInput
+                    value={parallelInput()}
+                    onInput={(value) => setParallelInput(value)}
+                    label={t("work.run.parallel")}
+                  />
+                  <span class="work-run-hint">{t("work.run.parallelDescription")}</span>
+                </div>
+                <div class="work-run-field">
+                  <span class="work-run-field-label">{t("work.run.verify")}</span>
+                  <ctx.ui.TextInput
+                    value={verifyInput()}
+                    onInput={(value) => setVerifyInput(value)}
+                    label={t("work.run.verify")}
+                  />
+                  <span class="work-run-hint">{t("work.run.verifyDescription")}</span>
+                </div>
                 <div class="work-run-actions">
                   <ctx.ui.Button size="small" variant="ghost" onClick={() => setSettingsOpen(false)}>
                     {t("cancel")}
