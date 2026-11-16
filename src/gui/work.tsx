@@ -40,6 +40,7 @@ import { planProgressOf } from "../work-progress";
 import { planWorkItem } from "./plan-item";
 import { openPlanDialog } from "./plan-dialog";
 import { WorkGraph } from "./graph";
+import { openInitiativeDialog } from "./initiative-dialog";
 import { closePlansOverlay } from "./overlay-state";
 
 export type ViewMode = "work" | "plans";
@@ -951,13 +952,45 @@ export function WorkBody(props: { target: () => WorkTarget }) {
       .finally(() => setStatusSaving(false));
   };
 
+  const upsertInitiative = (initiative: Initiative) => {
+    setInitiatives((list) => {
+      const exists = list.some((entry) => entry.id === initiative.id);
+      return exists ? list.map((entry) => (entry.id === initiative.id ? initiative : entry)) : [...list, initiative];
+    });
+    setReload((n) => n + 1);
+  };
+
+  const openNewInitiative = () => {
+    openInitiativeDialog({
+      ctx,
+      server: props.target().server,
+      mode: "create",
+      onChanged: (initiative) => {
+        upsertInitiative(initiative);
+        setInitiativeFilter(initiative.id);
+        ctx.toast.show({ title: t("work.initiative.created"), variant: "success" });
+      },
+    });
+  };
+
+  const openManageInitiative = () => {
+    const initiative = selectedInitiative();
+    if (!initiative) return;
+    openInitiativeDialog({
+      ctx,
+      server: props.target().server,
+      mode: "edit",
+      initiative,
+      onChanged: (updated) => upsertInitiative(updated),
+    });
+  };
+
   return (
     <>
       <style>{SHARED_CSS + WORK_CSS}</style>
       <div class="work">
         <Show when={!selectedID()}>
-          <Show when={initiatives().length > 0}>
-            <div class="work-toolbar">
+          <div class="work-toolbar">
               <div class="work-view-switch" role="group" aria-label={t("work.view.label")}>
                 <ctx.ui.Button
                   size="small"
@@ -984,18 +1017,33 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                   {t("work.view.graph")}
                 </ctx.ui.Button>
               </div>
-              <ctx.ui.Menu
-                trigger="button"
-                icon="workspace"
-                label={selectedInitiative()?.name ?? t("work.initiatives.all")}
-                items={[
-                  { label: t("work.initiatives.all"), onSelect: () => setInitiativeFilter("all") },
-                  ...initiatives().map((initiative) => ({
-                    label: initiative.name,
-                    onSelect: () => setInitiativeFilter(initiative.id),
-                  })),
-                ]}
-              />
+              <Show when={initiatives().length > 0}>
+                <ctx.ui.Menu
+                  trigger="button"
+                  icon="workspace"
+                  label={selectedInitiative()?.name ?? t("work.initiatives.all")}
+                  items={[
+                    { label: t("work.initiatives.all"), onSelect: () => setInitiativeFilter("all") },
+                    ...initiatives().map((initiative) => ({
+                      label: initiative.name,
+                      onSelect: () => setInitiativeFilter(initiative.id),
+                    })),
+                  ]}
+                />
+              </Show>
+              <Show when={selectedInitiative()}>
+                <ctx.ui.Button
+                  size="small"
+                  variant="ghost"
+                  icon="settings-gear"
+                  onClick={openManageInitiative}
+                >
+                  {t("work.initiative.manage")}
+                </ctx.ui.Button>
+              </Show>
+              <ctx.ui.Button size="small" variant="neutral" icon="plus" onClick={openNewInitiative}>
+                {t("work.initiative.new")}
+              </ctx.ui.Button>
               <Show when={hasAgentItems()}>
                 <ctx.ui.Button
                   size="small"
@@ -1016,8 +1064,7 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                   {t("work.filter.dropped")}
                 </ctx.ui.Button>
               </Show>
-            </div>
-          </Show>
+          </div>
 
           <Show when={selectedInitiative()}>
             <div class="work-new">

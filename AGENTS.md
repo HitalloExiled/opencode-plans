@@ -234,6 +234,11 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   by normalized title + parent + non-terminal status and always writes
   `origin=agent`; `update` moves status/order/parent/deps (cycles rejected) and
   only the planner/user closes an item.
+- **Creation/management**: the overlay toolbar has **Nova iniciativa** and,
+  with one selected, **Gerenciar iniciativa** (`initiative-dialog.tsx`): name,
+  repositories (absolute paths), primary selection and removal with the
+  item-count confirmation. Initiatives can also be born from the first work
+  item captured in a directory.
 - **Surfaces**: the overlay has Lista | Quadro | **Grafo** (per initiative).
   The graph lays dependencies left and dependents right (`src/work-graph.ts`
   pure and tested), drag from a node's + handle creates an explicit dependency,
