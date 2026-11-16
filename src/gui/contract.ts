@@ -92,6 +92,51 @@ export type Status = {
   error?: string | undefined;
 };
 
+export type ProjectLocation = {
+  id: string;
+  directory: string;
+  label: string;
+  primary: boolean;
+  position: number;
+};
+
+export type Project = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  locations: readonly ProjectLocation[];
+};
+
+export type ProjectResult = {
+  ok: boolean;
+  error?: string | undefined;
+  project?: Project | undefined;
+  /** The workspace has items; send `confirm: true` to remove it anyway. */
+  needsConfirmation?: boolean | undefined;
+  items?: number | undefined;
+};
+
+export type CreateProjectInput = {
+  name: string;
+  locations: readonly { directory: string; label?: string | undefined }[];
+};
+
+export type ProjectLocationInput = {
+  projectID: string;
+  directory: string;
+  label?: string | undefined;
+};
+
+export type ProjectLocationRef = {
+  projectID: string;
+  locationID: string;
+};
+
+export type RemoveProjectLocationInput = ProjectLocationRef & {
+  confirm?: boolean | undefined;
+};
+
 /* ------------------------------------------------------------------ */
 /* Schemas                                                             */
 /* ------------------------------------------------------------------ */
@@ -146,6 +191,57 @@ export const planResultSchema = Schema.Struct({
   ok: Schema.Boolean,
   error: optString,
   plan: Schema.optional(planSchema),
+});
+
+export const projectLocationSchema = Schema.Struct({
+  id: Schema.String,
+  directory: Schema.String,
+  label: Schema.String,
+  primary: Schema.Boolean,
+  position: Schema.Number,
+});
+
+export const projectSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  locations: Schema.Array(projectLocationSchema),
+});
+
+export const projectResultSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  error: optString,
+  project: Schema.optional(projectSchema),
+  needsConfirmation: Schema.optional(Schema.Boolean),
+  items: optNum,
+});
+
+export const createProjectInputSchema = Schema.Struct({
+  name: Schema.String,
+  locations: Schema.Array(Schema.Struct({ directory: Schema.String, label: optString })),
+});
+
+export const renameProjectInputSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+});
+
+export const projectLocationInputSchema = Schema.Struct({
+  projectID: Schema.String,
+  directory: Schema.String,
+  label: optString,
+});
+
+export const projectLocationRefSchema = Schema.Struct({
+  projectID: Schema.String,
+  locationID: Schema.String,
+});
+
+export const removeProjectLocationInputSchema = Schema.Struct({
+  projectID: Schema.String,
+  locationID: Schema.String,
+  confirm: Schema.optional(Schema.Boolean),
 });
 
 export const listOptionsSchema = Schema.Struct({
@@ -276,6 +372,30 @@ export const PlansRpc = Rpc.define({
     setFlow: {
       input: Schema.toStandardSchemaV1(planFlowSchema),
       output: Schema.toStandardSchemaV1(planFlowSchema),
+    },
+    listProjects: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({})),
+      output: Schema.toStandardSchemaV1(Schema.Array(projectSchema)),
+    },
+    createProject: {
+      input: Schema.toStandardSchemaV1(createProjectInputSchema),
+      output: Schema.toStandardSchemaV1(projectResultSchema),
+    },
+    renameProject: {
+      input: Schema.toStandardSchemaV1(renameProjectInputSchema),
+      output: Schema.toStandardSchemaV1(projectResultSchema),
+    },
+    addProjectLocation: {
+      input: Schema.toStandardSchemaV1(projectLocationInputSchema),
+      output: Schema.toStandardSchemaV1(projectResultSchema),
+    },
+    removeProjectLocation: {
+      input: Schema.toStandardSchemaV1(removeProjectLocationInputSchema),
+      output: Schema.toStandardSchemaV1(projectResultSchema),
+    },
+    setProjectPrimary: {
+      input: Schema.toStandardSchemaV1(projectLocationRefSchema),
+      output: Schema.toStandardSchemaV1(projectResultSchema),
     },
   },
   events: {

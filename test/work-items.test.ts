@@ -19,6 +19,7 @@ import {
   listProjects,
   listWorkItems,
   removeProjectLocation,
+  renameProject,
   schemaVersion,
   setPrimaryLocation,
   type Db,
@@ -129,24 +130,48 @@ describe("projects", () => {
     expect(setPrimaryLocation(db, app.id, "missing").ok).toBe(false);
   });
 
-  test("removes a workspace, but never the last one nor one with items", () => {
+  test("removes a workspace with items only after confirmation", () => {
     const db = open();
     const app = project(db);
     const second = app.locations[1]!;
-
     const item = createWorkItem(db, { projectID: app.id, locationID: second.id, title: "Need" });
-    expect(item.ok).toBe(true);
+    if (!item.ok) throw new Error(item.error);
+
     expect(removeProjectLocation(db, app.id, second.id)).toEqual({
       ok: false,
-      error: "há work items neste workspace; mova-os antes de remover",
+      error: "há 1 work item(ns) neste workspace; confirme para removê-lo e deixá-los sem workspace",
+      needsConfirmation: true,
+      items: 1,
     });
+    expect(getWorkItem(db, item.item.id)?.location_id).toBe(second.id);
 
-    const first = app.locations[0]!;
-    expect(removeProjectLocation(db, app.id, first.id).ok).toBe(true);
-    expect(removeProjectLocation(db, app.id, second.id)).toEqual({
+    expect(removeProjectLocation(db, app.id, second.id, { confirm: true }).ok).toBe(true);
+    expect(getWorkItem(db, item.item.id)?.location_id).toBeNull();
+    expect(getProject(db, app.id)!.locations.map((location) => location.id)).toEqual([app.locations[0]!.id]);
+
+    expect(removeProjectLocation(db, app.id, app.locations[0]!.id)).toEqual({
       ok: false,
       error: "o projeto precisa de pelo menos um workspace",
     });
+  });
+
+  test("renames the project keeping ids and links", () => {
+    const db = open();
+    const app = project(db);
+    const item = createWorkItem(db, { projectID: app.id, title: "Need" });
+    if (!item.ok) throw new Error(item.error);
+
+    const renamed = renameProject(db, app.id, "  New name  ");
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) return;
+    expect(renamed.project.name).toBe("New name");
+    expect(renamed.project.id).toBe(app.id);
+    expect(renamed.project.locations.map((location) => location.id)).toEqual(
+      app.locations.map((location) => location.id),
+    );
+    expect(getWorkItem(db, item.item.id)?.project_id).toBe(app.id);
+    expect(renameProject(db, app.id, "   ")).toEqual({ ok: false, error: "o nome do projeto é obrigatório" });
+    expect(renameProject(db, "missing", "x").ok).toBe(false);
   });
 
   test("removing the primary promotes the next workspace", () => {

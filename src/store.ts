@@ -870,6 +870,21 @@ export function listProjects(db: Db): Project[] {
   return rows.map((row) => ({ ...row, locations: locationsFor(db, row.id) }));
 }
 
+export function renameProject(db: Db, id: string, name: string): ProjectOk | WorkStoreError {
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, error: "o nome do projeto é obrigatório" };
+  if (!getProject(db, id)) return { ok: false, error: `projeto não encontrado: ${id}` };
+  const now = nowTimestamp();
+  try {
+    db.prepare("UPDATE projects SET name = ?, updated_at = ? WHERE id = ?").run(trimmed, now, id);
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  const project = getProject(db, id);
+  if (!project) return { ok: false, error: "projeto não encontrado após a renomeação" };
+  return { ok: true, project };
+}
+
 export type ProjectLocationInput = {
   directory: string;
   label?: string | undefined;
@@ -969,20 +984,49 @@ export function addProjectLocation(db: Db, projectID: string, input: ProjectLoca
   return { ok: true, location: locationFrom(row) };
 }
 
-export function removeProjectLocation(db: Db, projectID: string, locationID: string): Ok | WorkStoreError {
+export type RemoveLocationResult =
+  | { ok: true }
+  | { ok: false; error: string; needsConfirmation?: boolean; items?: number };
+
+/**
+ * Removes a workspace. A workspace with work items asks for confirmation; with
+ * it, those items lose their workspace (`location_id = NULL`, falling back to
+ * the primary when a plan starts) and the workspace is removed.
+ */
+export function removeProjectLocation(
+  db: Db,
+  projectID: string,
+  locationID: string,
+  options: { confirm?: boolean } = {},
+): RemoveLocationResult {
   const project = getProject(db, projectID);
   if (!project) return { ok: false, error: `projeto não encontrado: ${projectID}` };
   const location = project.locations.find((item) => item.id === locationID);
   if (!location) return { ok: false, error: "workspace não encontrado neste projeto" };
   if (project.locations.length === 1) return { ok: false, error: "o projeto precisa de pelo menos um workspace" };
-  const used = db.prepare("SELECT id FROM work_items WHERE location_id = ? LIMIT 1").get(locationID) as
-    | { id?: string }
+
+  const counted = db.prepare("SELECT COUNT(*) AS c FROM work_items WHERE location_id = ?").get(locationID) as
+    | { c?: number }
     | undefined;
-  if (used?.id) return { ok: false, error: "há work items neste workspace; mova-os antes de remover" };
+  const items = Number(counted?.c ?? 0);
+  if (items > 0 && options.confirm !== true) {
+    return {
+      ok: false,
+      error: `há ${items} work item(ns) neste workspace; confirme para removê-lo e deixá-los sem workspace`,
+      needsConfirmation: true,
+      items,
+    };
+  }
 
   const now = nowTimestamp();
   try {
     transaction(db, () => {
+      if (items > 0) {
+        db.prepare("UPDATE work_items SET location_id = NULL, updated_at = ? WHERE location_id = ?").run(
+          now,
+          locationID,
+        );
+      }
       db.prepare("DELETE FROM project_locations WHERE id = ?").run(locationID);
       if (location.primary) {
         const next = project.locations.find((item) => item.id !== locationID);

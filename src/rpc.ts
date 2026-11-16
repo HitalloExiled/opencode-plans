@@ -8,25 +8,41 @@
 
 import type { Plugin } from "@opencode/plugin";
 import type { RpcHandlers } from "@opencode/plugin/promise/rpc";
-import { PlansRpc, type Plan, type PlanFlow, type PlanResult, type Status } from "./gui/contract.js";
+import {
+  PlansRpc,
+  type Plan,
+  type PlanFlow,
+  type PlanResult,
+  type Project,
+  type ProjectResult,
+  type Status,
+} from "./gui/contract.js";
 import { getFlow, setFlow as persistFlow } from "./flow.js";
 import { notificationLocale, tn } from "./notifications.js";
 import { emitPlanChange } from "./plan-events.js";
 import {
+  addProjectLocation,
   countPlans,
+  createProject,
   deletePlan,
   getPlan,
+  getProject,
   getStore,
   listPlans,
+  listProjects,
   movePlan,
   planProgress,
   plansDbPath,
+  removeProjectLocation,
+  renameProject,
   requireStore,
   savePlan,
   schemaVersion,
+  setPrimaryLocation,
   setStep,
   updatePlan,
   type Plan as StorePlan,
+  type Project as StoreProject,
   type SaveOk,
   type WriteError,
 } from "./store.js";
@@ -55,6 +71,32 @@ const toPlan = (plan: StorePlan): Plan => ({
 
 const fromWrite = (result: SaveOk | WriteError): PlanResult =>
   result.ok ? { ok: true, plan: toPlan(result.plan) } : { ok: false, error: result.error };
+
+const toProject = (project: StoreProject): Project => ({
+  id: project.id,
+  name: project.name,
+  createdAt: project.created_at,
+  updatedAt: project.updated_at,
+  locations: project.locations.map((location) => ({
+    id: location.id,
+    directory: location.directory,
+    label: location.label,
+    primary: location.primary,
+    position: location.position,
+  })),
+});
+
+const projectOk = (project: StoreProject): ProjectResult => ({ ok: true, project: toProject(project) });
+
+const projectError = (
+  error: string,
+  extra: { needsConfirmation?: boolean | undefined; items?: number | undefined } = {},
+): ProjectResult => ({
+  ok: false,
+  error,
+  ...(extra.needsConfirmation ? { needsConfirmation: true } : {}),
+  ...(extra.items !== undefined ? { items: extra.items } : {}),
+});
 
 /** Tell the session that the user changed a plan from the panel. */
 async function notify(
@@ -275,5 +317,62 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
     getFlow: async () => getFlow() as PlanFlow,
 
     setFlow: async (flow) => persistFlow(flow as PlanFlow),
+
+    listProjects: async () => {
+      const store = await requireStore();
+      return listProjects(store.db).map(toProject);
+    },
+
+    createProject: async (input) => {
+      const store = await requireStore();
+      const result = createProject(store.db, {
+        name: input.name,
+        locations: input.locations.map((location) => ({
+          directory: location.directory,
+          ...(location.label ? { label: location.label } : {}),
+        })),
+      });
+      return result.ok ? projectOk(result.project) : projectError(result.error);
+    },
+
+    renameProject: async (input) => {
+      const store = await requireStore();
+      const result = renameProject(store.db, input.id, input.name);
+      return result.ok ? projectOk(result.project) : projectError(result.error);
+    },
+
+    addProjectLocation: async (input) => {
+      const store = await requireStore();
+      const result = addProjectLocation(store.db, input.projectID, {
+        directory: input.directory,
+        ...(input.label ? { label: input.label } : {}),
+      });
+      if (!result.ok) return projectError(result.error);
+      const project = getProject(store.db, input.projectID);
+      return project ? projectOk(project) : projectError("projeto não encontrado após adicionar o workspace");
+    },
+
+    removeProjectLocation: async (input) => {
+      const store = await requireStore();
+      const result = removeProjectLocation(store.db, input.projectID, input.locationID, {
+        confirm: input.confirm === true,
+      });
+      if (!result.ok) {
+        return projectError(result.error, {
+          needsConfirmation: result.needsConfirmation === true,
+          ...(result.items !== undefined ? { items: result.items } : {}),
+        });
+      }
+      const project = getProject(store.db, input.projectID);
+      return project ? projectOk(project) : projectError("projeto não encontrado após remover o workspace");
+    },
+
+    setProjectPrimary: async (input) => {
+      const store = await requireStore();
+      const result = setPrimaryLocation(store.db, input.projectID, input.locationID);
+      if (!result.ok) return projectError(result.error);
+      const project = getProject(store.db, input.projectID);
+      return project ? projectOk(project) : projectError("projeto não encontrado após trocar o primary");
+    },
   };
 }
