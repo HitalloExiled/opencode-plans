@@ -8,7 +8,8 @@
 
 import type { Plugin } from "@opencode/plugin";
 import type { RpcHandlers } from "@opencode/plugin/promise/rpc";
-import { PlansRpc, type Plan, type PlanResult, type Status } from "./gui/contract.js";
+import { PlansRpc, type Plan, type PlanFlow, type PlanResult, type Status } from "./gui/contract.js";
+import { getFlow, setFlow as persistFlow } from "./flow.js";
 import { notificationLocale, tn } from "./notifications.js";
 import { emitPlanChange } from "./plan-events.js";
 import {
@@ -270,5 +271,9 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       await ctx.storage.set("locale", locale);
       return null;
     },
+
+    getFlow: async () => getFlow() as PlanFlow,
+
+    setFlow: async (flow) => persistFlow(flow as PlanFlow),
   };
 }

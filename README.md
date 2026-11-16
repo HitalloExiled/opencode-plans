@@ -54,35 +54,38 @@ e o `npm run gui:build`).
 
 ## O que o plugin faz
 
-1. **Dois agentes próprios**: **Planner** (read-only, fala sobre o plano e o
+1. **Dois fluxos, com toggle na GUI**: **Nativo** (padrão) usa Plan/Build
+   exatamente como antes; **Dedicado** usa os agentes próprios. A escolha fica
+   em `flow.json`, ao lado do `plans.db`, e vale para a instalação.
+2. **Dois agentes próprios** (fluxo dedicado): **Planner** (read-only, fala sobre o plano e o
    salva com `plans.save` no mesmo turno) e **Executor** (lê o plano com
    `plans.get` e marca `doing`/`done` com `plans.update`). O Executar do painel
    troca a sessão para o Executor; pausar volta ao Planner.
-2. **Persiste um plano** (`plans.save`) com título, Markdown, passos e vínculo
+3. **Persiste um plano** (`plans.save`) com título, Markdown, passos e vínculo
    ao projeto/sessão. O `plans.save` aceita `id` para **substituir o
    texto/estrutura** de um plano existente: isso recria os passos e reinicia
    IDs/status. Não use `save` para marcar progresso. Os passos são extraídos
    com o **texto exato** e o body é guardado como template, com
    `<!-- plans:steps -->` no lugar do checklist.
-3. **Lista e lê planos** (`plans.list`, `plans.get`): por padrão só a
+4. **Lista e lê planos** (`plans.list`, `plans.get`): por padrão só a
    **sessão atual**; `scope: "project"` é opt-in para ver/ler planos de outras
    sessões do mesmo projeto. O `get`/`update`/`delete` das tools recusam plano
    de outra sessão.
-4. **Marca progresso** (`plans.update`): passos `todo`/`doing`/`done`
+5. **Marca progresso** (`plans.update`): passos `todo`/`doing`/`done`
    (`stepID` + `stepStatus`) e status do plano (`active`, `done`, `archived`,
    `superseded`). Os IDs (`s1`, `s2`, …) aparecem no `plans.get`; use-os em
    vez de reescrever o body. No máximo um passo por plano fica `doing`; marcar
    outro volta o anterior para `todo`. Quando todos os passos ficam `done`, o
    plano vira `done`. O agente marca `doing` antes de começar um passo e
    `done` ao concluir.
-5. **Injeta uma regra de routing (system)**: em todo request o plugin anexa um
+6. **Injeta uma regra de routing (system)**: em todo request o plugin anexa um
    system part constante (`Plans routing`) liberando `plans.save`/`plans.update`
    no Plan mode e lembrando de salvar o plano final no mesmo turno. O texto é
    byte-idêntico entre requests, então o prefixo do KV cache não muda. Contexto
    dinâmico (plano da sessão + pendentes) só entra no **tail** da última
    mensagem do usuário e **apenas depois de uma compactação**, quando o plano
    saiu da conversa.
-6. **Painel lateral**: por padrão lista só a **sessão ativa**; o toggle
+7. **Painel lateral**: por padrão lista só a **sessão ativa**; o toggle
    **Projeto** traz todos os planos do projeto, com a sessão de origem em cada
    card. Planos de outra sessão têm o botão **Mover para esta sessão**. O
    painel guarda por sessão o plano aberto, a busca, os filtros, a página e a
@@ -90,16 +93,16 @@ e o `npm run gui:build`).
    um plano aberto, os filtros ficam ocultos. A listagem é paginada no cliente
    (10 por página); no detalhe, corpo e passos rolam independentemente e a
    altura dos passos é ajustável pelo divisor.
-7. **Salvar o último plano**: `/save-plan` (servidor) captura a última mensagem
+8. **Salvar o último plano**: `/save-plan` (servidor) captura a última mensagem
    do agente `plan` na sessão. O botão **Salvar do agente** do painel não salva
    direto: ele envia um hint pedindo ao agente que chame `plans.save` com o
    plano apresentado.
-8. **Notifica o agente**: quando o usuário marca/altera um passo, muda o
+9. **Notifica o agente**: quando o usuário marca/altera um passo, muda o
    status, move ou remove um plano no painel, o servidor grava uma mensagem
    sintética na **sessão dona do plano** (`resume: false`) com a ação na
    descrição. O agente vê a alteração no próximo request. Em escopo Projeto,
    isso é a sessão de origem do plano, não a sessão que está visualizando.
-9. **Executa o plano**: no card e no detalhe de um plano **active**, o botão
+10. **Executa o plano**: no card e no detalhe de um plano **active**, o botão
    **Executar** move o plano para a sessão atual quando necessário, troca o
    agente da sessão para o **Executor** e envia um prompt para o agente ler o plano
    com `plans.get`, seguir os passos e atualizar o estado com `plans.update`.
@@ -112,7 +115,7 @@ e o `npm run gui:build`).
    mensagem sintética avisando que o usuário pausou o plano e volta o agente
    para o **Planner**. Clicar em Executar novamente retoma do estado atual. Normal
    completion mantém o agente no Executor.
-10. **Executar pela pill do composer**: quando a sessão está ociosa e tem um
+11. **Executar pela pill do composer**: quando a sessão está ociosa e tem um
    plano **active**, uma pill **Executar plano** aparece na linha acima do
    composer (com o progresso `done/total`). O clique chama o mesmo
    `executionFor(session)` do botão do painel — o handle compartilhado grava o
@@ -122,7 +125,7 @@ e o `npm run gui:build`).
    `plans.save`, pelos tools de escrita e pelos handlers do painel; some
    enquanto o agente roda e quando o plano termina (todos os passos `done`
    viram status `done`).
-11. **Pill “Planos · N” e overlay**: um pill na linha de título da timeline
+12. **Pill “Planos · N” e overlay**: um pill na linha de título da timeline
     mostra a contagem de planos **ativos** e abre um overlay com todos os
     planos de todos os projetos e sessões, **ordenados por projeto** (com
     cabeçalho a cada troca, mesmo entre páginas) e com **filtro de projetos em

@@ -13,7 +13,7 @@ import type { MountedSession, ServerRef } from "@opencode/plugin/gui";
 import { SHARED_CSS, MultiSelect, ScrollNav, createScrollNav, EmptyState, ErrorBanner, LoadingRow, StatusChip, type ChipTone } from "opencode-shared/gui";
 import { PlansRpc } from "./contract";
 import { executionFor, planTarget, sessionTarget } from "./execution";
-import type { Plan, PlanStatus, PlanStep, StepStatus } from "./contract";
+import type { Plan, PlanFlow, PlanStatus, PlanStep, StepStatus } from "./contract";
 import { useT } from "./i18n";
 import { bodyWithoutSteps } from "../plan-body";
 import { orderPlans, projectKeyOf, projectLabel as projectSectionName } from "./order";
@@ -427,6 +427,24 @@ export function PlansBody(props: { target: () => PlansTarget }) {
       .catch(() => undefined);
   });
 
+  createEffect(() => {
+    const rpc = target().server.client.rpc(PlansRpc);
+    void rpc
+      .getFlow({}, rpcOptions())
+      .then((value) => setFlowState(value as PlanFlow))
+      .catch(() => undefined);
+  });
+
+  const changeFlow = async (next: PlanFlow) => {
+    if (flow() === next) return;
+    try {
+      const saved = await client().rpc(PlansRpc).setFlow(next, rpcOptions());
+      setFlowState(saved as PlanFlow);
+    } catch (cause) {
+      showError(t("toast.updateError"), cause);
+    }
+  };
+
   const viewStore = createMemo(() => {
     return ctx.storage.store(target().storageKey, {
       schema: ViewState,
@@ -440,6 +458,8 @@ export function PlansBody(props: { target: () => PlansTarget }) {
   const [detail, setDetail] = createSignal<Plan | null>(null);
   const [statusFilter, setStatusFilter] = createSignal<StatusFilter>(saved?.status ?? "active");
   const [projectFilter, setProjectFilter] = createSignal<string[]>([]);
+  /** Which agent flow execute/pause drive (stored server-side). */
+  const [flow, setFlowState] = createSignal<PlanFlow>("native");
   const [openFilter, setOpenFilter] = createSignal<string | null>(null);
   const [scopeFilter, setScopeFilter] = createSignal<ScopeFilter>(
     detached() ? "all" : (saved?.scope ?? "session"),
@@ -1107,6 +1127,24 @@ export function PlansBody(props: { target: () => PlansTarget }) {
             </span>
           </div>
           <div class="plans-actions">
+            <div class="plans-toggles" role="group" aria-label={t("flow.label")}>
+              <button
+                type="button"
+                class="plans-toggle"
+                classList={{ "is-active": flow() === "native" }}
+                onClick={() => void changeFlow("native")}
+              >
+                {t("flow.native")}
+              </button>
+              <button
+                type="button"
+                class="plans-toggle"
+                classList={{ "is-active": flow() === "dedicated" }}
+                onClick={() => void changeFlow("dedicated")}
+              >
+                {t("flow.dedicated")}
+              </button>
+            </div>
             <Show when={!detached()}>
               <ctx.ui.Button
                 size="small"

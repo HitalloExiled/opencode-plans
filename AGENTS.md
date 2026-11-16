@@ -87,6 +87,14 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   load-bearing sentence first; parameter descriptions stay ≤6 words.
   `test/inject.test.ts` enforces all three (`plans.save` keeps the Plan-mode
   permission, `plans.update` the call shape).
+- **Two agent flows, toggled in the GUI and stored server-side.** `flow.json`
+  next to `plans.db` (RPC `getFlow`/`setFlow`, cached in memory) holds
+  `native` (default) or `dedicated`. `native` reproduces the pre-agents
+  behavior exactly (commit fb70c25): the routing rule on every agent,
+  `/save-plan` capturing only `plan`, execute -> `build`, pause -> `plan`.
+  `dedicated` uses our agents, the conditional rule, the `<agent-role>` tail,
+  and execute -> `executor` / pause -> `planner`. Never key behavior off the
+  agent name alone; read the flow.
 - **The plugin owns two primary agents** (`src/agents.ts`, registered with
   `ctx.agent.transform`; `update` upserts, so a new id is created). `planner`
   mirrors the native Plan agent: `edit` denied, **shell allowed** (read-only by

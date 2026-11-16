@@ -58,9 +58,12 @@ export async function runPlan(input: {
     moved = true;
   }
 
+  // The flow setting picks the agent: native keeps Plan/Build, dedicated uses
+  // the plugin's own executor.
+  const flow = await target.client.rpc(PlansRpc).getFlow({});
   await target.client.session.switchAgent({
     sessionID: target.sessionID,
-    agent: "executor",
+    agent: flow === "dedicated" ? "executor" : "build",
   });
   await target.client.session.prompt({
     sessionID: target.sessionID,

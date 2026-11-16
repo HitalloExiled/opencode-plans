@@ -25,6 +25,7 @@ import {
 } from "./src/inject.js";
 import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
 import { registerAgents } from "./src/agents.js";
+import { getFlow } from "./src/flow.js";
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
 import { onPlanChange } from "./src/plan-events.js";
@@ -87,8 +88,11 @@ async function registerCommand(ctx: Ctx) {
         const locale = await commandLocale(ctx);
         try {
           const messages = await ctx.session.context({ sessionID });
+          // Native flow captures only the Plan agent, exactly like before the
+          // dedicated agents existed; dedicated also accepts the planner.
           const captured = findLastPlanMessage(messages as unknown as SessionMessageLike[], {
             requireSteps: true,
+            agents: getFlow() === "dedicated" ? ["plan", "planner"] : ["plan"],
           });
           if (!captured) {
             await ctx.session.synthetic({
@@ -144,20 +148,23 @@ async function registerCommand(ctx: Ctx) {
  */
 async function onContext(ctx: Ctx, event: SessionContext) {
   const agent = String(event.agent);
-  // Outside the try/catch: a broken database must not drop the rule. Our own
-  // agents carry the flow in their system prompt, so the constant rule is
-  // skipped there instead of duplicating/conflicting with it.
-  if (!ownsRoutingRule(agent)) pushRoutingRule(event.system);
+  const dedicated = getFlow() === "dedicated";
+  // Outside the try/catch: a broken database must not drop the rule. In the
+  // native flow the rule goes to every agent (the pre-agents behavior); in the
+  // dedicated flow our own agents carry the contract and skip it.
+  if (!dedicated || !ownsRoutingRule(agent)) pushRoutingRule(event.system);
 
   if (agent === "plan") return;
   try {
     const messages = event.messages as InjectMessage[];
     const last = messages.at(-1);
     const structural = hasCompaction(messages);
-    // Our agents carry their role in the request tail, not in `system`: the
-    // system is the cached prefix, the tail is new bytes anyway.
-    const role = agentRoleBlock(agent);
-    if (role) appendTailBlock(messages, role);
+    // Dedicated flow: our agents carry their role in the request tail, not in
+    // `system` (the cached prefix); the tail is new bytes anyway.
+    if (dedicated) {
+      const role = agentRoleBlock(agent);
+      if (role) appendTailBlock(messages, role);
+    }
     const flagged = compactedSessions.has(String(event.sessionID));
     // The compaction hook fires for the summarization request itself; that
     // request has no conversation tail, and injecting there would put the plan

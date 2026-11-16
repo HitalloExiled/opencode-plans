@@ -26,6 +26,8 @@ export type CapturedPlan = {
 export type FindPlanOptions = {
   /** Skip messages that do not contain at least one extractable step. */
   requireSteps?: boolean;
+  /** Agent ids whose messages count as a plan; defaults to both flows. */
+  agents?: readonly string[];
 };
 
 export function messageText(message: SessionMessageLike): string {
@@ -47,11 +49,12 @@ export function findLastPlanMessage(
   messages: readonly SessionMessageLike[],
   options: FindPlanOptions = {},
 ): CapturedPlan | undefined {
+  const agents = options.agents ?? ["plan", "planner"];
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
     if (!message || message.type !== "assistant") continue;
     const agent = String(message.agent ?? "");
-    if (agent !== "plan" && agent !== "planner") continue;
+    if (!agents.includes(agent)) continue;
     const body = messageText(message);
     if (!body) continue;
     if (options.requireSteps && extractSteps(body).length === 0) continue;

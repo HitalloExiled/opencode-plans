@@ -17,6 +17,7 @@ import { Schema } from "effect";
 export type PlanStatus = "active" | "done" | "archived" | "superseded";
 export type StepStatus = "todo" | "doing" | "done";
 export type PlanScope = "session" | "project" | "all";
+export type PlanFlow = "native" | "dedicated";
 
 export type PlanStep = {
   id: string;
@@ -104,6 +105,8 @@ export const planStatusSchema = Schema.Union([
   Schema.Literal("archived"),
   Schema.Literal("superseded"),
 ]);
+
+export const planFlowSchema = Schema.Union([Schema.Literal("native"), Schema.Literal("dedicated")]);
 
 export const planScopeSchema = Schema.Union([
   Schema.Literal("session"),
@@ -265,6 +268,14 @@ export const PlansRpc = Rpc.define({
     setLocale: {
       input: Schema.toStandardSchemaV1(Schema.String),
       output: Schema.toStandardSchemaV1(Schema.Null),
+    },
+    getFlow: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({})),
+      output: Schema.toStandardSchemaV1(planFlowSchema),
+    },
+    setFlow: {
+      input: Schema.toStandardSchemaV1(planFlowSchema),
+      output: Schema.toStandardSchemaV1(planFlowSchema),
     },
   },
   events: {
