@@ -88,6 +88,8 @@ export type BlockerCode =
   | "no_ready_item"
   | "plan_without_steps"
   | "item_other_repo"
+  | "item_without_repo"
+  | "items_in_different_repos"
   | "dep_not_in_run"
   | "cycle";
 
@@ -113,6 +115,10 @@ function runLocation(initiative: Initiative, directory: string): Initiative["rep
  * active run, at least one ready item with an active plan, all items in the
  * same repositório and a graph without cycles. Ready items without a plan are
  * simply not part of this run.
+ *
+ * The repository is not required on the initiative: an item resolves to its own
+ * `repo_id`, else to the project its plan was saved from, so a grouped backlog
+ * runs from what its plans already know.
  */
 export async function preflightRun(db: Db, initiativeID: string, directory: string): Promise<PreflightResult> {
   const blockers: PreflightBlocker[] = [];
@@ -120,21 +126,6 @@ export async function preflightRun(db: Db, initiativeID: string, directory: stri
   if (!initiative) {
     return { ok: false, blockers: [{ code: "initiative_missing", args: [initiativeID] }] };
   }
-  // Nothing can run without a repository — and the plan picker is what
-  // associates one, so a repo-less initiative has no planned item either.
-  if (initiative.repos.length === 0) return { ok: false, blockers: [{ code: "no_repo" }] };
-
-  const repoEntry = runLocation(initiative, directory);
-  const repo = normalizeWorkspaceDirectory(repoEntry?.directory ?? directory);
-  if (!repo) return { ok: false, blockers: [{ code: "no_repo" }] };
-  if (!repoEntry && directory.trim()) {
-    blockers.push({ code: "directory_not_in_initiative", args: [directory] });
-  }
-
-  if (!(await isGitRepo(repo))) blockers.push({ code: "not_git", args: [repo] });
-  const baseRef = initiative.base_branch?.trim() || (await defaultBranch(repo));
-  if (!baseRef) blockers.push({ code: "no_base_ref" });
-  else if (!(await refExists(repo, baseRef))) blockers.push({ code: "base_ref_missing", args: [baseRef] });
 
   const active = activeRun(db, initiativeID);
   if (active) blockers.push({ code: "active_run", args: [active.id] });
@@ -143,9 +134,15 @@ export async function preflightRun(db: Db, initiativeID: string, directory: stri
   // depends on it being current.
   recomputeImplicitDeps(db, initiativeID);
 
+  // The repository the surface points at (the session's, when it belongs to
+  // the initiative). Empty for an initiative with no repository: then the
+  // plans decide.
+  const repoEntry = runLocation(initiative, directory);
+  const declared = normalizeWorkspaceDirectory(repoEntry?.directory ?? directory);
+
   const ready = listWorkItems(db, initiativeID).filter((item) => item.status === "ready");
   const readyIDs = new Set(ready.map((item) => item.id));
-  const selected: PreflightItem[] = [];
+  const candidates: { item: WorkItemRow; plan: Plan; deps: string[]; dir: string }[] = [];
   for (const item of ready) {
     const plan = getPlanByWorkItem(db, item.id);
     if (!plan || plan.status !== "active") continue;
@@ -153,9 +150,12 @@ export async function preflightRun(db: Db, initiativeID: string, directory: stri
       blockers.push({ code: "plan_without_steps", args: [item.title] });
       continue;
     }
-    const itemRepo = item.repo_id ? initiative.repos.find((entry) => entry.id === item.repo_id) : repoEntry;
-    if (itemRepo && normalizeWorkspaceDirectory(itemRepo.directory) !== repo) {
-      blockers.push({ code: "item_other_repo", args: [item.title] });
+    const itemRepo = item.repo_id ? initiative.repos.find((entry) => entry.id === item.repo_id) : undefined;
+    // Its own repository, the declared one, else the project the plan was saved
+    // from — a repo-less initiative still runs from what its plans know.
+    const dir = normalizeWorkspaceDirectory(itemRepo?.directory || declared || plan.project_directory || "");
+    if (!dir) {
+      blockers.push({ code: "item_without_repo", args: [item.title] });
       continue;
     }
 
@@ -168,7 +168,30 @@ export async function preflightRun(db: Db, initiativeID: string, directory: stri
       if (dep.status === "done" || dep.status === "dropped") continue;
       blockers.push({ code: "dep_not_in_run", args: [item.title, dep.title] });
     }
-    selected.push({ item, plan, deps });
+    candidates.push({ item, plan, deps, dir });
+  }
+
+  // One repository per run: the declared one, else the project the plans point
+  // at. Plans that disagree without a declared repository block the run.
+  const dirs = [...new Set(candidates.map((entry) => entry.dir))];
+  if (!declared && dirs.length > 1) {
+    blockers.push({ code: "items_in_different_repos", args: [dirs[0]!, dirs[1]!] });
+  }
+  const repo = declared || dirs[0] || "";
+  if (!repo) return { ok: false, blockers: [...blockers, { code: "no_repo" }] };
+
+  if (!(await isGitRepo(repo))) blockers.push({ code: "not_git", args: [repo] });
+  const baseRef = initiative.base_branch?.trim() || (await defaultBranch(repo));
+  if (!baseRef) blockers.push({ code: "no_base_ref" });
+  else if (!(await refExists(repo, baseRef))) blockers.push({ code: "base_ref_missing", args: [baseRef] });
+
+  const selected: PreflightItem[] = [];
+  for (const entry of candidates) {
+    if (entry.dir !== repo) {
+      blockers.push({ code: "item_other_repo", args: [entry.item.title] });
+      continue;
+    }
+    selected.push({ item: entry.item, plan: entry.plan, deps: entry.deps });
   }
   if (selected.length === 0) blockers.push({ code: "no_ready_item" });
 
@@ -202,8 +225,12 @@ function notifyChange(sessionID?: string | null): void {
   emitPlanChange({ sessionID: sessionID ?? "" });
 }
 
-/** The repo of a run: the initiative's primary repositório (preflight enforces one). */
+/**
+ * The repo of a run: the one persisted at start (derived from the plans), with
+ * the initiative's primary as the fallback for runs older than schema v9.
+ */
 function runRepo(db: Db, run: RunRow): string {
+  if (run.repo) return run.repo;
   const initiative = getInitiative(db, run.initiative_id);
   const repo = initiative?.repos.find((entry) => entry.primary) ?? initiative?.repos[0];
   return repo?.directory ?? "";
@@ -228,6 +255,7 @@ export async function startProjectRun(ctx: Ctx, db: Db, input: StartRunInput): P
     initiativeID: input.initiativeID,
     baseRef: pre.value.baseRef,
     maxParallel: pre.value.maxParallel,
+    repo: pre.value.repo,
   });
   if (!created.ok) return { ok: false, error: created.error };
   const run = created.run;

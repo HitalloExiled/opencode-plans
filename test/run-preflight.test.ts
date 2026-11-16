@@ -81,6 +81,20 @@ function plan(db: Db, workItemID: string, status: "active" | "done" = "active") 
   return saved.plan;
 }
 
+/** Same as `plan`, saved from another project: the run derives its repository. */
+function planAt(db: Db, workItemID: string, directory: string) {
+  const saved = savePlan(db, {
+    body: "# Plan\n\n- [ ] one",
+    projectID: "p1",
+    projectDirectory: directory,
+    sessionID: "s1",
+    workItemID,
+    touches: ["src/**"],
+  });
+  if (!saved.ok) throw new Error(saved.error);
+  return saved.plan;
+}
+
 afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
@@ -217,5 +231,40 @@ describe("recoverRuns", () => {
     expect(getRun(db, run.run.id)?.status).toBe("interrupted");
     expect(getRunItem(db, run.run.id, "item-1")?.status).toBe("queued");
     expect(listMergeQueue(db, run.run.id)[0]?.status).toBe("queued");
+  });
+});
+
+describe("preflightRun without an initiative repository", () => {
+  test("derives the repository from the plan's project directory", async () => {
+    const db = open();
+    const dir = repo();
+    const created = createInitiative(db, { name: "No repos" });
+    if (!created.ok) throw new Error(created.error);
+    const id = item(db, created.initiative.id, "Build it");
+    planAt(db, id, dir);
+
+    const result = await preflightRun(db, created.initiative.id, "");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.repo).toBe(dir);
+    expect(result.value.baseRef).toBe("main");
+    expect(result.value.items.map((entry) => entry.item.id)).toEqual([id]);
+  });
+
+  test("plans in different projects block with items_in_different_repos", async () => {
+    const db = open();
+    const first = repo();
+    const second = repo();
+    const created = createInitiative(db, { name: "Two projects" });
+    if (!created.ok) throw new Error(created.error);
+    const a = item(db, created.initiative.id, "First");
+    const b = item(db, created.initiative.id, "Second");
+    planAt(db, a, first);
+    planAt(db, b, second);
+
+    const result = await preflightRun(db, created.initiative.id, "");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.blockers.map((entry) => entry.code)).toContain("items_in_different_repos");
   });
 });

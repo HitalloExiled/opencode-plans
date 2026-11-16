@@ -281,7 +281,8 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
 
 The run layer executes a whole initiative, not one item. Files:
 
-- `src/store.ts` — schema v7: `runs`, `run_items`, `merge_queue`,
+- `src/store.ts` — schema v9: `runs` (with `repo`, the directory the preflight
+  resolved), `run_items`, `merge_queue`,
   `plan_touches`, plus `projects.base_branch/max_parallel/verify_command`.
   One active run per project (partial unique index); `claimNextMerge` is the
   single transactional FIFO claim; `stopMergeQueue` is the failure brake.
@@ -302,6 +303,11 @@ Invariants:
 
 - **The base branch is never touched.** Items accumulate as `wi/<item>`
   branches; the engine enqueues and only the merge session writes `run/<id>`.
+- **The run's repository may be derived from the plans.** The preflight resolves
+  it as the session's repository, else the item's `repo_id`, else the
+  `project_directory` of the item's plan (all selected items must agree, or
+  `items_in_different_repos`). It is persisted in `runs.repo`; runs older than
+  v9 fall back to the initiative's primary repository.
 - **One merge at a time.** `merge.next` claims FIFO and refuses while another
   entry is `merging`; `merge.done` demands `merge-base --is-ancestor` of the
   item branch against the integration HEAD.

@@ -191,4 +191,13 @@ describe("footprint and settings", () => {
     const run = newRun(db, initiativeID);
     expect(run.max_parallel).toBe(8);
   });
+
+  test("a run remembers the repository the preflight resolved", () => {
+    const { db, initiativeID } = setup();
+    const created = createRun(db, { initiativeID, baseRef: "main", repo: "/work/app" });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.run.repo).toBe("/work/app");
+    expect(getRun(db, created.run.id)?.repo).toBe("/work/app");
+  });
 });

@@ -239,7 +239,10 @@ dependências**; com uma iniciativa selecionada, **Executar iniciativa**. O
   caminho novo; o path vira repositório da iniciativa, fica no item e a sessão
   abre nele. Com plano, o Planejar reabre a sessão do plano.
 - **Run**: o pré-voo exige repositório git, `base_ref`, nenhum run ativo, itens `ready`
-  com plano `active` e grafo acíclico. O run cria `run/<id>` (integração) e, por
+  com plano `active` e grafo acíclico. O repositório do run é o da iniciativa; se a
+  iniciativa não tiver nenhum, ele é **derivado do `project_directory` do plano** de
+  cada item (todos precisam concordar), e fica gravado em `runs.repo`. O run cria
+  `run/<id>` (integração) e, por
   item, um worktree + branch `wi/<item>` a partir do **tip da integração**; a
   sessão do executor roda nesse diretório e o plano é a fonte da verdade.
 - **Fila de merge**: item concluído é **enfileirado**, nunca mergeado pelo

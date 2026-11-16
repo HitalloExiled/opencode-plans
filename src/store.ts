@@ -126,7 +126,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -213,6 +213,7 @@ const BASE_SCHEMA = [
     id TEXT PRIMARY KEY,
     initiative_id TEXT NOT NULL,
     base_ref TEXT NOT NULL,
+    repo TEXT,
     status TEXT NOT NULL,
     max_parallel INTEGER NOT NULL DEFAULT 2,
     merge_session_id TEXT,
@@ -365,6 +366,12 @@ export function initSchema(db: Db): void {
   }
   if (!hasColumn(db, "initiatives", "description")) {
     db.prepare("ALTER TABLE initiatives ADD COLUMN description TEXT").run();
+  }
+
+  // v9 — the run's repository, derived from its plans. Nullable: runs created
+  // before this version fall back to the initiative's primary repository.
+  if (!hasColumn(db, "runs", "repo")) {
+    db.prepare("ALTER TABLE runs ADD COLUMN repo TEXT").run();
   }
   db.prepare(`PRAGMA user_version = ${SCHEMA_VERSION}`).run();
 }
@@ -1954,6 +1961,8 @@ export type RunRow = {
   id: string;
   initiative_id: string;
   base_ref: string;
+  /** The repository the run operates on; null on runs older than schema v9. */
+  repo: string | null;
   status: RunStatus;
   max_parallel: number;
   merge_session_id: string | null;
@@ -2021,6 +2030,8 @@ export type CreateRunInput = {
   initiativeID: string;
   baseRef: string;
   maxParallel?: number | undefined;
+  /** Resolved by the preflight from the items' plans; omitted by old callers. */
+  repo?: string | undefined;
 };
 
 export function createRun(db: Db, input: CreateRunInput): RunOk | WorkStoreError {
@@ -2037,9 +2048,16 @@ export function createRun(db: Db, input: CreateRunInput): RunOk | WorkStoreError
   const id = crypto.randomUUID();
   try {
     db.prepare(
-      `INSERT INTO runs (id, initiative_id, base_ref, status, max_parallel, merge_session_id, started_at, finished_at, error)
-       VALUES (?, ?, ?, 'running', ?, NULL, ?, NULL, NULL)`,
-    ).run(id, input.initiativeID, baseRef, clampParallel(input.maxParallel, initiative.max_parallel ?? 2), nowTimestamp());
+      `INSERT INTO runs (id, initiative_id, base_ref, repo, status, max_parallel, merge_session_id, started_at, finished_at, error)
+       VALUES (?, ?, ?, ?, 'running', ?, NULL, ?, NULL, NULL)`,
+    ).run(
+      id,
+      input.initiativeID,
+      baseRef,
+      input.repo?.trim() || null,
+      clampParallel(input.maxParallel, initiative.max_parallel ?? 2),
+      nowTimestamp(),
+    );
   } catch (error) {
     return { ok: false, error: reason(error) };
   }

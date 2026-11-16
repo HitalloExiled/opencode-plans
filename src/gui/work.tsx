@@ -438,7 +438,7 @@ export function WorkBody(props: {
 
   const openPreflight = () => {
     const initiative = selectedInitiative();
-    if (!initiative || initiative.repos.length === 0) return;
+    if (!initiative) return;
     setPreflightBusy(true);
     setRunError(null);
     setPreflight(null);
@@ -1031,7 +1031,6 @@ export function WorkBody(props: {
                 class="work-run-play"
                 icon="fill-triangle-down"
                 busy={preflightBusy()}
-                disabled={selectedInitiative()?.repos.length === 0}
                 onClick={openPreflight}
               >
                 {t("work.run.button")}
@@ -1047,9 +1046,6 @@ export function WorkBody(props: {
               >
                 {t("work.run.settings")}
               </ctx.ui.Button>
-              <Show when={selectedInitiative()?.repos.length === 0}>
-                <span class="work-run-hint">{t("work.run.noRepo")}</span>
-              </Show>
               <Show when={run()}>
                 {(current) => (
                   <>
