@@ -101,3 +101,32 @@ export function layoutWorkGraph(
     height: GRAPH_PAD * 2 + maxRows * (GRAPH_NODE_HEIGHT + GRAPH_GAP_Y) - GRAPH_GAP_Y,
   };
 }
+
+/**
+ * Whether adding `itemID depends on blocksID` would close a cycle: it would
+ * when blocksID already depends on itemID, directly or transitively. The drag
+ * uses this to refuse the drop before asking the server.
+ */
+export function wouldCreateCycle(
+  edges: readonly GraphEdgeInput[],
+  itemID: string,
+  blocksID: string,
+): boolean {
+  if (itemID === blocksID) return true;
+  const adjacency = new Map<string, string[]>();
+  for (const edge of edges) {
+    const bucket = adjacency.get(edge.itemID);
+    if (bucket) bucket.push(edge.blocksID);
+    else adjacency.set(edge.itemID, [edge.blocksID]);
+  }
+  const seen = new Set<string>();
+  const stack = [blocksID];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (current === itemID) return true;
+    if (seen.has(current)) continue;
+    seen.add(current);
+    for (const next of adjacency.get(current) ?? []) stack.push(next);
+  }
+  return false;
+}

@@ -3,6 +3,7 @@ import {
   GRAPH_NODE_HEIGHT,
   GRAPH_PAD,
   layoutWorkGraph,
+  wouldCreateCycle,
   type GraphNodeInput,
 } from "../src/work-graph";
 
@@ -64,5 +65,26 @@ describe("layoutWorkGraph", () => {
   test("edges to unknown items are ignored", () => {
     const layout = layoutWorkGraph([node("a")], [{ itemID: "a", blocksID: "ghost" }]);
     expect(placement(layout, "a")?.layer).toBe(0);
+  });
+});
+
+describe("wouldCreateCycle", () => {
+  test("detects a direct reversal", () => {
+    const edges = [{ itemID: "a", blocksID: "b" }];
+    expect(wouldCreateCycle(edges, "b", "a")).toBe(true);
+    expect(wouldCreateCycle(edges, "a", "b")).toBe(false);
+  });
+
+  test("detects a transitive path", () => {
+    const edges = [
+      { itemID: "a", blocksID: "b" },
+      { itemID: "b", blocksID: "c" },
+    ];
+    expect(wouldCreateCycle(edges, "c", "a")).toBe(true);
+    expect(wouldCreateCycle(edges, "a", "c")).toBe(false);
+  });
+
+  test("rejects self-dependency", () => {
+    expect(wouldCreateCycle([], "a", "a")).toBe(true);
   });
 });

@@ -1,7 +1,8 @@
 /**
  * The dependency graph: dependencies on the left, the items that wait for
- * them on the right. Drag from a node's + handle to another node to add an
- * explicit dependency; click a solid edge to remove it. Implicit edges (shared
+ * them on the right, and every arrow drawn left to right (A → B: B waits for
+ * A). Drag from the earlier item's + handle to the later one to add a
+ * dependency; click a solid edge to remove it. Implicit edges (shared
  * footprint) are dashed and read-only.
  */
 
@@ -12,9 +13,12 @@ import { EmptyState, ErrorBanner, LoadingRow, SHARED_CSS, StatusChip, type ChipT
 import { PlansRpc, type WorkGraph, type WorkGraphEdge } from "./contract";
 import { useT } from "./i18n";
 import {
+  GRAPH_GAP_X,
   GRAPH_NODE_HEIGHT,
   GRAPH_NODE_WIDTH,
+  GRAPH_PAD,
   layoutWorkGraph,
+  wouldCreateCycle,
   type GraphPlacement,
 } from "../work-graph";
 
@@ -23,10 +27,13 @@ const CSS = `
 .work-graph.is-panning { cursor: grabbing; }
 .work-graph-canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 .work-graph-edges { position: absolute; top: 0; left: 0; overflow: visible; }
-.work-graph-edge { fill: none; stroke: var(--v2-text-text-faint); stroke-width: 1.5; pointer-events: none; }
-.work-graph-edge.is-implicit { stroke-dasharray: 4 4; stroke: var(--v2-state-fg-warning); opacity: 0.7; }
+.work-graph-edge { fill: none; stroke: var(--v2-text-text-muted); stroke-width: 1.75; pointer-events: none; }
+.work-graph-edge.is-implicit { stroke-dasharray: 5 4; stroke: var(--v2-state-fg-warning); opacity: 0.85; }
 .work-graph-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
-.work-graph-arrow { fill: var(--v2-text-text-faint); }
+.work-graph-arrow { fill: var(--v2-text-text-muted); }
+.work-graph-arrow.is-implicit { fill: var(--v2-state-fg-warning); }
+.work-graph-arrow.is-ghost { fill: var(--v2-border-border-focus); }
+.work-graph-arrow.is-invalid { fill: var(--v2-state-fg-danger); }
 .work-graph-node {
   position: absolute;
   width: ${GRAPH_NODE_WIDTH}px;
@@ -73,8 +80,26 @@ const CSS = `
   user-select: none;
 }
 .work-graph-handle:hover { color: var(--v2-text-text-base); border-color: var(--v2-border-border-focus); }
-.work-graph-ghost { stroke: var(--v2-border-border-focus); stroke-width: 1.5; stroke-dasharray: 3 3; pointer-events: none; }
+.work-graph-ghost { fill: none; stroke: var(--v2-border-border-focus); stroke-width: 1.5; stroke-dasharray: 3 3; pointer-events: none; }
+.work-graph-ghost.is-invalid { stroke: var(--v2-state-fg-danger); }
 .work-graph-controls { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; z-index: 1; }
+.work-graph-stage {
+  position: absolute;
+  top: 0;
+  width: ${GRAPH_NODE_WIDTH}px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--v2-text-text-faint);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.work-graph-stage-note { font-weight: 500; text-transform: none; color: var(--v2-state-fg-info); margin-left: 4px; }
+.work-graph-edge.is-active { stroke-width: 2.5; opacity: 1; }
+.work-graph-edge.is-dim { opacity: 0.2; }
+.work-graph-node.is-active { border-color: var(--v2-border-border-focus); }
+.work-graph-handle.is-active { border-color: var(--v2-border-border-focus); }
 .work-graph-legend { position: absolute; left: 6px; bottom: 6px; display: flex; gap: 10px; align-items: center; font-size: 10px; color: var(--v2-text-text-faint); z-index: 1; }
 .work-graph-legend-line { display: inline-block; width: 18px; border-top: 1.5px solid var(--v2-text-text-faint); vertical-align: middle; }
 .work-graph-legend-line.is-implicit { border-top-style: dashed; border-top-color: var(--v2-state-fg-warning); }
@@ -107,7 +132,8 @@ export function WorkGraph(props: {
   const [ty, setTy] = createSignal(0);
   const [linking, setLinking] = createSignal<{ from: string; x: number; y: number } | null>(null);
   const [panning, setPanning] = createSignal(false);
-  const [notice, setNotice] = createSignal<string | null>(null);
+  const [hovered, setHovered] = createSignal<string | null>(null);
+  const [linkInvalid, setLinkInvalid] = createSignal(false);
   let container: HTMLDivElement | undefined;
 
   createEffect(() => {
@@ -140,16 +166,52 @@ export function WorkGraph(props: {
     return map;
   });
 
+  /** One label per layer: the reading/execution order. */
+  const stages = createMemo(() => {
+    const current = layout();
+    if (!current) return [];
+    const counts = new Map<number, number>();
+    for (const placement of current.placements) {
+      counts.set(placement.layer, (counts.get(placement.layer) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([layer, count]) => ({
+        layer,
+        count,
+        x: GRAPH_PAD + layer * (GRAPH_NODE_WIDTH + GRAPH_GAP_X),
+      }));
+  });
+
+  const nodeTitle = (id: string): string => graph()?.nodes.find((node) => node.id === id)?.title ?? id;
+
+  const fail = (title: string, description?: string | undefined) => {
+    ctx.toast.show({
+      title,
+      ...(description ? { description } : {}),
+      variant: "error",
+    });
+  };
+
+  /** The node under the pointer, for the drop target and the ghost feedback. */
+  const targetAt = (clientX: number, clientY: number): string | undefined =>
+    document
+      .elementFromPoint(clientX, clientY)
+      ?.closest("[data-item-id]")
+      ?.getAttribute("data-item-id") ?? undefined;
+
+  // Read order: the dependency (left) points at the item that waits for it
+  // (right), so the arrowhead always lands on the destination's left border.
   const edgePath = (edge: WorkGraphEdge): string | undefined => {
-    const from = placements().get(edge.itemID);
-    const to = placements().get(edge.blocksID);
-    if (!from || !to) return undefined;
-    const x1 = from.x;
-    const y1 = from.y + GRAPH_NODE_HEIGHT / 2;
-    const x2 = to.x + GRAPH_NODE_WIDTH;
-    const y2 = to.y + GRAPH_NODE_HEIGHT / 2;
-    const bend = Math.max(30, Math.abs(x1 - x2) / 2);
-    return `M ${x1} ${y1} C ${x1 - bend} ${y1}, ${x2 + bend} ${y2}, ${x2} ${y2}`;
+    const dependency = placements().get(edge.blocksID);
+    const dependent = placements().get(edge.itemID);
+    if (!dependency || !dependent) return undefined;
+    const x1 = dependency.x + GRAPH_NODE_WIDTH;
+    const y1 = dependency.y + GRAPH_NODE_HEIGHT / 2;
+    const x2 = dependent.x - 6;
+    const y2 = dependent.y + GRAPH_NODE_HEIGHT / 2;
+    const bend = Math.max(24, Math.min(80, (x2 - x1) / 2));
+    return `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`;
   };
 
   const moveLink = (event: PointerEvent) => {
@@ -159,33 +221,47 @@ export function WorkGraph(props: {
     const x = (event.clientX - rect.left - tx()) / scale();
     const y = (event.clientY - rect.top - ty()) / scale();
     setLinking({ ...current, x, y });
+    const target = targetAt(event.clientX, event.clientY);
+    const edges = graph()?.edges ?? [];
+    setLinkInvalid(
+      target !== undefined && target !== current.from
+        ? wouldCreateCycle(edges, target, current.from)
+        : false,
+    );
   };
 
   const endLink = (event: PointerEvent) => {
     window.removeEventListener("pointermove", moveLink);
     const current = linking();
     setLinking(null);
+    setLinkInvalid(false);
     if (!current) return;
-    const target = document
-      .elementFromPoint(event.clientX, event.clientY)
-      ?.closest("[data-item-id]")
-      ?.getAttribute("data-item-id");
+    const target = targetAt(event.clientX, event.clientY);
     if (!target || target === current.from) return;
+    // Drag runs from the earlier item to the later one: the drop takes the
+    // dependency on the earlier item.
+    const edges = graph()?.edges ?? [];
+    if (wouldCreateCycle(edges, target, current.from)) {
+      fail(
+        t("work.graph.addError"),
+        t("work.graph.cycle", nodeTitle(current.from), nodeTitle(target)),
+      );
+      return;
+    }
     void props.server.client
       .rpc(PlansRpc)
-      .addWorkItemDep({ itemID: current.from, blocksID: target })
+      .addWorkItemDep({ itemID: target, blocksID: current.from })
       .then((result) => {
         if (!result.ok) {
-          setNotice(result.error ?? t("work.graph.addError"));
+          fail(t("work.graph.addError"), result.error);
           return;
         }
-        setNotice(null);
         void props.server.client
           .rpc(PlansRpc)
           .getWorkGraph({ initiativeID: props.initiativeID! })
           .then((value) => setGraph(value as WorkGraph));
       })
-      .catch((cause: unknown) => setNotice(cause instanceof Error ? cause.message : String(cause)));
+      .catch((cause: unknown) => fail(t("work.graph.addError"), cause instanceof Error ? cause.message : String(cause)));
   };
 
   const startLink = (event: PointerEvent, nodeID: string) => {
@@ -193,7 +269,7 @@ export function WorkGraph(props: {
     event.stopPropagation();
     const placement = placements().get(nodeID);
     if (!placement) return;
-    setNotice(null);
+    setLinkInvalid(false);
     setLinking({
       from: nodeID,
       x: placement.x + GRAPH_NODE_WIDTH,
@@ -223,7 +299,7 @@ export function WorkGraph(props: {
       .removeWorkItemDep({ itemID: edge.itemID, blocksID: edge.blocksID })
       .then((result) => {
         if (!result.ok) {
-          setNotice(result.error ?? t("work.graph.removeError"));
+          fail(t("work.graph.removeError"), result.error);
           return;
         }
         void props.server.client
@@ -231,7 +307,9 @@ export function WorkGraph(props: {
           .getWorkGraph({ initiativeID: props.initiativeID! })
           .then((value) => setGraph(value as WorkGraph));
       })
-      .catch((cause: unknown) => setNotice(cause instanceof Error ? cause.message : String(cause)));
+      .catch((cause: unknown) =>
+        fail(t("work.graph.removeError"), cause instanceof Error ? cause.message : String(cause)),
+      );
   };
 
   const fit = () => {
@@ -289,6 +367,9 @@ export function WorkGraph(props: {
               when={current().nodes.length > 0}
               fallback={<EmptyState icon="workspace" title={t("work.graph.empty")} hint={t("work.graph.emptyHint")} />}
             >
+              <Show when={layout()?.hasCycle}>
+                <ErrorBanner message={t("work.graph.cycleBanner")} />
+              </Show>
               <div
                 ref={container}
                 class="work-graph"
@@ -309,11 +390,6 @@ export function WorkGraph(props: {
                     {t("work.graph.fit")}
                   </ctx.ui.Button>
                 </div>
-                <Show when={notice()}>
-                  <div class="work-graph-hint" style={{ top: "28px", color: "var(--v2-state-fg-danger)" }}>
-                    {notice()}
-                  </div>
-                </Show>
                 <div
                   class="work-graph-canvas"
                   style={{
@@ -322,18 +398,65 @@ export function WorkGraph(props: {
                     transform: `translate(${tx()}px, ${ty()}px) scale(${scale()})`,
                   }}
                 >
+                  <For each={stages()}>
+                    {(stage) => (
+                      <span class="work-graph-stage" style={{ left: `${stage.x}px` }}>
+                        {t("work.graph.stage", stage.layer + 1)}
+                        <Show when={stage.count > 1}>
+                          <span class="work-graph-stage-note">{t("work.graph.parallel")}</span>
+                        </Show>
+                      </span>
+                    )}
+                  </For>
                   <svg class="work-graph-edges" width={layout()?.width ?? 0} height={layout()?.height ?? 0}>
                     <defs>
                       <marker
                         id="work-graph-arrow"
                         viewBox="0 0 10 10"
-                        refX="9"
+                        refX="9.5"
                         refY="5"
-                        markerWidth="7"
-                        markerHeight="7"
-                        orient="auto-start-reverse"
+                        markerWidth="11"
+                        markerHeight="11"
+                        markerUnits="userSpaceOnUse"
+                        orient="auto"
                       >
                         <path d="M 0 0 L 10 5 L 0 10 z" class="work-graph-arrow" />
+                      </marker>
+                      <marker
+                        id="work-graph-arrow-implicit"
+                        viewBox="0 0 10 10"
+                        refX="9.5"
+                        refY="5"
+                        markerWidth="11"
+                        markerHeight="11"
+                        markerUnits="userSpaceOnUse"
+                        orient="auto"
+                      >
+                        <path d="M 0 0 L 10 5 L 0 10 z" class="work-graph-arrow is-implicit" />
+                      </marker>
+                      <marker
+                        id="work-graph-arrow-ghost"
+                        viewBox="0 0 10 10"
+                        refX="9.5"
+                        refY="5"
+                        markerWidth="11"
+                        markerHeight="11"
+                        markerUnits="userSpaceOnUse"
+                        orient="auto"
+                      >
+                        <path d="M 0 0 L 10 5 L 0 10 z" class="work-graph-arrow is-ghost" />
+                      </marker>
+                      <marker
+                        id="work-graph-arrow-invalid"
+                        viewBox="0 0 10 10"
+                        refX="9.5"
+                        refY="5"
+                        markerWidth="11"
+                        markerHeight="11"
+                        markerUnits="userSpaceOnUse"
+                        orient="auto"
+                      >
+                        <path d="M 0 0 L 10 5 L 0 10 z" class="work-graph-arrow is-invalid" />
                       </marker>
                     </defs>
                     <For each={current().edges}>
@@ -343,7 +466,24 @@ export function WorkGraph(props: {
                           <Show when={path}>
                             {(value) => (
                               <>
-                                <path class={`work-graph-edge is-${edge.kind}`} d={value()} marker-end="url(#work-graph-arrow)">
+                                <path
+                                  class={`work-graph-edge is-${edge.kind}`}
+                                  classList={{
+                                    "is-active":
+                                      hovered() !== null &&
+                                      (edge.itemID === hovered() || edge.blocksID === hovered()),
+                                    "is-dim":
+                                      hovered() !== null &&
+                                      edge.itemID !== hovered() &&
+                                      edge.blocksID !== hovered(),
+                                  }}
+                                  d={value()}
+                                  marker-end={
+                                    edge.kind === "implicit"
+                                      ? "url(#work-graph-arrow-implicit)"
+                                      : "url(#work-graph-arrow)"
+                                  }
+                                >
                                   <Show when={edge.reason}>
                                     <title>{edge.reason}</title>
                                   </Show>
@@ -364,15 +504,23 @@ export function WorkGraph(props: {
                         const from = placements().get(current_().from);
                         return (
                           <Show when={from}>
-                            {(placement) => (
-                              <line
-                                class="work-graph-ghost"
-                                x1={placement().x + GRAPH_NODE_WIDTH}
-                                y1={placement().y + GRAPH_NODE_HEIGHT / 2}
-                                x2={current_().x}
-                                y2={current_().y}
-                              />
-                            )}
+                            {(placement) => {
+                              const x1 = placement().x + GRAPH_NODE_WIDTH;
+                              const y1 = placement().y + GRAPH_NODE_HEIGHT / 2;
+                              const bend = Math.max(24, Math.min(80, Math.abs(current_().x - x1) / 2));
+                              return (
+                                <path
+                                  class="work-graph-ghost"
+                                  classList={{ "is-invalid": linkInvalid() }}
+                                  d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${current_().x - bend} ${current_().y}, ${current_().x} ${current_().y}`}
+                                  marker-end={
+                                    linkInvalid()
+                                      ? "url(#work-graph-arrow-invalid)"
+                                      : "url(#work-graph-arrow-ghost)"
+                                  }
+                                />
+                              );
+                            }}
                           </Show>
                         );
                       }}
@@ -384,10 +532,13 @@ export function WorkGraph(props: {
                         {(placement) => (
                           <div
                             class="work-graph-node"
+                            classList={{ "is-active": hovered() === node.id }}
                             data-item-id={node.id}
                             style={{ left: `${placement().x}px`, top: `${placement().y}px` }}
                             role="button"
                             tabIndex={0}
+                            onPointerEnter={() => setHovered(node.id)}
+                            onPointerLeave={() => setHovered(null)}
                             onClick={() => props.onOpen(node.id)}
                             onKeyDown={(event) => {
                               if (event.key === "Enter" || event.key === " ") {
@@ -409,6 +560,7 @@ export function WorkGraph(props: {
                             </span>
                             <span
                               class="work-graph-handle"
+                              classList={{ "is-active": hovered() === node.id }}
                               role="button"
                               aria-label={t("work.graph.handle", node.title)}
                               onPointerDown={(event) => startLink(event, node.id)}
@@ -422,7 +574,7 @@ export function WorkGraph(props: {
                   </For>
                 </div>
                 <div class="work-graph-legend">
-                  <span class="work-graph-legend-line" /> {t("work.graph.explicit")}
+                  <span class="work-graph-legend-line" /> {t("work.graph.explicit")} · {t("work.graph.legendFlow")}
                   <span class="work-graph-legend-line is-implicit" /> {t("work.graph.implicit")}
                 </div>
               </div>

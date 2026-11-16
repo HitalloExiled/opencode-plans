@@ -244,7 +244,10 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   captured in a directory.
 - **Work views**: Lista | Quadro | **Grafo** (per initiative).
   The graph lays dependencies left and dependents right (`src/work-graph.ts`
-  pure and tested), drag from a node's + handle creates an explicit dependency,
+  pure and tested) and every arrow is drawn left to right (A → B: B waits for
+  A), with Stage labels per layer and a hover highlight. Drag from the earlier
+  item's + handle to the later one to add an explicit dependency (the client
+  pre-checks cycles with `wouldCreateCycle`; the server still validates),
   clicking a solid edge removes it, implicit edges are dashed and read-only.
 - **Plan picker**: planning an item without a plan opens `plan-dialog.tsx`,
   which lists `project.list()` and accepts an absolute path; the path is ensured
