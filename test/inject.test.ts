@@ -30,6 +30,7 @@ import {
   updateTool,
 } from "../plans";
 import { WORK_NAMESPACE, getWorkTool, listWorkTool, saveWorkTool, updateWorkTool } from "../work";
+import { MERGE_NAMESPACE, mergeDoneTool, mergeFailTool, mergeListTool, mergeNextTool } from "../merge";
 
 const user = (text: string): InjectMessage => ({ role: "user", content: [{ type: "text", text }] });
 const assistant = (text: string): InjectMessage => ({
@@ -293,6 +294,10 @@ describe("catalog budget", () => {
     getWorkTool({} as never),
     saveWorkTool({} as never),
     updateWorkTool({} as never),
+    mergeListTool({} as never),
+    mergeNextTool({} as never),
+    mergeDoneTool({} as never),
+    mergeFailTool({} as never),
   ];
 
   function shapeOf(input: unknown): Record<string, { description?: string }> {
@@ -306,6 +311,7 @@ describe("catalog budget", () => {
   test("every tool and the namespace fit the budget", () => {
     expect(PLANS_NAMESPACE.description.length).toBeLessThanOrEqual(BUDGET);
     expect(WORK_NAMESPACE.description.length).toBeLessThanOrEqual(BUDGET);
+    expect(MERGE_NAMESPACE.description.length).toBeLessThanOrEqual(BUDGET);
     for (const tool of allTools()) {
       expect(tool.description.length, tool.name).toBeLessThanOrEqual(BUDGET);
     }

@@ -10,7 +10,6 @@
  */
 
 import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
 import type { Plugin } from "@opencode/plugin";
 import {
   addWorktree,
@@ -24,7 +23,7 @@ import {
 } from "./git.js";
 import { getFlow } from "./flow.js";
 import { runAgent } from "./flow-rules.js";
-import { notificationLocale, tn, type NotificationLocale } from "./notifications.js";
+import { tn } from "./notifications.js";
 import { emitPlanChange } from "./plan-events.js";
 import {
   activeRun,
@@ -56,30 +55,12 @@ import {
 } from "./store.js";
 import { findDependencyCycle } from "./work-footprint.js";
 import { scheduleRun, summarizeRun, type SchedulerItem } from "./run-scheduler.js";
+import { integrationBranch, itemBranch, runPaths } from "./run-paths.js";
+import { engineLocale, wakeMergeSession } from "./merge-session.js";
+
+export { runPaths, integrationBranch, itemBranch } from "./run-paths.js";
 
 type Ctx = Plugin.Context;
-
-/* ------------------------------------------------------------------ */
-/* Paths                                                               */
-/* ------------------------------------------------------------------ */
-
-/** Worktrees live next to `plans.db`, never inside the user's repo. */
-export function runPaths(runID: string) {
-  const root = join(dirname(plansDbPath()), "worktrees", runID);
-  return {
-    root,
-    integration: join(root, "integration"),
-    item: (itemID: string) => join(root, "items", itemID),
-  };
-}
-
-export function integrationBranch(runID: string): string {
-  return `run/${runID}`;
-}
-
-export function itemBranch(itemID: string): string {
-  return `wi/${itemID}`;
-}
 
 /* ------------------------------------------------------------------ */
 /* Preflight                                                           */
@@ -193,14 +174,6 @@ export async function preflightRun(db: Db, projectID: string, directory: string)
 type Controller = { cancelled: boolean };
 
 const controllers = new Map<string, Controller>();
-
-async function engineLocale(ctx: Ctx): Promise<NotificationLocale> {
-  try {
-    return notificationLocale((await ctx.storage.get("locale")) as string | null | undefined);
-  } catch {
-    return "en-us";
-  }
-}
 
 function notifyChange(sessionID?: string | null): void {
   emitPlanChange({ sessionID: sessionID ?? "" });
@@ -371,6 +344,12 @@ async function executeItem(ctx: Ctx, db: Db, run: RunRow, item: RunItemRow): Pro
       error: null,
     });
     enqueueMerge(db, { runID: run.id, workItemID: item.work_item_id });
+    // The queue drains in one dedicated session; wake it (or create it now).
+    await wakeMergeSession(ctx, db, run.id).catch((error: unknown) => {
+      console.error(
+        `[plans] run ${run.id} could not wake the merge session: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
   } else {
     setRunItemStatus(db, {
       runID: run.id,

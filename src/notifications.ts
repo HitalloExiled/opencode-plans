@@ -42,6 +42,9 @@ const EN: Record<string, string> = {
   "work.project": "project: {0}",
   "work.id": "id: {0}",
   "work.failed": "Failed to create the work item: {0}",
+  "run.merge.prompt":
+    'You are the single merge session of the run "{0}" (integration branch {1}) in this worktree. Drain the queue: call merge.next; for the returned item, merge its branch into the current branch (git merge --no-edit wi/<item>), resolve conflicts here, run the project verify command when one is configured, then mark it with merge.done. If the merge cannot be completed, call merge.fail with the reason. Never touch the base branch.',
+  "run.merge.wake": "A new item was enqueued; call merge.next.",
   "run.item.prompt":
     'Execute the plan "{0}" (id: {1}) for the work item "{2}" (id: {3}) in this worktree. Read it with plans.get, do the steps and mark them with plans.update ("doing" then "done"). Do not switch branches or merge: the run integrates through the merge queue. When every step is done and nothing is blocked, summarize the result and say it is ready for acceptance; the work item stays doing.',
 };
@@ -82,6 +85,9 @@ const PT: Record<string, string> = {
   "work.project": "projeto: {0}",
   "work.id": "id: {0}",
   "work.failed": "Falha ao criar o work item: {0}",
+  "run.merge.prompt":
+    'Você é a sessão única de merge do run "{0}" (branch de integração {1}) neste worktree. Drene a fila: chame merge.next; para o item retornado, mergeie a branch dele na branch atual (git merge --no-edit wi/<item>), resolva conflitos aqui, rode o comando de verificação do projeto quando configurado e marque com merge.done. Se o merge não puder ser concluído, chame merge.fail com o motivo. Nunca toque na branch base.',
+  "run.merge.wake": "Um novo item entrou na fila; chame merge.next.",
   "run.item.prompt":
     'Execute o plano "{0}" (id: {1}) do work item "{2}" (id: {3}) neste worktree. Leia com plans.get, faça os passos e marque cada um com plans.update ("doing" e depois "done"). Não troque de branch nem mergeie: o run integra pela fila de merge. Quando todos os passos estiverem concluídos e nada estiver bloqueado, resuma o resultado e diga que está pronto para aceite; o work item continua doing.',
 };

@@ -31,5 +31,6 @@ describe("plans tool registration", () => {
         .map((tool) => tool.name);
     expect(pinned("plans")).toEqual(["save", "list", "get", "update"]);
     expect(pinned("work")).toEqual(["list", "get", "save", "update"]);
+    expect(pinned("merge")).toEqual(["list", "next", "done", "fail"]);
   });
 });

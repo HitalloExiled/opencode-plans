@@ -1934,6 +1934,10 @@ export function setRunItemStatus(db: Db, input: SetRunItemStatusInput): RunItemO
   return { ok: true, item };
 }
 
+export function getMergeEntry(db: Db, id: string): MergeEntryRow | undefined {
+  return db.prepare("SELECT * FROM merge_queue WHERE id = ?").get(id) as MergeEntryRow | undefined;
+}
+
 export function listMergeQueue(db: Db, runID: string): MergeEntryRow[] {
   // rowid is insertion order; two enqueues can share the timestamp, so it is
   // what makes the queue FIFO for real.
@@ -2012,6 +2016,25 @@ export function finishMerge(db: Db, input: FinishMergeInput): Ok | WorkStoreErro
     return { ok: false, error: reason(error) };
   }
   return { ok: true };
+}
+
+/** A failed merge stops the queue: nothing else is claimed for this run. */
+export function stopMergeQueue(db: Db, runID: string, error: string): number {
+  const rows = db
+    .prepare("SELECT id FROM merge_queue WHERE run_id = ? AND status = 'queued'")
+    .all(runID) as { id: string }[];
+  if (rows.length === 0) return 0;
+  const now = nowTimestamp();
+  try {
+    transaction(db, () => {
+      db.prepare(
+        "UPDATE merge_queue SET status = 'failed', finished_at = ?, error = ? WHERE run_id = ? AND status = 'queued'",
+      ).run(now, error, runID);
+    });
+  } catch {
+    return 0;
+  }
+  return rows.length;
 }
 
 /* ------------------------------------------------------------------ */

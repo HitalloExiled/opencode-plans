@@ -29,6 +29,7 @@ import {
 } from "./src/inject.js";
 import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, listTool, saveTool, updateTool } from "./plans.js";
 import { WORK_NAMESPACE, getWorkTool, listWorkTool, saveWorkTool, updateWorkTool } from "./work.js";
+import { MERGE_NAMESPACE, mergeDoneTool, mergeFailTool, mergeListTool, mergeNextTool } from "./merge.js";
 import { registerAgents } from "./src/agents.js";
 import { getFlow } from "./src/flow.js";
 import { planMessageAgents } from "./src/flow-rules.js";
@@ -103,6 +104,13 @@ export async function registerTools(ctx: Ctx) {
     editor.add({ ...getWorkTool(ctx), options: { namespace: "work", pinned: true } });
     editor.add({ ...saveWorkTool(ctx), options: { namespace: "work", pinned: true } });
     editor.add({ ...updateWorkTool(ctx), options: { namespace: "work", pinned: true } });
+
+    // The merge session's tools: it is the only writer of the integration.
+    editor.namespace(MERGE_NAMESPACE);
+    editor.add({ ...mergeListTool(ctx), options: { namespace: "merge", pinned: true } });
+    editor.add({ ...mergeNextTool(ctx), options: { namespace: "merge", pinned: true } });
+    editor.add({ ...mergeDoneTool(ctx), options: { namespace: "merge", pinned: true } });
+    editor.add({ ...mergeFailTool(ctx), options: { namespace: "merge", pinned: true } });
   });
 }
 
