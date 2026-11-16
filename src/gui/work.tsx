@@ -858,6 +858,17 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                   >
                     {t("work.plan")}
                   </ctx.ui.Button>
+                  <Show when={current().plan?.status === "done" && current().item.status === "doing"}>
+                    <ctx.ui.Button
+                      size="small"
+                      variant="contrast"
+                      icon="circle-check"
+                      disabled={statusSaving()}
+                      onClick={() => void changeStatus("done")}
+                    >
+                      {t("work.accept")}
+                    </ctx.ui.Button>
+                  </Show>
                   <ctx.ui.Button size="small" variant="neutral" icon="pencil-line" onClick={startEdit}>
                     {t("work.edit")}
                   </ctx.ui.Button>

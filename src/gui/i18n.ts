@@ -77,6 +77,7 @@ const EN = {
     'Plan the work item "{0}" (id: {1}).\n\nThe body below is the need, not the implementation: decide how to build it.\n\n---\n{2}\n---\n\nDiscuss anything ambiguous and save the plan with plans.save, passing workItemID: "{1}" so the plan is linked to this item. Do not implement anything in this session.',
   "work.plan.error": "Could not open the planning session.",
   "work.execute.planFirst": "Plan first",
+  "work.accept": "Accept",
   "work.replan.title": "Replan: {0}",
   "work.replan.prompt":
     'Replan the work item "{0}" (id: {1}).\n\nThe plan "{3}" (id: {2}) already exists: read it with plans.get, adjust how to build it (the body below is the need, not the implementation) and save the SAME plan with plans.save({ id: "{2}"; workItemID: "{1}" }). Do not create another plan; an item has one. If the plan was done, the new body reopens it as active.\n\n---\n{4}\n---\n\nDo not implement anything in this session.',
@@ -180,7 +181,7 @@ const EN = {
   "toast.executing": "Executing plan…",
   "toast.executeError": "Could not start the plan",
   "execute.prompt":
-    'Execute or resume the plan "{0}" (id: {1}) from where it is. If the plan is not already in the conversation, read it with plans.get; otherwise use the text and step ids you already have. Do the remaining steps and mark each with plans.update ("doing" then "done"). The plan is the source of truth: do not replan or rewrite the body.',
+    'Execute or resume the plan "{0}" (id: {1}) from where it is. If the plan is not already in the conversation, read it with plans.get; otherwise use the text and step ids you already have. Do the remaining steps and mark each with plans.update ("doing" then "done"). The plan is the source of truth: do not replan or rewrite the body. When every step is done and nothing is blocked, do not close the work item: summarize the result and say it is ready for acceptance; the item stays doing, since done and dropped are the user\'s call.',
   "execute.pill": "Run plan",
   "execute.pillTitle": 'Run the plan "{0}"',
   "toast.pausing": "Pausing plan…",
@@ -265,6 +266,7 @@ const PT: Record<keyof typeof EN, string> = {
     'Planeje o work item "{0}" (id: {1}).\n\nO corpo abaixo é a necessidade, não a implementação: decida o como.\n\n---\n{2}\n---\n\nDiscuta o que estiver ambíguo e salve o plano com plans.save, passando workItemID: "{1}" para vincular o plano a este item. Não implemente nada nesta sessão.',
   "work.plan.error": "Não foi possível abrir a sessão de planejamento.",
   "work.execute.planFirst": "Planeje primeiro",
+  "work.accept": "Aceitar",
   "work.replan.title": "Replanejar: {0}",
   "work.replan.prompt":
     'Replaneje o work item "{0}" (id: {1}).\n\nO plano "{3}" (id: {2}) já existe: leia-o com plans.get, ajuste o como (o corpo abaixo é a necessidade, não a implementação) e salve o MESMO plano com plans.save({ id: "{2}"; workItemID: "{1}" }). Não crie outro plano; um item tem um plano só. Se o plano estava concluído, o novo corpo o reabre como ativo.\n\n---\n{4}\n---\n\nNão implemente nada nesta sessão.',
@@ -368,7 +370,7 @@ const PT: Record<keyof typeof EN, string> = {
   "toast.executing": "Executando plano…",
   "toast.executeError": "Não foi possível iniciar o plano",
   "execute.prompt":
-    'Execute ou retome o plano "{0}" (id: {1}) do ponto atual. Se o plano ainda não estiver na conversa, leia com plans.get; caso contrário, use o texto e os IDs que você já tem. Faça os passos restantes e marque cada um com plans.update ("doing" e depois "done"). O plano é a fonte da verdade: não replaneje nem reescreva o body.',
+    'Execute ou retome o plano "{0}" (id: {1}) do ponto atual. Se o plano ainda não estiver na conversa, leia com plans.get; caso contrário, use o texto e os IDs que você já tem. Faça os passos restantes e marque cada um com plans.update ("doing" e depois "done"). O plano é a fonte da verdade: não replaneje nem reescreva o body. Quando todos os passos estiverem concluídos e nada estiver bloqueado, não feche o work item: resuma o resultado e diga que está pronto para aceite; o item continua doing, porque done e dropped são decisão do usuário.',
   "execute.pill": "Executar plano",
   "execute.pillTitle": 'Executar o plano "{0}"',
   "toast.pausing": "Pausando plano…",

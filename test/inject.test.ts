@@ -56,6 +56,7 @@ const planWith = (steps: StepRow[] = []): Plan => ({
   created_at: "2026-01-01T00:00:00.000Z",
   updated_at: "2026-01-01T00:00:00.000Z",
   completed_at: null,
+  work_item_id: null,
   steps,
 });
 
@@ -120,6 +121,9 @@ describe("plans-flow extension", () => {
     expect(EXECUTOR_FLOW).toContain("plans.get");
     expect(EXECUTOR_FLOW).toContain("doing");
     expect(EXECUTOR_FLOW).toContain("done");
+    // The executor proposes acceptance; done/dropped stay a human decision.
+    expect(EXECUTOR_FLOW).toContain("ready for acceptance");
+    expect(EXECUTOR_FLOW).toContain("do not mark the work item done");
   });
 
   test("native agents and subagents get no block", () => {
