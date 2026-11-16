@@ -125,7 +125,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -139,7 +139,8 @@ const BASE_SCHEMA = [
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    completed_at TEXT
+    completed_at TEXT,
+    work_item_id TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS idx_plans_project ON plans(project_id, updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_plans_session ON plans(session_id)`,
@@ -211,6 +212,11 @@ function apply(db: Db, statements: readonly string[]): void {
 // tool/UI status union has a single spelling.
 const MIGRATION_002 = [`UPDATE plans SET status = 'archived' WHERE status = 'abandoned'`];
 
+function hasColumn(db: Db, table: string, column: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as { name?: string }[];
+  return rows.some((row) => row.name === column);
+}
+
 export function initSchema(db: Db): void {
   apply(db, BASE_SCHEMA);
   const current = schemaVersion(db);
@@ -228,6 +234,14 @@ export function initSchema(db: Db): void {
       throw error;
     }
   }
+  // v5 — the plan -> work item link. The index comes after the column so an
+  // existing v4 database migrates in place.
+  if (!hasColumn(db, "plans", "work_item_id")) {
+    db.prepare("ALTER TABLE plans ADD COLUMN work_item_id TEXT").run();
+  }
+  db.prepare(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_work_item ON plans(work_item_id) WHERE work_item_id IS NOT NULL",
+  ).run();
   db.prepare(`PRAGMA user_version = ${SCHEMA_VERSION}`).run();
 }
 
@@ -304,6 +318,7 @@ export type PlanRow = {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  work_item_id: string | null;
 };
 
 export type StepRow = {
@@ -476,6 +491,12 @@ export function getPlan(db: Db, id: string): Plan | undefined {
   return { ...row, steps: stepsForPlans(db, [id]).get(id) ?? [] };
 }
 
+export function getPlanByWorkItem(db: Db, workItemID: string): Plan | undefined {
+  const row = db.prepare("SELECT * FROM plans WHERE work_item_id = ?").get(workItemID) as PlanRow | undefined;
+  if (!row) return undefined;
+  return { ...row, steps: stepsForPlans(db, [row.id]).get(row.id) ?? [] };
+}
+
 /* ------------------------------------------------------------------ */
 /* Writes                                                              */
 /* ------------------------------------------------------------------ */
@@ -490,6 +511,8 @@ export type SavePlanInput = {
   messageID?: string | undefined;
   steps?: readonly { text: string; status?: StepStatus | undefined }[] | undefined;
   status?: PlanStatus | undefined;
+  /** Links the plan to a work item; one plan per item. */
+  workItemID?: string | null | undefined;
 };
 
 function transaction<T>(db: Db, fn: () => T): T {
@@ -516,6 +539,17 @@ export function savePlan(db: Db, input: SavePlanInput): SaveOk | WriteError {
 
   const existing = input.id ? getPlan(db, input.id) : undefined;
   if (input.id && !existing) return { ok: false, error: `plano não encontrado: ${input.id}` };
+
+  const workItemID = input.workItemID === undefined ? (existing?.work_item_id ?? null) : input.workItemID;
+  if (workItemID !== null) {
+    if (!getWorkItem(db, workItemID)) return { ok: false, error: `work item não encontrado: ${workItemID}` };
+    const linked = db.prepare("SELECT id FROM plans WHERE work_item_id = ?").get(workItemID) as
+      | { id?: string }
+      | undefined;
+    if (linked?.id !== undefined && linked.id !== existing?.id) {
+      return { ok: false, error: "este work item já tem um plano; edite o plano existente" };
+    }
+  }
 
   const isTemplate = body.split(/\r?\n/).some((line) => line.trim() === STEPS_PLACEHOLDER);
   const parsed =
@@ -549,16 +583,26 @@ export function savePlan(db: Db, input: SavePlanInput): SaveOk | WriteError {
       if (existing) {
         db.prepare(
           `UPDATE plans
-           SET title = ?, body = ?, status = ?, updated_at = ?, completed_at = ?, message_id = ?
+           SET title = ?, body = ?, status = ?, updated_at = ?, completed_at = ?, message_id = ?,
+               work_item_id = ?
            WHERE id = ?`,
-        ).run(title, storedBody, status, now, completedAt, input.messageID ?? existing.message_id, id);
+        ).run(
+          title,
+          storedBody,
+          status,
+          now,
+          completedAt,
+          input.messageID ?? existing.message_id,
+          workItemID,
+          id,
+        );
         db.prepare("DELETE FROM plan_steps WHERE plan_id = ?").run(id);
       } else {
         db.prepare(
           `INSERT INTO plans
              (id, project_id, project_directory, session_id, message_id, title, body, status,
-              created_at, updated_at, completed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              created_at, updated_at, completed_at, work_item_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           id,
           input.projectID,
@@ -571,6 +615,7 @@ export function savePlan(db: Db, input: SavePlanInput): SaveOk | WriteError {
           now,
           now,
           completedAt,
+          workItemID,
         );
       }
 

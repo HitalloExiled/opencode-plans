@@ -72,6 +72,10 @@ const saveInput = z.object({
     .array(z.string())
     .optional()
     .describe("Explicit steps; else parsed from body."),
+  workItemID: z
+    .string()
+    .optional()
+    .describe("Link to a work item"),
 });
 
 const listInput = z.object({
@@ -150,6 +154,7 @@ export function saveTool(ctx: Ctx) {
           sessionID: String(toolCtx.sessionID),
           messageID: String(toolCtx.messageID),
           steps: input.steps?.map((text) => ({ text })),
+          workItemID: input.workItemID,
         });
         if (!result.ok) return fail(result.error);
         emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });

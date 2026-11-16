@@ -38,6 +38,7 @@ export type Plan = {
   createdAt: string;
   updatedAt: string;
   completedAt?: string | undefined;
+  workItemID?: string | undefined;
   steps: readonly PlanStep[];
 };
 
@@ -188,6 +189,8 @@ export type WorkItemDetail = {
   parent?: WorkItem | null | undefined;
   /** Direct children when this item is a root. */
   children: readonly WorkItem[];
+  /** The plan that executes this item, when it has one. */
+  plan?: PlanSummary | null | undefined;
 };
 
 export type SaveWorkItemInput = {
@@ -267,7 +270,26 @@ export const planSchema = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
   completedAt: optString,
+  workItemID: optString,
   steps: Schema.Array(planStepSchema),
+});
+
+export type PlanSummary = {
+  id: string;
+  title: string;
+  status: PlanStatus;
+  done: number;
+  total: number;
+  updatedAt: string;
+};
+
+export const planSummarySchema = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  status: planStatusSchema,
+  done: Schema.Number,
+  total: Schema.Number,
+  updatedAt: Schema.String,
 });
 
 export const planResultSchema = Schema.Struct({
@@ -374,6 +396,7 @@ export const workItemDetailSchema = Schema.Struct({
   blocks: Schema.Array(workItemSchema),
   parent: Schema.optional(Schema.NullOr(workItemSchema)),
   children: Schema.Array(workItemSchema),
+  plan: Schema.optional(Schema.NullOr(planSummarySchema)),
 });
 
 export const opResultSchema = Schema.Struct({
@@ -447,6 +470,7 @@ export const saveInputSchema = Schema.Struct({
   body: Schema.String,
   steps: Schema.optional(Schema.Array(Schema.String)),
   sessionID: Schema.String,
+  workItemID: optString,
   locale: optString,
 });
 

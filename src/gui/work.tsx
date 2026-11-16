@@ -27,6 +27,7 @@ import {
   WORK_STATUS_ORDER,
   type WorkGroup,
   type WorkItemDetail,
+  type PlanSummary,
   type WorkItemStatus,
 } from "./contract";
 import { useT } from "./i18n";
@@ -177,6 +178,15 @@ export function ViewSwitch(props: { mode: Accessor<ViewMode>; onChange: (mode: V
 }
 
 const statusLabelKey = (status: WorkItemStatus) => `work.status.${status}`;
+
+const planTone = (status: PlanSummary["status"]): ChipTone =>
+  status === "active"
+    ? "info"
+    : status === "done"
+      ? "success"
+      : status === "superseded"
+        ? "warning"
+        : "neutral";
 
 const statusTone = (status: WorkItemStatus): ChipTone =>
   status === "doing" ? "info" : status === "ready" || status === "done" ? "success" : status === "blocked" ? "danger" : "neutral";
@@ -759,6 +769,26 @@ export function WorkBody(props: { target: () => WorkTarget }) {
                     disabled={moving() || (statusPosition()?.index ?? 0) >= (statusPosition()?.total ?? 1) - 1}
                     onClick={() => move("down")}
                   />
+                </div>
+
+                <div class="work-deps">
+                  <div class="work-deps-head">
+                    <h3 class="work-deps-title">{t("work.plan.section")}</h3>
+                  </div>
+                  <Show
+                    when={current().plan}
+                    fallback={<div class="work-deps-empty">{t("work.plan.none")}</div>}
+                  >
+                    {(plan) => (
+                      <div class="work-dep-row">
+                        <StatusChip tone={planTone(plan().status)} label={t(`status.${plan().status}`)} />
+                        <span class="work-card-title">{plan().title}</span>
+                        <span class="work-dep-label">
+                          {t("work.plan.progress", plan().done, plan().total)}
+                        </span>
+                      </div>
+                    )}
+                  </Show>
                 </div>
 
                 <div class="work-deps">

@@ -32,6 +32,7 @@ import {
   createProject,
   deletePlan,
   getPlan,
+  getPlanByWorkItem,
   getProject,
   getStore,
   getWorkItem as getWorkItemRow,
@@ -79,6 +80,7 @@ const toPlan = (plan: StorePlan): Plan => ({
   createdAt: plan.created_at,
   updatedAt: plan.updated_at,
   ...(plan.completed_at ? { completedAt: plan.completed_at } : {}),
+  ...(plan.work_item_id ? { workItemID: plan.work_item_id } : {}),
   steps: plan.steps.map((step) => ({
     id: step.step_id,
     position: step.position,
@@ -222,6 +224,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         projectID: String(ctx.location.project.id),
         projectDirectory: String(ctx.location.project.canonical ?? ctx.location.directory),
         sessionID: input.sessionID,
+        workItemID: input.workItemID ?? null,
       });
       if (result.ok) emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
       return fromWrite(result);
@@ -450,6 +453,8 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       if (!project) return null;
       const deps = workItemDeps(store.db, item.id);
       const parent = item.parent_id ? getWorkItemRow(store.db, item.parent_id) : undefined;
+      const plan = getPlanByWorkItem(store.db, item.id);
+      const progress = plan ? planProgress(plan) : undefined;
       return {
         item: toWorkItemFull(item),
         project: toProject(project),
@@ -457,6 +462,16 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         blocks: deps.blocks.map(toWorkItem),
         parent: parent ? toWorkItem(parent) : null,
         children: workItemChildren(store.db, item.id).map(toWorkItem),
+        plan: plan && progress
+          ? {
+              id: plan.id,
+              title: plan.title,
+              status: plan.status,
+              done: progress.done,
+              total: progress.total,
+              updatedAt: plan.updated_at,
+            }
+          : null,
       };
     },
 
