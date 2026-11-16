@@ -65,6 +65,10 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   `PlansRpc.save` (editor) are the explicit entry points. The hint button only
   sends a user-message nudge asking the agent to call `plans.save`; it never
   captures the last message itself.
+- **Switching planner <-> executor must keep the cached prefix.** Both agents
+  carry byte-identical `system` text (`COMMON_SYSTEM`); the role lives in a
+  constant trailing system part (`roleRule`, pushed by the context hook), so a
+  switch only re-prefills the tail. Never put role text in the agent `system`.
 - **The routing rule is skipped for our own agents.** `planner`/`executor`
   carry the flow in their system prompt; pushing the constant rule there would
   duplicate the save contract and mix in Plan-mode wording (`ownsRoutingRule`).
