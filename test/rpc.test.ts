@@ -520,3 +520,15 @@ describe("initiative RPC", () => {
     expect(updated.initiative.description).toBeUndefined();
   });
 });
+
+describe("work item without repository", () => {
+  test("creates it in the initiative with no repo", async () => {
+    const created = await h.createInitiative({ name: "No repo items" });
+    if (!created.ok || !created.initiative) throw new Error("initiative");
+    const saved = await h.saveWorkItem({ initiativeID: created.initiative.id, title: "No repo need" });
+    expect(saved.ok).toBe(true);
+    if (!saved.ok || !saved.item) return;
+    expect(saved.item.title).toBe("No repo need");
+    expect(saved.item.repoID).toBeUndefined();
+  });
+});

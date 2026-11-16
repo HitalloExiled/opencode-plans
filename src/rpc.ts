@@ -35,7 +35,10 @@ import {
   addWorkItemDep as addDepRow,
   countPlans,
   createInitiative,
+  createWorkItem,
+  deleteInitiative as deleteInitiativeRow,
   deletePlan,
+  deleteWorkItem as deleteWorkItemRow,
   depEdges,
   getPlan,
   getPlanByWorkItem,
@@ -560,8 +563,19 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         const result = updateWorkItem(store.db, { id: input.id, title: input.title, body: input.body });
         return result.ok ? { ok: true, item: toWorkItem(result.item) } : { ok: false, error: result.error };
       }
+      if (input.initiativeID) {
+        const result = createWorkItem(store.db, {
+          initiativeID: input.initiativeID,
+          title: input.title,
+          body: input.body,
+          origin: "user",
+        });
+        if (!result.ok) return { ok: false, error: result.error };
+        emitPlanChange({ sessionID: "" });
+        return { ok: true, item: toWorkItem(result.item) };
+      }
       if (!input.directory) {
-        return { ok: false, error: "directory é obrigatório para criar um work item" };
+        return { ok: false, error: "iniciativa ou diretório é obrigatório para criar um work item" };
       }
       const result = captureWorkItem(store.db, {
         directory: input.directory,
@@ -625,6 +639,22 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         ...(edge.reason ? { reason: edge.reason } : {}),
       }));
       return { nodes, edges };
+    },
+
+    deleteWorkItem: async (input) => {
+      const store = await requireStore();
+      const result = deleteWorkItemRow(store.db, input.id);
+      if (!result.ok) return { ok: false, error: result.error };
+      emitPlanChange({ sessionID: "" });
+      return { ok: true };
+    },
+
+    deleteInitiative: async (input) => {
+      const store = await requireStore();
+      const result = deleteInitiativeRow(store.db, input.id);
+      if (!result.ok) return { ok: false, error: result.error };
+      emitPlanChange({ sessionID: "" });
+      return { ok: true };
     },
 
     setWorkItemRepo: async (input) => {

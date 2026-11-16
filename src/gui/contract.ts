@@ -506,6 +506,7 @@ export const workItemIdInputSchema = Schema.Struct({
 export const saveWorkItemInputSchema = Schema.Struct({
   id: optString,
   directory: optString,
+  initiativeID: optString,
   title: Schema.String,
   body: optString,
 });
@@ -854,6 +855,14 @@ export const PlansRpc = Rpc.define({
     getWorkGraph: {
       input: Schema.toStandardSchemaV1(workGraphInputSchema),
       output: Schema.toStandardSchemaV1(workGraphSchema),
+    },
+    deleteWorkItem: {
+      input: Schema.toStandardSchemaV1(workItemIdInputSchema),
+      output: Schema.toStandardSchemaV1(opResultSchema),
+    },
+    deleteInitiative: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({ id: Schema.String })),
+      output: Schema.toStandardSchemaV1(opResultSchema),
     },
     setWorkItemRepo: {
       input: Schema.toStandardSchemaV1(setWorkItemRepoInputSchema),

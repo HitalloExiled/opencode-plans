@@ -1504,6 +1504,75 @@ export function setWorkItemParent(db: Db, input: SetWorkItemParentInput): WorkIt
   return { ok: true, item };
 }
 
+/** Whether a run (or its merge queue) still references the item. */
+function workItemInRun(db: Db, id: string): boolean {
+  const row = db
+    .prepare(
+      "SELECT 1 AS one FROM run_items WHERE work_item_id = ? UNION ALL SELECT 1 AS one FROM merge_queue WHERE work_item_id = ? LIMIT 1",
+    )
+    .get(id, id);
+  return row !== undefined;
+}
+
+/**
+ * Deletes a need. Dependencies go with it, its children become roots, and the
+ * linked plan is kept (unlinked). Items referenced by a run are refused so the
+ * run history stays consistent.
+ */
+export function deleteWorkItem(db: Db, id: string): Ok | WorkStoreError {
+  const item = getWorkItem(db, id);
+  if (!item) return { ok: false, error: `work item não encontrado: ${id}` };
+  if (workItemInRun(db, id)) {
+    return { ok: false, error: "o item faz parte de um run; cancele ou limpe a run antes de excluí-lo" };
+  }
+  const now = nowTimestamp();
+  try {
+    transaction(db, () => {
+      db.prepare("DELETE FROM work_item_deps WHERE item_id = ? OR blocks_id = ?").run(id, id);
+      db.prepare("UPDATE work_items SET parent_id = NULL, updated_at = ? WHERE parent_id = ?").run(now, id);
+      db.prepare("UPDATE plans SET work_item_id = NULL WHERE work_item_id = ?").run(id);
+      db.prepare("DELETE FROM work_items WHERE id = ?").run(id);
+    });
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
+/**
+ * Deletes an initiative and everything it owns: items, dependencies,
+ * repositories and the run history. Plans are kept, unlinked. An active run
+ * blocks the deletion (cancel it first).
+ */
+export function deleteInitiative(db: Db, id: string): Ok | WorkStoreError {
+  const initiative = getInitiative(db, id);
+  if (!initiative) return { ok: false, error: `iniciativa não encontrada: ${id}` };
+  const active = db
+    .prepare("SELECT 1 AS one FROM runs WHERE initiative_id = ? AND status IN ('running', 'interrupted') LIMIT 1")
+    .get(id);
+  if (active) return { ok: false, error: "a iniciativa tem um run ativo; cancele a run antes de excluí-la" };
+
+  try {
+    transaction(db, () => {
+      db.prepare(
+        "UPDATE plans SET work_item_id = NULL WHERE work_item_id IN (SELECT id FROM work_items WHERE initiative_id = ?)",
+      ).run(id);
+      db.prepare(
+        "DELETE FROM work_item_deps WHERE item_id IN (SELECT id FROM work_items WHERE initiative_id = ?) OR blocks_id IN (SELECT id FROM work_items WHERE initiative_id = ?)",
+      ).run(id, id);
+      db.prepare("DELETE FROM merge_queue WHERE run_id IN (SELECT id FROM runs WHERE initiative_id = ?)").run(id);
+      db.prepare("DELETE FROM run_items WHERE run_id IN (SELECT id FROM runs WHERE initiative_id = ?)").run(id);
+      db.prepare("DELETE FROM runs WHERE initiative_id = ?").run(id);
+      db.prepare("DELETE FROM work_items WHERE initiative_id = ?").run(id);
+      db.prepare("DELETE FROM initiative_repos WHERE initiative_id = ?").run(id);
+      db.prepare("DELETE FROM initiatives WHERE id = ?").run(id);
+    });
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
 export function workItemDeps(db: Db, itemID: string): WorkItemDeps {
   const blockedBy = db
     .prepare(

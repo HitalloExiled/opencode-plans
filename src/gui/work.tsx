@@ -7,7 +7,6 @@
  */
 
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import type { Accessor } from "solid-js";
 import { usePlugin } from "@opencode/plugin/gui";
 import type { ServerRef } from "@opencode/plugin/gui";
 import {
@@ -40,10 +39,8 @@ import { planProgressOf } from "../work-progress";
 import { planWorkItem } from "./plan-item";
 import { openPlanDialog } from "./plan-dialog";
 import { WorkGraph } from "./graph";
-import { openInitiativeDialog } from "./initiative-dialog";
+import { openWorkItemDialog } from "./work-item-dialog";
 import { closePlansOverlay } from "./overlay-state";
-
-export type ViewMode = "initiatives" | "work" | "plans";
 
 export type WorkViewMode = "list" | "board" | "graph";
 
@@ -57,10 +54,6 @@ export type WorkTarget = {
   /** The overlay is always on screen. */
   visible: () => boolean;
 };
-
-const VIEW_CSS = `
-.plans-view-switch { display: flex; align-items: center; gap: 4px; }
-`;
 
 const WORK_CSS = `
 .work {
@@ -246,38 +239,6 @@ const duration = (start?: string, end?: string): string => {
 };
 
 /** The overlay switch: Trabalho | Planos (Global -> Work and Global -> Plan). */
-export function ViewSwitch(props: { mode: Accessor<ViewMode>; onChange: (mode: ViewMode) => void }) {
-  const ctx = usePlugin();
-  const t = useT();
-  return (
-    <>
-      <style>{VIEW_CSS}</style>
-      <div class="plans-view-switch" role="group" aria-label={t("view.label")}>
-        <ctx.ui.Button
-          size="small"
-          variant={props.mode() === "initiatives" ? "neutral" : "ghost"}
-          onClick={() => props.onChange("initiatives")}
-        >
-          {t("view.initiatives")}
-        </ctx.ui.Button>
-        <ctx.ui.Button
-          size="small"
-          variant={props.mode() === "work" ? "neutral" : "ghost"}
-          onClick={() => props.onChange("work")}
-        >
-          {t("view.work")}
-        </ctx.ui.Button>
-        <ctx.ui.Button
-          size="small"
-          variant={props.mode() === "plans" ? "neutral" : "ghost"}
-          onClick={() => props.onChange("plans")}
-        >
-          {t("view.plans")}
-        </ctx.ui.Button>
-      </div>
-    </>
-  );
-}
 
 const statusLabelKey = (status: WorkItemStatus) => `work.status.${status}`;
 
@@ -325,8 +286,7 @@ export function WorkBody(props: {
   const [depSaving, setDepSaving] = createSignal(false);
   const [parentSaving, setParentSaving] = createSignal(false);
   const [planning, setPlanning] = createSignal(false);
-  const [newTitle, setNewTitle] = createSignal("");
-  const [creating, setCreating] = createSignal(false);
+  const [deleting, setDeleting] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
   const [agentOnly, setAgentOnly] = createSignal(false);
   const [showDropped, setShowDropped] = createSignal(false);
@@ -723,30 +683,43 @@ export function WorkBody(props: {
       .finally(() => setSaving(false));
   };
 
-  const createItem = () => {
-    const initiative = selectedInitiative();
-    const title = newTitle().trim();
-    if (!initiative || !title || creating()) return;
-    const repo = initiative.repos.find((entry) => entry.primary) ?? initiative.repos[0];
-    if (!repo) {
-      setActionError(t("work.create.error"));
-      return;
-    }
-    setCreating(true);
+  const deleteItem = async (item: { id: string; title: string }) => {
+    if (deleting()) return;
+    const confirmed = await ctx.dialogs.confirm({
+      title: t("work.item.deleteTitle"),
+      description: t("work.item.deleteMessage", item.title),
+      confirm: t("work.item.deleteConfirm"),
+      cancel: t("cancel"),
+      danger: true,
+    });
+    if (!confirmed) return;
+    setDeleting(true);
     setActionError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
-      .saveWorkItem({ directory: repo.directory, title })
+      .deleteWorkItem({ id: item.id })
       .then((result) => {
         if (!result.ok) {
-          setActionError(result.error ?? t("work.create.error"));
+          setActionError(result.error ?? t("work.item.deleteError"));
           return;
         }
-        setNewTitle("");
+        closeDetail();
         setReload((n) => n + 1);
+        ctx.toast.show({ title: t("work.item.deleted"), variant: "success" });
       })
       .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => setCreating(false));
+      .finally(() => setDeleting(false));
+  };
+
+  const openNewItem = () => {
+    const initiative = selectedInitiative();
+    if (!initiative) return;
+    openWorkItemDialog({
+      ctx,
+      server: props.target().server,
+      initiative,
+      onCreated: () => setReload((n) => n + 1),
+    });
   };
 
   const depCandidates = createMemo(() => {
@@ -961,21 +934,6 @@ export function WorkBody(props: {
       .finally(() => setStatusSaving(false));
   };
 
-  const openManageInitiative = () => {
-    const initiative = selectedInitiative();
-    if (!initiative) return;
-    openInitiativeDialog({
-      ctx,
-      server: props.target().server,
-      mode: "edit",
-      initiative,
-      onChanged: (updated) => {
-        props.onInitiativeChanged(updated);
-        setReload((n) => n + 1);
-      },
-    });
-  };
-
   return (
     <>
       <style>{SHARED_CSS + WORK_CSS}</style>
@@ -1019,16 +977,15 @@ export function WorkBody(props: {
                   }))}
                 />
               </Show>
-              <Show when={selectedInitiative()}>
-                <ctx.ui.Button
-                  size="small"
-                  variant="ghost"
-                  icon="settings-gear"
-                  onClick={openManageInitiative}
-                >
-                  {t("work.initiative.manage")}
-                </ctx.ui.Button>
-              </Show>
+              <ctx.ui.Button
+                size="small"
+                variant="neutral"
+                icon="plus"
+                disabled={!selectedInitiative()}
+                onClick={openNewItem}
+              >
+                {t("work.newItem")}
+              </ctx.ui.Button>
               <Show when={hasAgentItems()}>
                 <ctx.ui.Button
                   size="small"
@@ -1050,37 +1007,6 @@ export function WorkBody(props: {
                 </ctx.ui.Button>
               </Show>
           </div>
-
-          <Show when={selectedInitiative()?.repos.length === 0}>
-            <div class="work-new">
-              <span class="work-dep-label">{t("work.initiative.noRepo")}</span>
-              <ctx.ui.Button size="small" variant="neutral" icon="settings-gear" onClick={openManageInitiative}>
-                {t("work.initiative.manage")}
-              </ctx.ui.Button>
-            </div>
-          </Show>
-
-          <Show when={selectedInitiative() && (selectedInitiative()?.repos.length ?? 0) > 0}>
-            <div class="work-new">
-              <ctx.ui.TextInput
-                value={newTitle()}
-                onInput={(value) => setNewTitle(value)}
-                onSubmit={() => createItem()}
-                label={t("work.newItem")}
-                placeholder={t("work.newItem.placeholder")}
-              />
-              <ctx.ui.Button
-                size="small"
-                variant="neutral"
-                icon="plus"
-                disabled={!newTitle().trim() || creating()}
-                busy={creating()}
-                onClick={() => createItem()}
-              >
-                {t("work.newItem.add")}
-              </ctx.ui.Button>
-            </div>
-          </Show>
 
           <Show when={selectedInitiative()}>
             <div class="work-run-bar">
@@ -1559,6 +1485,12 @@ export function WorkBody(props: {
                   <ctx.ui.Button size="small" variant="neutral" icon="pencil-line" onClick={startEdit}>
                     {t("work.edit")}
                   </ctx.ui.Button>
+                  <ctx.ui.IconButton
+                    icon="trash"
+                    label={t("work.item.delete")}
+                    disabled={deleting()}
+                    onClick={() => void deleteItem(current().item)}
+                  />
                 </div>
 
                 <div class="work-detail-meta">

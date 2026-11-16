@@ -13,17 +13,16 @@
  * plan editor's overlay.
  */
 
-import { createEffect, createRoot, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { usePlugin } from "@opencode/plugin/gui";
-import type { Context } from "@opencode/plugin/gui";
 import { PlansRpc, type Initiative } from "./contract";
 import { useT } from "./i18n";
 import { builtinServer, globalTarget } from "./page";
-import { closePlansOverlay, openPlansOverlay, plansOverlayOpen } from "./overlay-state";
+import { closePlansOverlay, openPlansOverlay, overlayMode, plansOverlayOpen, type OverlayMode } from "./overlay-state";
 import type { PlansTarget } from "./view";
 import { PlansBody } from "./view";
-import { ViewSwitch, WorkBody, workWideMode, type ViewMode } from "./work";
+import { WorkBody, workWideMode } from "./work";
 import { InitiativesBody } from "./initiatives";
 import { initiativeSelection } from "./initiative-selection";
 
@@ -55,66 +54,24 @@ const CSS = `
 .plans-modal-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--v2-border-border-muted);
 }
-.plans-modal-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.plans-modal-title {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-text-text-base);
-}
 .plans-modal-body { flex: 1; min-height: 0; }
+.plans-nav { display: flex; align-items: center; gap: 2px; }
 .plans-modal.is-board { width: min(1280px, calc(100% - 20px)); }
 `;
 
-const [active, setActive] = createSignal(0);
-
-/** Active plans, for the titlebar pill. */
-export const activePlanCount = (): number => active();
 const close = (): void => {
   closePlansOverlay();
 };
 
 /**
- * Keeps the active-plan count fresh for the pill. Call once from `setup`; the
- * returned cleanup stops the subscription.
- */
-export function startPlansCount(ctx: Context): () => void {
-  return createRoot((dispose) => {
-    createEffect(() => {
-      const server = builtinServer(ctx);
-      if (!server) {
-        setActive(0);
-        return;
-      }
-      const rpc = server.client.rpc(PlansRpc);
-      let live = true;
-      const refresh = () => {
-        void rpc
-          .count({ scope: "all", status: "active" })
-          .then((count) => {
-            if (live) setActive(count);
-          })
-          .catch(() => undefined);
-      };
-      refresh();
-      const off = rpc.events.on("changed", () => refresh());
-      onCleanup(() => {
-        live = false;
-        off();
-      });
-    });
-    return dispose;
-  });
-}
-
-/**
- * The session header entry: a small pill with the active count. Mounted by the
- * host in the timeline's title row, next to the other plugins' pills.
+ * The session header entry: the three-way selector (Initiative | Work | Plans).
+ * Clicking a segment opens the overlay on that screen; with it open, the
+ * segment moves the body. Mounted in the timeline's title row.
  */
 export function PlansPill(props: { active: boolean }) {
   const ctx = usePlugin();
@@ -124,11 +81,22 @@ export function PlansPill(props: { active: boolean }) {
     const server = builtinServer(ctx);
     return server ? globalTarget(server) : null;
   };
+  const modes: readonly OverlayMode[] = ["initiatives", "work", "plans"];
   return (
     <Show when={props.active}>
-      <ctx.ui.Button size="small" variant="ghost-muted" icon="checklist" onClick={openPlansOverlay}>
-        {t("launcher.label", activePlanCount())}
-      </ctx.ui.Button>
+      <div class="plans-nav" role="group" aria-label={t("view.label")}>
+        <For each={modes}>
+          {(entry) => (
+            <ctx.ui.Button
+              size="small"
+              variant={overlayMode() === entry ? "neutral" : "ghost-muted"}
+              onClick={() => openPlansOverlay(entry)}
+            >
+              {t(`view.${entry}`)}
+            </ctx.ui.Button>
+          )}
+        </For>
+      </div>
       {/* The overlay is fixed and rides the pill's slot item: no second mount. */}
       <Show when={target()}>
         {(current) => (
@@ -146,7 +114,6 @@ export function PlansPill(props: { active: boolean }) {
 function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
   const ctx = usePlugin();
   const t = useT();
-  const [mode, setMode] = createSignal<ViewMode>("initiatives");
   const selection = initiativeSelection(ctx);
   const [initiativeId, setInitiativeId] = createSignal<string | null>(selection.value?.id ?? null);
   const [initiatives, setInitiatives] = createSignal<Initiative[]>([]);
@@ -256,7 +223,7 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
       <div
         ref={panel}
         class="plans-modal"
-        classList={{ "is-board": mode() === "work" && workWideMode() }}
+        classList={{ "is-board": overlayMode() === "work" && workWideMode() }}
         role="dialog"
         aria-modal="true"
         aria-label={t("page.title")}
@@ -265,13 +232,10 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
         onKeyDown={trapTab}
       >
         <div class="plans-modal-head">
-          <div class="plans-modal-title-row">
-            <ViewSwitch mode={mode} onChange={setMode} />
-          </div>
           <ctx.ui.IconButton icon="close" label={t("close")} onClick={() => props.onClose()} />
         </div>
         <div class="plans-modal-body">
-          <Show when={mode() === "initiatives"}>
+          <Show when={overlayMode() === "initiatives"}>
             <InitiativesBody
               server={props.target().server}
               initiatives={initiatives()}
@@ -279,16 +243,29 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
               error={initiativesError()}
               onOpen={(id) => {
                 select(id);
-                setMode("work");
+                openPlansOverlay("work");
               }}
               onCreated={(initiative) => {
                 upsert(initiative);
                 select(initiative.id);
-                setMode("work");
+                openPlansOverlay("work");
+              }}
+              onChanged={upsert}
+              onDeleted={(id) => {
+                const remaining = initiatives().filter((entry) => entry.id !== id);
+                setInitiatives(remaining);
+                if (initiativeId() === id) {
+                  const next = remaining[0];
+                  if (next) select(next.id);
+                  else {
+                    setInitiativeId(null);
+                    selection.set({ id: null });
+                  }
+                }
               }}
             />
           </Show>
-          <Show when={mode() === "work"}>
+          <Show when={overlayMode() === "work"}>
             <WorkBody
               target={() => ({
                 server: props.target().server,
@@ -300,7 +277,7 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
               onInitiativeChanged={upsert}
             />
           </Show>
-          <Show when={mode() === "plans"}>
+          <Show when={overlayMode() === "plans"}>
             <PlansBody target={props.target} />
           </Show>
         </div>

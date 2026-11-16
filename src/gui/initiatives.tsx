@@ -33,6 +33,8 @@ const CSS = `
 .initiative-name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .initiative-description { font-size: 11.5px; color: var(--v2-text-text-muted); overflow-wrap: anywhere; }
 .initiative-meta { display: flex; gap: 10px; font-size: 10.5px; color: var(--v2-text-text-faint); }
+.initiative-actions { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; }
+.initiative-card { position: relative; }
 `;
 
 export function InitiativesBody(props: {
@@ -42,6 +44,8 @@ export function InitiativesBody(props: {
   error: string | null;
   onOpen: (id: string) => void;
   onCreated: (initiative: Initiative) => void;
+  onChanged: (initiative: Initiative) => void;
+  onDeleted: (id: string) => void;
 }) {
   const ctx = usePlugin();
   const t = useT();
@@ -66,6 +70,49 @@ export function InitiativesBody(props: {
 
   const itemCount = (id: string) =>
     groups().find((group) => group.initiative.id === id)?.items.length ?? 0;
+
+  const remove = async (initiative: Initiative) => {
+    const confirmed = await ctx.dialogs.confirm({
+      title: t("work.initiative.deleteTitle"),
+      description: t("work.initiative.deleteMessage", initiative.name, itemCount(initiative.id)),
+      confirm: t("work.initiative.deleteConfirm"),
+      cancel: t("cancel"),
+      danger: true,
+    });
+    if (!confirmed) return;
+    void props.server.client
+      .rpc(PlansRpc)
+      .deleteInitiative({ id: initiative.id })
+      .then((result) => {
+        if (!result.ok) {
+          ctx.toast.show({
+            title: t("work.initiative.deleteError"),
+            ...(result.error ? { description: result.error } : {}),
+            variant: "error",
+          });
+          return;
+        }
+        ctx.toast.show({ title: t("work.initiative.deleted"), variant: "success" });
+        props.onDeleted(initiative.id);
+      })
+      .catch((cause: unknown) =>
+        ctx.toast.show({
+          title: t("work.initiative.deleteError"),
+          description: cause instanceof Error ? cause.message : String(cause),
+          variant: "error",
+        }),
+      );
+  };
+
+  const edit = (initiative: Initiative) => {
+    openInitiativeDialog({
+      ctx,
+      server: props.server,
+      mode: "edit",
+      initiative,
+      onChanged: (updated) => props.onChanged(updated),
+    });
+  };
 
   const create = () => {
     openInitiativeDialog({
@@ -114,11 +161,18 @@ export function InitiativesBody(props: {
             <div class="initiatives-list" role="list">
               <For each={props.initiatives}>
                 {(initiative) => (
-                  <button
-                    type="button"
+                  <div
                     class="initiative-card"
-                    role="listitem"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => props.onOpen(initiative.id)}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        props.onOpen(initiative.id);
+                      }
+                    }}
                   >
                     <span class="initiative-name">{initiative.name}</span>
                     <Show when={initiative.description}>
@@ -128,7 +182,19 @@ export function InitiativesBody(props: {
                       <span>{t("work.initiative.reposCount", initiative.repos.length)}</span>
                       <span>{t("work.initiative.itemsCount", itemCount(initiative.id))}</span>
                     </span>
-                  </button>
+                    <span class="initiative-actions" onClick={(event) => event.stopPropagation()}>
+                      <ctx.ui.IconButton
+                        icon="pencil-line"
+                        label={t("work.initiative.edit")}
+                        onClick={() => edit(initiative)}
+                      />
+                      <ctx.ui.IconButton
+                        icon="trash"
+                        label={t("work.initiative.delete")}
+                        onClick={() => void remove(initiative)}
+                      />
+                    </span>
+                  </div>
                 )}
               </For>
             </div>

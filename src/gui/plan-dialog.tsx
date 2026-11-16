@@ -5,7 +5,7 @@
  * initiative and the item's repository, then the session starts there.
  */
 
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js";
 import type { Context, ServerRef } from "@opencode/plugin/gui";
 import { ErrorBanner, LoadingRow, SHARED_CSS } from "opencode-shared/gui";
 import { PlansRpc, type WorkItemDetail } from "./contract";
@@ -14,7 +14,7 @@ import { planWorkItem } from "./plan-item";
 import { repoForItem } from "../work-plan";
 
 const CSS = `
-.plan-dialog { display: flex; flex-direction: column; gap: 10px; width: min(560px, calc(100vw - 48px)); max-height: min(70vh, 560px); }
+.plan-dialog { display: flex; flex-direction: column; gap: 10px; width: min(560px, calc(100vw - 48px)); max-height: min(70vh, 560px); pointer-events: auto; }
 .plan-dialog-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--v2-text-text-base); overflow-wrap: anywhere; }
 .plan-dialog-hint { margin: 0; font-size: 11px; color: var(--v2-text-text-muted); }
 .plan-dialog-list { flex: 1; min-height: 120px; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
@@ -55,6 +55,7 @@ type HostProject = { id: string; name: string; directory: string };
 
 function PlanDialog(props: PlanDialogInput & { close: () => void }) {
   const t = useT();
+  let shell: HTMLDivElement | undefined;
   const [projects, setProjects] = createSignal<HostProject[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [query, setQuery] = createSignal("");
@@ -64,6 +65,14 @@ function PlanDialog(props: PlanDialogInput & { close: () => void }) {
   );
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+
+  // The host layer mounts raw dialog content with pointer-events: none; the
+  // root opts back in, and the first field takes focus (no app Dialog Content).
+  onMount(() => {
+    queueMicrotask(() => {
+      shell?.querySelector<HTMLInputElement>("input, textarea")?.focus();
+    });
+  });
 
   createEffect(() => {
     void props.server.client
@@ -133,7 +142,7 @@ function PlanDialog(props: PlanDialogInput & { close: () => void }) {
   return (
     <>
       <style>{SHARED_CSS + CSS}</style>
-      <div class="plan-dialog">
+      <div class="plan-dialog" ref={shell}>
         <h2 class="plan-dialog-title">{t("work.plan.dialog.title", props.detail.item.title)}</h2>
         <p class="plan-dialog-hint">{t("work.plan.dialog.hint")}</p>
 

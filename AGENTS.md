@@ -186,9 +186,9 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   the panel keeps the store order (flat). The
   `MultiSelect` combo is shared (`opencode-shared/gui`), never copied.
 - **The global surface reuses `PlansBody`, it is not a second UI.** A
-  `session.header` pill shows the active count and opens the overlay
-  (`src/gui/launcher.tsx`); the overlay is `position: fixed` and rides the same
-  slot item, so there is no second mount point. The overlay has no routed session: it resolves the builtin server
+  `session.header` selector (Initiative | Work | Plans) opens the overlay on a
+  screen (`src/gui/launcher.tsx`); the overlay is `position: fixed` and rides
+  the same slot item, so there is no second mount point. The overlay has no routed session: it resolves the builtin server
   with `ctx.servers`, lists `scope: "all"`, and passes `visible: () => true`.
   `usePanel()` throws outside `Panel.render`, so it stays in the panel wrapper.
   Session-bound actions (create, move, save hint) exist only in the panel;
@@ -201,11 +201,9 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
 - **There are no keyboard shortcuts or palette commands for Plans.** The
   `window.bottom` bar is the entry point; it opens the all-plans modal. Do not
   add a `bind` back without the user asking.
-- **The titlebar pill is always visible.** It shows the active count, zero
-  included, and opens the overlay. The overlay is a sibling of the slot item,
-  so a count dropping to zero never closes it under the user.
-- **The launcher count follows the `changed` event**, not a poll: it subscribes
-  to `PlansRpc.events.on("changed")` and asks `count({ scope: "all" })` again.
+- **The titlebar selector is always visible.** It opens the overlay on the
+  chosen screen; there is no count anymore. The overlay is a sibling of the
+  slot item, so switching screens never closes it under the user.
 - **Executing a plan is a user action.** The card, the detail's
   **Executar/Pausar** button (for `active` plans) and the composer pill all call
   the same `executionFor(target)` handle (`src/gui/execution.ts`): it owns the
@@ -238,14 +236,22 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   by normalized title + parent + non-terminal status and always writes
   `origin=agent`; `update` moves status/order/parent/deps (cycles rejected) and
   only the planner/user closes an item.
-- **Three overlay screens**: **Iniciativa | Trabalho | Planos**. `launcher.tsx`
-  owns the tab and the selected initiative (persisted via
-  `initiative-selection.ts`); `initiatives.tsx` lists every initiative and is
-  the only creation entry point; Work is scoped to one initiative with a
-  selector and no creation button. Creating an initiative needs only a name and
-  an optional description (`initiative-dialog.tsx`); repositories are managed in
-  the dialog and can also be born from the plan picker or the first item
-  captured in a directory.
+- **Three overlay screens**: **Iniciativa | Trabalho | Planos**, chosen by the
+  titlebar selector and shared through `overlay-state.ts`. `initiatives.tsx`
+  lists every initiative and is the only creation entry point; the cards carry
+  edit (name/description) and delete. Work is scoped to one initiative with a
+  selector; **New item** opens `work-item-dialog.tsx` (title + need) and the
+  item may have no repository (`saveWorkItem({ initiativeID })`), with the plan
+  picker associating one. There is no Manage initiative: repositories are born
+  from the plan picker or the first item captured in a directory.
+- **Deletion**: `deleteWorkItem` removes deps, unparents children and unlinks
+  the plan (kept); an item referenced by a run is refused. `deleteInitiative`
+  cascades items/deps/repos/runs, unlinks plans and is refused while a run is
+  active.
+- **Raw dialogs need `pointer-events: auto`.** The host mounts plugin dialog
+  content inside a layer with `pointer-events: none`; only the app `Dialog`
+  re-enables it. Any dialog we open through `ctx.dialogs.open` must set it on
+  its root (and focus its first field).
 - **Work views**: Lista | Quadro | **Grafo** (per initiative).
   The graph lays dependencies left and dependents right (`src/work-graph.ts`
   pure and tested) and every arrow is drawn left to right (A → B: B waits for

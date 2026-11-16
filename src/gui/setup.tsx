@@ -13,7 +13,7 @@
 import type { SetupContext } from "@opencode/plugin/gui";
 import { ComposerPill, Slot, Style } from "@opencode/plugin/gui";
 import { registerSidePanel } from "opencode-shared/gui";
-import { PlansPill, startPlansCount } from "./launcher";
+import { PlansPill } from "./launcher";
 import { createPlanPill, PLAY_ICON_CSS } from "./pill";
 import { PlansView } from "./view";
 
@@ -35,8 +35,6 @@ export function setup(ctx: SetupContext<never>): () => void {
     view: ({ session }) => <PlansView session={session} />,
   });
 
-  const stopCount = startPlansCount(ctx);
-
   // The entry is a pill in the timeline's title row (session.header), next to
   // the other plugins' pills. The overlay rides the same slot item, fixed over
   // the window, so there is no second mount point.
@@ -54,5 +52,5 @@ export function setup(ctx: SetupContext<never>): () => void {
     show: (input) => pill.show(input.session),
   }));
 
-  return stopCount;
+  return () => undefined;
 }

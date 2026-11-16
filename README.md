@@ -134,15 +134,17 @@ e o `npm run gui:build`).
    `plans.save`, pelos tools de escrita e pelos handlers do painel; some
    enquanto o agente roda e quando o plano termina (todos os passos `done`
    viram status `done`).
-12. **Pill “Planos · N” e overlay**: um pill na linha de título da timeline
-    mostra a contagem de planos **ativos** e abre um overlay com todos os
-    planos de todos os projetos e sessões, **ordenados por projeto** (com
-    cabeçalho a cada troca, mesmo entre páginas) e com **filtro de projetos em
-    multiselect** — o painel continua em lista plana (o slot `session.header`
-    coloca pills de plugins diferentes lado a lado; `window.bottom` empilharia). Não há atalho de teclado nem
-    comando na paleta. Reusa o mesmo corpo do
-    painel; a diferença são os filtros (**Projeto | Tudo**, default **Tudo**) e
-    a ausência das ações que dependem de sessão (criar, mover, hint de salvar).
+12. **Seletor na barra de título e overlay**: um seletor segmentado
+    **Iniciativa | Trabalho | Planos** fica na linha de título da timeline
+    (slot `session.header`); clicar num segmento abre o overlay naquela tela e,
+    com ele aberto, troca o corpo. O modal não tem abas nem contador. Os planos
+    aparecem ordenados por projeto (com cabeçalho a cada troca, mesmo entre
+    páginas) e com **filtro de projetos em multiselect** — o painel continua em
+    lista plana (o slot coloca pills de plugins diferentes lado a lado;
+    `window.bottom` empilharia). Não há atalho de teclado nem comando na paleta.
+    Reusa o mesmo corpo do painel; a diferença são os filtros (**Projeto |
+    Tudo**, default **Tudo**) e a ausência das ações que dependem de sessão
+    (criar, mover, hint de salvar).
     O botão **Abrir sessão** leva à sessão dona do plano; **Executar** roda na
     sessão do plano, **sem mover**. Consulta só o servidor builtin, porque o
     `plans.db` é local a ele.
@@ -211,13 +213,16 @@ interativa e o body é exibido sem o checklist extraído.
   `work.save`/`work.update` escrevem — no máximo **3 itens por pedido**, dedupe
   por título normalizado + pai + status não-terminal, `origin=agent`; fechar
   (`done`/`dropped`) só com o planner ou o usuário.
-- **Iniciativas**: o overlay tem três telas — **Iniciativa | Trabalho | Planos**.
-  A tela **Iniciativa** lista todas com nome, descrição, nº de repositórios e de
-  itens; **Nova iniciativa** pede só nome e descrição opcional. A tela
-  **Trabalho** mostra uma iniciativa por vez (seletor para trocar) e
-  **Gerenciar iniciativa** renomeia/re-descreve, adiciona/remove repositórios e
-  troca o primário; sem repositório, orienta a adicionar um antes de capturar
-  itens.
+- **Iniciativas**: o overlay tem três telas — **Iniciativa | Trabalho | Planos**
+  — escolhidas pelo seletor da barra de título. A tela **Iniciativa** lista
+  todas com nome, descrição, nº de repositórios e de itens; os cards têm **lápis**
+  (nome/descrição) e **lixeira** (excluir). **Nova iniciativa** pede só nome e
+  descrição opcional; os repositórios entram pelo Planejar. A tela **Trabalho**
+  mostra uma iniciativa por vez (seletor para trocar); **Novo item** abre uma
+  modal com título e necessidade e o item pode nascer **sem repositório** (o
+  Planejar associa um). Itens e iniciativas têm exclusão com confirmação (planos
+  ficam, desvinculados; itens em run são recusados; iniciativa com run ativa é
+  recusada).
 - **Superfície Trabalho** (overlay): lista, quadro por status e **grafo de
 dependências**; com uma iniciativa selecionada, **Executar iniciativa**. O
   grafo cria/remove dependências explícitas (seta do dependente para a
