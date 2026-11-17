@@ -40,7 +40,7 @@ import { planWorkItem } from "./plan-item";
 import { openPlanDialog } from "./plan-dialog";
 import { WorkGraph } from "./graph";
 import { openWorkItemDialog } from "./work-item-dialog";
-import { closePlansOverlay } from "./overlay-state";
+import { closePlansOverlay, consumePendingWorkItem } from "./overlay-state";
 
 export type WorkViewMode = "list" | "board" | "graph";
 
@@ -707,6 +707,12 @@ export function WorkBody(props: {
     setEditing(false);
     setSelectedID(id);
   };
+
+  // A plan can deep-link its item: Work opens the detail as soon as it mounts.
+  createEffect(() => {
+    const pending = consumePendingWorkItem();
+    if (pending) openItem(pending);
+  });
 
   const closeDetail = () => {
     setSelectedID(undefined);

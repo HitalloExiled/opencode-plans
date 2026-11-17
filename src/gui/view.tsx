@@ -13,8 +13,10 @@ import type { MountedSession, ServerRef } from "@opencode/plugin/gui";
 import { SHARED_CSS, MultiSelect, ScrollNav, createScrollNav, EmptyState, ErrorBanner, LoadingRow, StatusChip, type ChipTone } from "opencode-shared/gui";
 import { PlansRpc } from "./contract";
 import { executionFor, planTarget, sessionTarget } from "./execution";
-import type { Plan, PlanFlow, PlanStatus, PlanStep, StepStatus } from "./contract";
+import type { Plan, PlanFlow, PlanStatus, PlanStep, StepStatus, WorkItemDetail } from "./contract";
 import { useT } from "./i18n";
+import { openPlansOverlay, requestWorkItem } from "./overlay-state";
+import { initiativeSelection } from "./initiative-selection";
 import { bodyWithoutSteps } from "../plan-body";
 import { orderPlans, projectKeyOf, projectLabel as projectSectionName } from "./order";
 import { VIEW_INITIAL, ViewState } from "./state";
@@ -160,6 +162,8 @@ const CSS = `
 .plan-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .plan-detail-title { font-weight: 600; font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
 .plan-meta { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--v2-text-text-muted); overflow-wrap: anywhere; }
+.plan-meta-work { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.plan-meta-note { color: var(--v2-text-text-faint); font-style: italic; }
 .plan-meta-id { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
 .plan-id {
   font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
@@ -392,10 +396,15 @@ export function PlansView(props: { session: MountedSession }) {
   );
 }
 
+/** Item title and initiative, resolved once per work item id. */
+type PlanWorkItem = { title: string; initiativeID: string };
+
+/** `null` means the item is gone (or the query failed); the link is dropped. */
+const workItemCache = new Map<string, PlanWorkItem | null>();
+
 export function PlansBody(props: { target: () => PlansTarget }) {
   const ctx = usePlugin();
-  const t = useT();
-  const target = () => props.target();
+  const t = useT();  const target = () => props.target();
   const detached = () => target().mode === "modal";
   const sessionID = () => target().session?.id;
   const client = () => target().server.client;
@@ -484,6 +493,56 @@ export function PlansBody(props: { target: () => PlansTarget }) {
   const [editorError, setEditorError] = createSignal("");
 
   const selectedPlan = createMemo(() => (selectedID() ? detail() : null));
+
+  // The plan stores the item id; the title and the initiative live in the item.
+  // Cached by id so reopening a plan does not query again.
+  const [planWorkItem, setPlanWorkItem] = createSignal<PlanWorkItem | null>(null);
+  const [workItemMissing, setWorkItemMissing] = createSignal(false);
+
+  createEffect(() => {
+    const id = selectedPlan()?.workItemID;
+    if (!id) {
+      setPlanWorkItem(null);
+      setWorkItemMissing(false);
+      return;
+    }
+    const cached = workItemCache.get(id);
+    if (cached !== undefined) {
+      setPlanWorkItem(cached);
+      setWorkItemMissing(cached === null);
+      return;
+    }
+    let live = true;
+    onCleanup(() => {
+      live = false;
+    });
+    void client()
+      .rpc(PlansRpc)
+      .getWorkItem({ id })
+      .then((value) => {
+        const detail = value as WorkItemDetail | null;
+        const item = detail
+          ? { title: detail.item.title, initiativeID: detail.item.initiativeID }
+          : null;
+        workItemCache.set(id, item);
+        if (!live) return;
+        setPlanWorkItem(item);
+        setWorkItemMissing(item === null);
+      })
+      .catch(() => {
+        workItemCache.set(id, null);
+        if (!live) return;
+        setPlanWorkItem(null);
+        setWorkItemMissing(true);
+      });
+  });
+
+  /** Deep link: select the item's initiative and open Work on that item. */
+  const openWorkItem = (id: string, item: PlanWorkItem) => {
+    initiativeSelection(ctx).set({ id: item.initiativeID });
+    requestWorkItem(id);
+    openPlansOverlay("work");
+  };
 
   // Projects present in the loaded plans: the filter options and the section
   // headers.
@@ -1318,6 +1377,34 @@ export function PlansBody(props: { target: () => PlansTarget }) {
               <div>
                 {t("project")}: {projectLabel(plan())}
               </div>
+              <Show when={plan().workItemID}>
+                {(itemID) => (
+                  <div class="plan-meta-work">
+                    <span>{t("plan.workItem")}:</span>
+                    <Show
+                      when={planWorkItem()}
+                      fallback={
+                        <>
+                          <code class="plan-id">{itemID()}</code>
+                          <Show when={workItemMissing()}>
+                            <span class="plan-meta-note">{t("plan.workItemMissing")}</span>
+                          </Show>
+                        </>
+                      }
+                    >
+                      {(item) => (
+                        <ctx.ui.Button
+                          size="small"
+                          variant="ghost"
+                          onClick={() => openWorkItem(itemID(), item())}
+                        >
+                          {item().title}
+                        </ctx.ui.Button>
+                      )}
+                    </Show>
+                  </div>
+                )}
+              </Show>
               <div>
                 {t("created")}: {formatDate(plan().createdAt)}
               </div>

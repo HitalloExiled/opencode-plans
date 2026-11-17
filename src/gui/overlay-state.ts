@@ -11,9 +11,23 @@ export type OverlayMode = "initiatives" | "work" | "plans";
 
 const [opened, setOpened] = createSignal(false);
 const [mode, setMode] = createSignal<OverlayMode>("initiatives");
+const [pendingWorkItem, setPendingWorkItem] = createSignal<string | null>(null);
 
 export const plansOverlayOpen = opened;
 export const overlayMode = mode;
+export const pendingItem = pendingWorkItem;
+
+/** Deep link from a plan to its work item: Work opens the detail on mount. */
+export const requestWorkItem = (id: string): void => {
+  setPendingWorkItem(id);
+};
+
+/** Reads the pending item once; the next Work surface that asks gets nothing. */
+export const consumePendingWorkItem = (): string | null => {
+  const id = pendingWorkItem();
+  if (id !== null) setPendingWorkItem(null);
+  return id;
+};
 
 export const openPlansOverlay = (next?: OverlayMode): void => {
   if (next) setMode(next);
