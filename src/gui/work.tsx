@@ -160,20 +160,7 @@ const WORK_CSS = `
 .work-overview { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
 .work-overview-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; border: 1px solid var(--v2-border-border-muted); border-radius: 8px; background: var(--v2-background-bg-layer-01); }
 .work-overview-actions { display: flex; justify-content: flex-end; gap: 6px; flex: 0 0 auto; }
-.work-overview-input {
-  flex: 1;
-  min-height: 160px;
-  resize: none;
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--v2-text-text-base);
-  background: var(--v2-background-bg-layer-01);
-  border: 1px solid var(--v2-border-border-muted);
-  border-radius: 6px;
-  padding: 8px;
-}
-.work-overview-input:focus { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
+.work-overview-hint { font-size: 10.5px; color: var(--v2-text-text-faint); }
 .work-initiative-settings { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow-y: auto; }
 .work-initiative-textarea { min-height: 80px; resize: vertical; font: inherit; font-size: 12px; line-height: 1.5; color: var(--v2-text-text-base); background: var(--v2-background-bg-layer-01); border: 1px solid var(--v2-border-border-muted); border-radius: 6px; padding: 8px; }
 .work-initiative-repos { display: flex; flex-direction: column; gap: 2px; }
@@ -364,7 +351,6 @@ export function WorkBody(props: {
   const [preflightBusy, setPreflightBusy] = createSignal(false);
   const [runBusy, setRunBusy] = createSignal(false);
   const [runError, setRunError] = createSignal<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [baseInput, setBaseInput] = createSignal("");
   const [parallelInput, setParallelInput] = createSignal("2");
   const [verifyInput, setVerifyInput] = createSignal("");
@@ -607,40 +593,6 @@ export function WorkBody(props: {
       .finally(() => setRunBusy(false));
   };
 
-  const syncSettings = () => {
-    const initiative = selectedInitiative();
-    if (!initiative) return;
-    setBaseInput(initiative.baseBranch ?? "main");
-    setParallelInput(String(initiative.maxParallel ?? 2));
-    setVerifyInput(initiative.verifyCommand ?? "");
-  };
-
-  const saveSettings = () => {
-    const initiative = selectedInitiative();
-    if (!initiative || runBusy()) return;
-    setRunBusy(true);
-    setRunError(null);
-    void props.target()
-      .server.client.rpc(PlansRpc)
-      .runSettings({
-        initiativeID: initiative.id,
-        baseBranch: baseInput().trim() || null,
-        maxParallel: Number(parallelInput()) || 2,
-        verifyCommand: verifyInput().trim() || null,
-      })
-      .then((result) => {
-        if (!result.ok) {
-          setRunError(result.error ?? t("work.run.settingsError"));
-          return;
-        }
-        if (result.initiative) props.onInitiativeChanged(result.initiative);
-        setSettingsOpen(false);
-        ctx.toast.show({ title: t("work.run.settingsSaved"), variant: "success" });
-      })
-      .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => setRunBusy(false));
-  };
-
   /** The active plan of each item, for the card progress. */
   const plansByItem = createMemo(() => {
     const map = new Map<string, Plan>();
@@ -841,16 +793,6 @@ export function WorkBody(props: {
     });
   };
 
-  const [overviewEditing, setOverviewEditing] = createSignal(false);
-  const [overviewDraft, setOverviewDraft] = createSignal("");
-  const [overviewSaving, setOverviewSaving] = createSignal(false);
-
-  const startOverviewEdit = () => {
-    setOverviewDraft(selectedInitiative()?.overview ?? "");
-    setOverviewEditing(true);
-    setActionError(null);
-  };
-
   const saveInitiative = (patch: { name?: string; description?: string | null; overview?: string | null }) => {
     const initiative = selectedInitiative();
     if (!initiative) return Promise.reject(new Error(t("work.initiative.select")));
@@ -865,18 +807,9 @@ export function WorkBody(props: {
       });
   };
 
-  const saveOverview = () => {
-    if (overviewSaving()) return;
-    setOverviewSaving(true);
-    setActionError(null);
-    void saveInitiative({ overview: overviewDraft().trim() || null })
-      .then(() => setOverviewEditing(false))
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => setOverviewSaving(false));
-  };
-
   const [initiativeName, setInitiativeName] = createSignal("");
   const [initiativeDescription, setInitiativeDescription] = createSignal("");
+  const [initiativeOverview, setInitiativeOverview] = createSignal("");
   const [initiativeSaving, setInitiativeSaving] = createSignal(false);
   const [initiativeDeleting, setInitiativeDeleting] = createSignal(false);
 
@@ -885,15 +818,40 @@ export function WorkBody(props: {
     const initiative = selectedInitiative();
     setInitiativeName(initiative?.name ?? "");
     setInitiativeDescription(initiative?.description ?? "");
+    setInitiativeOverview(initiative?.overview ?? "");
+    setBaseInput(initiative?.baseBranch ?? "main");
+    setParallelInput(String(initiative?.maxParallel ?? 2));
+    setVerifyInput(initiative?.verifyCommand ?? "");
   });
 
+  /** One save for the whole tab: initiative fields, then the run settings. */
   const saveInitiativeSettings = () => {
     if (initiativeSaving()) return;
     const name = initiativeName().trim();
-    if (!name) return;
+    const initiative = selectedInitiative();
+    if (!initiative || !name) return;
     setInitiativeSaving(true);
     setActionError(null);
-    void saveInitiative({ name, description: initiativeDescription().trim() || null })
+    void saveInitiative({
+      name,
+      description: initiativeDescription().trim() || null,
+      overview: initiativeOverview().trim() || null,
+    })
+      .then(() =>
+        props.target()
+          .server.client.rpc(PlansRpc)
+          .runSettings({
+            initiativeID: initiative.id,
+            baseBranch: baseInput().trim() || null,
+            maxParallel: Number(parallelInput()) || 2,
+            verifyCommand: verifyInput().trim() || null,
+          })
+          .then((result) => {
+            if (!result.ok) throw new Error(result.error ?? t("work.run.settingsError"));
+            if (result.initiative) props.onInitiativeChanged(result.initiative);
+            ctx.toast.show({ title: t("work.run.settingsSaved"), variant: "success" });
+          }),
+      )
       .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setInitiativeSaving(false));
   };
@@ -1253,17 +1211,6 @@ export function WorkBody(props: {
                   {t("work.run.button")}
                 </ctx.ui.Button>
               </Show>
-              <ctx.ui.Button
-                size="small"
-                variant="ghost"
-                icon="settings-gear"
-                onClick={() => {
-                  setSettingsOpen((value) => !value);
-                  syncSettings();
-                }}
-              >
-                {t("work.run.settings")}
-              </ctx.ui.Button>
               <Show when={run()}>
                 {(current) => (
                   <>
@@ -1451,47 +1398,6 @@ export function WorkBody(props: {
                 </div>
               )}
             </Show>
-          </Show>
-
-          <Show when={workTab() === "items" && settingsOpen()}>
-            <div class="work-run-panel">
-              <div class="work-run-field">
-                <span class="work-run-field-label">{t("work.run.base")}</span>
-                <ctx.ui.TextInput
-                  value={baseInput()}
-                  onInput={(value) => setBaseInput(value)}
-                  label={t("work.run.base")}
-                  placeholder={t("work.run.baseHint")}
-                />
-                <span class="work-run-hint">{t("work.run.baseDescription")}</span>
-              </div>
-              <div class="work-run-field">
-                <span class="work-run-field-label">{t("work.run.parallel")}</span>
-                <ctx.ui.TextInput
-                  value={parallelInput()}
-                  onInput={(value) => setParallelInput(value)}
-                  label={t("work.run.parallel")}
-                />
-                <span class="work-run-hint">{t("work.run.parallelDescription")}</span>
-              </div>
-              <div class="work-run-field">
-                <span class="work-run-field-label">{t("work.run.verify")}</span>
-                <ctx.ui.TextInput
-                  value={verifyInput()}
-                  onInput={(value) => setVerifyInput(value)}
-                  label={t("work.run.verify")}
-                />
-                <span class="work-run-hint">{t("work.run.verifyDescription")}</span>
-              </div>
-              <div class="work-run-actions">
-                <ctx.ui.Button size="small" variant="ghost" onClick={() => setSettingsOpen(false)}>
-                  {t("cancel")}
-                </ctx.ui.Button>
-                <ctx.ui.Button size="small" variant="contrast" busy={runBusy()} onClick={saveSettings}>
-                  {t("work.run.save")}
-                </ctx.ui.Button>
-              </div>
-            </div>
           </Show>
 
           <Show when={workTab() === "items" && actionError()}>
@@ -1764,51 +1670,20 @@ export function WorkBody(props: {
               {(initiative) => (
                 <div class="work-overview">
                   <Show
-                    when={overviewEditing()}
+                    when={initiative().overview}
                     fallback={
-                      <>
-                        <Show
-                          when={initiative().overview}
-                          fallback={
-                            <EmptyState
-                              icon="workspace"
-                              title={t("work.overview.empty")}
-                              hint={t("work.overview.emptyHint")}
-                            />
-                          }
-                        >
-                          <div class="work-overview-body os-scroll">
-                            <ctx.ui.Markdown text={initiative().overview!} class="work-overview-markdown" />
-                          </div>
-                        </Show>
-                        <div class="work-overview-actions">
-                          <ctx.ui.Button
-                            size="small"
-                            variant="neutral"
-                            icon="pencil-line"
-                            onClick={startOverviewEdit}
-                          >
-                            {t("work.overview.edit")}
-                          </ctx.ui.Button>
-                        </div>
-                      </>
+                      <EmptyState
+                        icon="workspace"
+                        title={t("work.overview.empty")}
+                        hint={t("work.overview.emptyHint")}
+                      />
                     }
                   >
-                    <textarea
-                      class="work-overview-input"
-                      value={overviewDraft()}
-                      aria-label={t("work.initiative.overview")}
-                      onInput={(event) => setOverviewDraft(event.currentTarget.value)}
-                    />
-                    <div class="work-overview-actions">
-                      <ctx.ui.Button size="small" variant="ghost" onClick={() => setOverviewEditing(false)}>
-                        {t("cancel")}
-                      </ctx.ui.Button>
-                      <ctx.ui.Button size="small" variant="contrast" busy={overviewSaving()} onClick={saveOverview}>
-                        {t("work.initiative.save")}
-                      </ctx.ui.Button>
+                    <div class="work-overview-body os-scroll">
+                      <ctx.ui.Markdown text={initiative().overview!} class="work-overview-markdown" />
                     </div>
                   </Show>
+                  <span class="work-overview-hint">{t("work.overview.hint")}</span>
                 </div>
               )}
             </Show>
@@ -1845,6 +1720,16 @@ export function WorkBody(props: {
                     />
                   </div>
                   <div class="work-run-field">
+                    <span class="work-run-field-label">{t("work.initiative.overview")}</span>
+                    <textarea
+                      class="work-initiative-textarea"
+                      value={initiativeOverview()}
+                      aria-label={t("work.initiative.overview")}
+                      onInput={(event) => setInitiativeOverview(event.currentTarget.value)}
+                    />
+                    <span class="work-run-hint">{t("work.initiative.overviewHintTab")}</span>
+                  </div>
+                  <div class="work-run-field">
                     <span class="work-run-field-label">{t("work.initiative.repos")}</span>
                     <div class="work-initiative-repos">
                       <For each={initiative().repos}>
@@ -1855,6 +1740,32 @@ export function WorkBody(props: {
                       </Show>
                     </div>
                     <span class="work-run-hint">{t("work.initiative.reposHint")}</span>
+                  </div>
+                  <div class="work-run-field">
+                    <span class="work-run-field-label">{t("work.settings.run")}</span>
+                    <ctx.ui.TextInput
+                      value={baseInput()}
+                      onInput={(value) => setBaseInput(value)}
+                      label={t("work.run.base")}
+                      placeholder={t("work.run.baseHint")}
+                    />
+                    <span class="work-run-hint">{t("work.run.baseDescription")}</span>
+                  </div>
+                  <div class="work-run-field">
+                    <ctx.ui.TextInput
+                      value={parallelInput()}
+                      onInput={(value) => setParallelInput(value)}
+                      label={t("work.run.parallel")}
+                    />
+                    <span class="work-run-hint">{t("work.run.parallelDescription")}</span>
+                  </div>
+                  <div class="work-run-field">
+                    <ctx.ui.TextInput
+                      value={verifyInput()}
+                      onInput={(value) => setVerifyInput(value)}
+                      label={t("work.run.verify")}
+                    />
+                    <span class="work-run-hint">{t("work.run.verifyDescription")}</span>
                   </div>
                   <div class="work-overview-actions">
                     <ctx.ui.Button
