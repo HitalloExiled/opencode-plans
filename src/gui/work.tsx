@@ -215,7 +215,7 @@ const WORK_CSS = `
 }
 .work-col-count { margin-left: auto; font-weight: 500; color: var(--v2-text-text-faint); }
 .work-col-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
-.work-board-card { cursor: grab; align-items: flex-start; }
+.work-board-card { cursor: grab; }
 .work-board-card:active { cursor: grabbing; }
 .work-board-card.is-drop { box-shadow: inset 0 2px 0 var(--v2-border-border-focus); }
 .work-card-initiative { font-size: 10px; color: var(--v2-text-text-faint); }
