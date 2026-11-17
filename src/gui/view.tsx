@@ -17,6 +17,7 @@ import type { Plan, PlanFlow, PlanStatus, PlanStep, StepStatus } from "./contrac
 import { useT } from "./i18n";
 import { bodyWithoutSteps } from "../plan-body";
 import { orderPlans, projectKeyOf, projectLabel as projectSectionName } from "./order";
+import { flowAgentFor } from "../flow-rules";
 import { VIEW_INITIAL, ViewState } from "./state";
 import type { ScopeFilter, StatusFilter } from "./state";
 
@@ -440,6 +441,21 @@ export function PlansBody(props: { target: () => PlansTarget }) {
     try {
       const saved = await client().rpc(PlansRpc).setFlow(next, rpcOptions());
       setFlowState(saved as PlanFlow);
+    } catch (cause) {
+      showError(t("toast.updateError"), cause);
+      return;
+    }
+    // The switch also rebinds the session in front of the user. Waiting for the
+    // next Execute/Pause would leave the header on the previous agent after the
+    // flow already changed. The session's own role picks the target (planning
+    // stays planning, executing stays executing); a custom agent is left alone
+    // and the modal has no session. A failed switch keeps the persisted flow.
+    const id = sessionID();
+    if (!id) return;
+    try {
+      const info = await client().session.get({ sessionID: id });
+      const agent = flowAgentFor(info.agent, next);
+      if (agent) await client().session.switchAgent({ sessionID: id, agent });
     } catch (cause) {
       showError(t("toast.updateError"), cause);
     }
