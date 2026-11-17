@@ -147,9 +147,9 @@ const WORK_CSS = `
 .work-progress-done { display: block; height: 100%; background: var(--v2-state-fg-success); transition: width .2s ease; }
 .work-progress-label { flex: 0 0 auto; font-size: 10px; color: var(--v2-text-text-muted); font-variant-numeric: tabular-nums; }
 .work-progress-doing { flex: 1 1 auto; width: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--v2-text-text-faint); }
-.work-toolbar { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; }
-.work-new { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-.work-new > :first-child { flex: 1; min-width: 0; }
+.work-toolbar, .work-filters { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; }
+/* Filters on the left, the action pushed to the right; collapses on narrow windows. */
+.work-filters-gap { flex: 1 1 0; min-width: 0; }
 .work-detail { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
 .work-detail-head { display: flex; align-items: center; gap: 6px; }
 .work-detail-title { flex: 1; min-width: 0; margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
@@ -1064,46 +1064,6 @@ export function WorkBody(props: {
                   {t("work.view.graph")}
                 </ctx.ui.Button>
               </div>
-              <Show when={props.initiatives.length > 0}>
-                <ctx.ui.Menu
-                  trigger="button"
-                  icon="workspace"
-                  label={selectedInitiative()?.name ?? t("work.initiative.select")}
-                  items={props.initiatives.map((initiative) => ({
-                    label: initiative.name,
-                    onSelect: () => props.onSelectInitiative(initiative.id),
-                  }))}
-                />
-              </Show>
-              <ctx.ui.Button
-                size="small"
-                variant="neutral"
-                icon="plus"
-                disabled={!selectedInitiative()}
-                onClick={openNewItem}
-              >
-                {t("work.newItem")}
-              </ctx.ui.Button>
-              <Show when={hasAgentItems()}>
-                <ctx.ui.Button
-                  size="small"
-                  variant={agentOnly() ? "neutral" : "ghost"}
-                  icon="review"
-                  onClick={() => setAgentOnly((value) => !value)}
-                >
-                  {t("work.filter.agent")}
-                </ctx.ui.Button>
-              </Show>
-              <Show when={hasDropped()}>
-                <ctx.ui.Button
-                  size="small"
-                  variant={showDropped() ? "neutral" : "ghost"}
-                  icon="archive"
-                  onClick={() => setShowDropped((value) => !value)}
-                >
-                  {t("work.filter.dropped")}
-                </ctx.ui.Button>
-              </Show>
           </div>
 
           <Show when={selectedInitiative()}>
@@ -1147,7 +1107,53 @@ export function WorkBody(props: {
                 )}
               </Show>
             </div>
+          </Show>
 
+          <div class="work-filters" role="group" aria-label={t("work.filter.label")}>
+            <Show when={props.initiatives.length > 0}>
+              <ctx.ui.Menu
+                trigger="button"
+                icon="workspace"
+                label={selectedInitiative()?.name ?? t("work.initiative.select")}
+                items={props.initiatives.map((initiative) => ({
+                  label: initiative.name,
+                  onSelect: () => props.onSelectInitiative(initiative.id),
+                }))}
+              />
+            </Show>
+            <Show when={hasAgentItems()}>
+              <ctx.ui.Button
+                size="small"
+                variant={agentOnly() ? "neutral" : "ghost"}
+                icon="review"
+                onClick={() => setAgentOnly((value) => !value)}
+              >
+                {t("work.filter.agent")}
+              </ctx.ui.Button>
+            </Show>
+            <Show when={hasDropped()}>
+              <ctx.ui.Button
+                size="small"
+                variant={showDropped() ? "neutral" : "ghost"}
+                icon="archive"
+                onClick={() => setShowDropped((value) => !value)}
+              >
+                {t("work.filter.dropped")}
+              </ctx.ui.Button>
+            </Show>
+            <div class="work-filters-gap" />
+            <ctx.ui.Button
+              size="small"
+              variant="neutral"
+              icon="plus"
+              disabled={!selectedInitiative()}
+              onClick={openNewItem}
+            >
+              {t("work.newItem")}
+            </ctx.ui.Button>
+          </div>
+
+          <Show when={selectedInitiative()}>
             <Show when={runError()}>
               <ErrorBanner message={runError()!} />
             </Show>
