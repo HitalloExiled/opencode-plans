@@ -23,8 +23,10 @@ import {
 } from "../work-graph";
 
 const CSS = `
-.work-graph { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; }
-.work-graph.is-panning { cursor: grabbing; }
+.work-graph { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.work-graph-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px; flex: none; }
+.work-graph-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; }
+.work-graph-viewport.is-panning { cursor: grabbing; }
 .work-graph-canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 .work-graph-edges { position: absolute; top: 0; left: 0; overflow: visible; }
 .work-graph-edge { fill: none; stroke: var(--v2-text-text-muted); stroke-width: 1.75; pointer-events: none; }
@@ -84,7 +86,7 @@ const CSS = `
 .work-graph-handle:hover { color: var(--v2-text-text-base); border-color: var(--v2-border-border-focus); }
 .work-graph-ghost { fill: none; stroke: var(--v2-border-border-focus); stroke-width: 1.5; stroke-dasharray: 3 3; pointer-events: none; }
 .work-graph-ghost.is-invalid { stroke: var(--v2-state-fg-danger); }
-.work-graph-controls { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; z-index: 1; }
+.work-graph-controls { display: flex; gap: 4px; flex: none; }
 .work-graph-stage {
   position: absolute;
   top: 0;
@@ -105,7 +107,7 @@ const CSS = `
 .work-graph-legend { position: absolute; left: 6px; bottom: 6px; display: flex; gap: 10px; align-items: center; font-size: 10px; color: var(--v2-text-text-faint); z-index: 1; }
 .work-graph-legend-line { display: inline-block; width: 18px; border-top: 1.5px solid var(--v2-text-text-faint); vertical-align: middle; }
 .work-graph-legend-line.is-implicit { border-top-style: dashed; border-top-color: var(--v2-state-fg-warning); }
-.work-graph-hint { position: absolute; left: 6px; top: 6px; font-size: 10px; color: var(--v2-text-text-faint); z-index: 1; }
+.work-graph-hint { font-size: 10px; color: var(--v2-text-text-faint); min-width: 0; }
 `;
 
 const statusTone = (status: string): ChipTone =>
@@ -127,6 +129,8 @@ export function WorkGraph(props: {
   onAction?: ((id: string) => void) | undefined;
   /** Whether the item has an active plan (play) or needs planning (brain). */
   hasPlan?: ((id: string) => boolean) | undefined;
+  /** Whether the item's plan is executing right now. */
+  isRunning?: ((id: string) => boolean) | undefined;
 }) {
   const t = useT();
   const ctx = usePlugin();
@@ -336,7 +340,7 @@ export function WorkGraph(props: {
 
   let panStart: { x: number; y: number; tx: number; ty: number } | null = null;
   const onPointerDown = (event: PointerEvent) => {
-    if ((event.target as Element | null)?.closest("[data-item-id], .work-graph-controls")) return;
+    if ((event.target as Element | null)?.closest("[data-item-id]")) return;
     panStart = { x: event.clientX, y: event.clientY, tx: tx(), ty: ty() };
     setPanning(true);
   };
@@ -376,26 +380,29 @@ export function WorkGraph(props: {
               <Show when={layout()?.hasCycle}>
                 <ErrorBanner message={t("work.graph.cycleBanner")} />
               </Show>
-              <div
-                ref={container}
-                class="work-graph"
-                classList={{ "is-panning": panning() }}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerLeave={onPointerUp}
-                onWheel={onWheel}
-                role="region"
-                aria-label={t("work.graph.region")}
-              >
-                <span class="work-graph-hint">{t("work.graph.hint")}</span>
-                <div class="work-graph-controls">
-                  <ctx.ui.IconButton icon="plus" label={t("work.graph.zoomIn")} onClick={() => setScale((v) => Math.min(1.8, v + 0.1))} />
-                  <ctx.ui.IconButton icon="minus" label={t("work.graph.zoomOut")} onClick={() => setScale((v) => Math.max(0.35, v - 0.1))} />
-                  <ctx.ui.Button size="small" variant="ghost" onClick={fit}>
-                    {t("work.graph.fit")}
-                  </ctx.ui.Button>
+              <div class="work-graph">
+                <div class="work-graph-header">
+                  <span class="work-graph-hint">{t("work.graph.hint")}</span>
+                  <div class="work-graph-controls">
+                    <ctx.ui.IconButton icon="plus" label={t("work.graph.zoomIn")} onClick={() => setScale((v) => Math.min(1.8, v + 0.1))} />
+                    <ctx.ui.IconButton icon="minus" label={t("work.graph.zoomOut")} onClick={() => setScale((v) => Math.max(0.35, v - 0.1))} />
+                    <ctx.ui.Button size="small" variant="ghost" onClick={fit}>
+                      {t("work.graph.fit")}
+                    </ctx.ui.Button>
+                  </div>
                 </div>
+                <div
+                  ref={container}
+                  class="work-graph-viewport"
+                  classList={{ "is-panning": panning() }}
+                  onPointerDown={onPointerDown}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={onPointerUp}
+                  onPointerLeave={onPointerUp}
+                  onWheel={onWheel}
+                  role="region"
+                  aria-label={t("work.graph.region")}
+                >
                 <div
                   class="work-graph-canvas"
                   style={{
@@ -559,15 +566,22 @@ export function WorkGraph(props: {
                             <span class="work-graph-node-title">{node.title}</span>
                             <span class="work-graph-node-foot">
                               <Show when={props.onAction}>
-                                <ctx.ui.IconButton
-                                  class={props.hasPlan?.(node.id) ? "play-icon" : undefined}
-                                  icon={props.hasPlan?.(node.id) ? "fill-triangle-down" : "brain"}
-                                  label={t(props.hasPlan?.(node.id) ? "work.card.execute" : "work.card.plan")}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    props.onAction?.(node.id);
-                                  }}
-                                />
+                                <Show
+                                  when={props.isRunning?.(node.id)}
+                                  fallback={
+                                    <ctx.ui.IconButton
+                                      class={props.hasPlan?.(node.id) ? "play-icon" : undefined}
+                                      icon={props.hasPlan?.(node.id) ? "fill-triangle-down" : "brain"}
+                                      label={t(props.hasPlan?.(node.id) ? "work.card.execute" : "work.card.plan")}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        props.onAction?.(node.id);
+                                      }}
+                                    />
+                                  }
+                                >
+                                  <StatusChip tone="info" label={t("run.item.running")} />
+                                </Show>
                               </Show>
                               <Show when={node.plan}>
                                 {(plan) => (
@@ -605,6 +619,7 @@ export function WorkGraph(props: {
                 <div class="work-graph-legend">
                   <span class="work-graph-legend-line" /> {t("work.graph.explicit")} · {t("work.graph.legendFlow")}
                   <span class="work-graph-legend-line is-implicit" /> {t("work.graph.implicit")}
+                </div>
                 </div>
               </div>
             </Show>

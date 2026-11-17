@@ -803,6 +803,10 @@ export const PlansRpc = Rpc.define({
       input: Schema.toStandardSchemaV1(Schema.Struct({})),
       output: Schema.toStandardSchemaV1(statusSchema),
     },
+    executing: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({})),
+      output: Schema.toStandardSchemaV1(Schema.Array(Schema.String)),
+    },
     list: {
       input: Schema.toStandardSchemaV1(listOptionsSchema),
       output: Schema.toStandardSchemaV1(Schema.Array(planSchema)),

@@ -41,6 +41,7 @@ import {
   deletePlan,
   deleteWorkItem as deleteWorkItemRow,
   finishPlanExecutions,
+  openPlanExecutions,
   depEdges,
   getPlan,
   getPlanByWorkItem,
@@ -245,6 +246,11 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         version: store ? schemaVersion(store.db) : 0,
         ...(reason ? { error: reason } : {}),
       };
+    },
+
+    executing: async (): Promise<string[]> => {
+      const { store } = await getStore();
+      return store ? openPlanExecutions(store.db) : [];
     },
 
     list: async (input) => {

@@ -285,6 +285,7 @@ export function WorkBody(props: {
   const t = useT();
   const [groups, setGroups] = createSignal<WorkGroup[]>([]);
   const [activePlans, setActivePlans] = createSignal<Plan[]>([]);
+  const [executingIDs, setExecutingIDs] = createSignal<string[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [reload, setReload] = createSignal(0);
@@ -335,11 +336,13 @@ export function WorkBody(props: {
     void Promise.all([
       target.server.client.rpc(PlansRpc).listWorkItems({ scope: "all" }),
       target.server.client.rpc(PlansRpc).list({ scope: "all", status: "active" }),
+      target.server.client.rpc(PlansRpc).executing({}),
     ])
-      .then(([itemGroups, plans]) => {
+      .then(([itemGroups, plans, executing]) => {
         if (current !== generation) return;
         setGroups(itemGroups as WorkGroup[]);
         setActivePlans(plans as Plan[]);
+        setExecutingIDs(executing as string[]);
         setLoading(false);
       })
       .catch((cause: unknown) => {
@@ -829,7 +832,20 @@ export function WorkBody(props: {
   const execution = (plan: Plan) =>
     executionFor(ctx, planTarget(props.target().server, plan));
 
-  const isExecuting = (plan: Plan) => execution(plan).isExecuting(plan);
+  // An execution row is open while the run is in flight and closes when the
+  // session idles; the session status keeps a crashed row from showing forever.
+  const isExecuting = (plan: Plan): boolean => {
+    if (execution(plan).isExecuting(plan)) return true;
+    return (
+      executingIDs().includes(plan.id) &&
+      props.target().server.data.session.status(plan.sessionID) === "running"
+    );
+  };
+
+  const executingItem = (itemID: string): boolean => {
+    const plan = plansByItem().get(itemID);
+    return plan ? isExecuting(plan) : false;
+  };
 
   const runDisabled = (plan: Plan): boolean =>
     runningPlan() || (!isExecuting(plan) && (plan.steps.length === 0 || execution(plan).busy()));
@@ -843,6 +859,7 @@ export function WorkBody(props: {
       else await execution(plan).execute(plan, t);
     } finally {
       setRunningPlan(false);
+      setReload((n) => n + 1);
     }
   };
 
@@ -1371,16 +1388,23 @@ export function WorkBody(props: {
                                       </Show>
                                     </div>
                                     <span class="work-card-progress">
-                                      <ctx.ui.IconButton
-                                        class={plansByItem().get(item.id) ? "play-icon" : undefined}
-                                        icon={plansByItem().get(item.id) ? "fill-triangle-down" : "brain"}
-                                        label={t(plansByItem().get(item.id) ? "work.card.execute" : "work.card.plan")}
-                                        disabled={planning()}
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          cardAction(item.id);
-                                        }}
-                                      />
+                                      <Show
+                                        when={executingItem(item.id)}
+                                        fallback={
+                                          <ctx.ui.IconButton
+                                            class={plansByItem().get(item.id) ? "play-icon" : undefined}
+                                            icon={plansByItem().get(item.id) ? "fill-triangle-down" : "brain"}
+                                            label={t(plansByItem().get(item.id) ? "work.card.execute" : "work.card.plan")}
+                                            disabled={planning()}
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              cardAction(item.id);
+                                            }}
+                                          />
+                                        }
+                                      >
+                                        <StatusChip tone="info" label={t("run.item.running")} />
+                                      </Show>
                                       <Show when={plansByItem().get(item.id)}>
                                         {(plan) => (
                                           <>
@@ -1477,16 +1501,23 @@ export function WorkBody(props: {
                                   </Show>
                                 </div>
                                 <span class="work-card-progress">
-                                  <ctx.ui.IconButton
-                                    class={plansByItem().get(entry.item.id) ? "play-icon" : undefined}
-                                    icon={plansByItem().get(entry.item.id) ? "fill-triangle-down" : "brain"}
-                                    label={t(plansByItem().get(entry.item.id) ? "work.card.execute" : "work.card.plan")}
-                                    disabled={planning()}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      cardAction(entry.item.id);
-                                    }}
-                                  />
+                                  <Show
+                                    when={executingItem(entry.item.id)}
+                                    fallback={
+                                      <ctx.ui.IconButton
+                                        class={plansByItem().get(entry.item.id) ? "play-icon" : undefined}
+                                        icon={plansByItem().get(entry.item.id) ? "fill-triangle-down" : "brain"}
+                                        label={t(plansByItem().get(entry.item.id) ? "work.card.execute" : "work.card.plan")}
+                                        disabled={planning()}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          cardAction(entry.item.id);
+                                        }}
+                                      />
+                                    }
+                                  >
+                                    <StatusChip tone="info" label={t("run.item.running")} />
+                                  </Show>
                                   <Show when={plansByItem().get(entry.item.id)}>
                                     {(plan) => (
                                       <>
@@ -1533,6 +1564,7 @@ export function WorkBody(props: {
                   onOpen={openItem}
                   onAction={cardAction}
                   hasPlan={(id) => Boolean(plansByItem().get(id))}
+                  isRunning={executingItem}
                 />
               </Show>
             </Show>

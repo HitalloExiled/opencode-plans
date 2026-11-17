@@ -2266,9 +2266,18 @@ export function activeExecutions(db: Db, repo: string, exceptID?: string): Execu
   return exceptID ? rows.filter((row) => row.id !== exceptID) : rows;
 }
 
-/** Closes every open execution of a plan; idempotent. */
-export function finishPlanExecutions(db: Db, planID: string): number {
+/** Plans with an execution row still open, ignoring rows left by a crash. */
+export function openPlanExecutions(db: Db, hours = EXECUTION_STALE_HOURS): string[] {
   const rows = db
+    .prepare(
+      "SELECT DISTINCT plan_id FROM executions WHERE finished_at IS NULL AND plan_id IS NOT NULL AND started_at >= ?",
+    )
+    .all(executionCutoff(hours)) as { plan_id: string }[];
+  return rows.map((row) => row.plan_id);
+}
+
+/** Closes every open execution of a plan; idempotent. */
+export function finishPlanExecutions(db: Db, planID: string): number {  const rows = db
     .prepare("SELECT id FROM executions WHERE plan_id = ? AND finished_at IS NULL")
     .all(planID) as { id: string }[];
   for (const row of rows) {
