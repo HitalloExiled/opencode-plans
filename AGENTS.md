@@ -239,7 +239,9 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   only the planner/user closes an item — except the engine: a linked plan
   outside a run closes the item on `done` (and reopens it when the plan goes back
   to `active`), while inside a run the **merge** closes it (`merge.done`) and the
-  plan finishing only enqueues it.
+  plan finishing only enqueues it. The engine also moves the item to `doing`
+  when its plan starts executing (`executionBegin`), and it stays there until
+  the merge closes it or the user moves it.
 - **`initiativeID` on `work.list`/`work.save`** files and reads needs for an
   initiative no directory owns (the Planner-style backlog); without it the
   workspace resolution is unchanged. An item created there takes the

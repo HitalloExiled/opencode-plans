@@ -13,9 +13,11 @@ import {
   getPlanByWorkItem,
   getWorkItem,
   initSchema,
+  markWorkItemDoing,
   savePlan,
   setPlanWorkItem,
   setStep,
+  setWorkItemStatus,
   updatePlan,
   type Db,
 } from "../src/store";
@@ -117,6 +119,23 @@ describe("plan completion and the work item", () => {
 });
 
 describe("the merge owns the closure", () => {
+  test("starting an execution moves the item to doing and never reopens a closed one", () => {
+    const { db, item } = setup();
+    const target = item("Starts working");
+    expect(getWorkItem(db, target.id)?.status).toBe("backlog");
+
+    const ready = setWorkItemStatus(db, { id: target.id, status: "ready" });
+    expect(ready.ok).toBe(true);
+    expect(markWorkItemDoing(db, target.id).moved).toBe(target.id);
+    expect(getWorkItem(db, target.id)?.status).toBe("doing");
+    // Doing twice is a no-op.
+    expect(markWorkItemDoing(db, target.id).moved).toBe(null);
+
+    expect(closeWorkItemForMerge(db, target.id).closed).toBe(target.id);
+    expect(markWorkItemDoing(db, target.id).moved).toBe(null);
+    expect(getWorkItem(db, target.id)?.status).toBe("done");
+  });
+
   test("inside a run the plan does not close the item; the merge does", () => {
     const { db, item, plan } = setup();
     const target = item("In a run");

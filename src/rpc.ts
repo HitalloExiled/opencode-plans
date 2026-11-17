@@ -42,6 +42,7 @@ import {
   deleteWorkItem as deleteWorkItemRow,
   finishPlanExecutions,
   openPlanExecutions,
+  markWorkItemDoing,
   depEdges,
   getPlan,
   getPlanByWorkItem,
@@ -767,6 +768,10 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         sessionID: input.sessionID ?? plan.session_id,
       });
       if (!result.ok) return { ok: false, error: result.error, blocked: result.blocked };
+      // The item is being worked on from now on: it stays doing until the merge
+      // closes it. A plan without an item never reaches this point.
+      const moved = markWorkItemDoing(store.db, itemID);
+      if (moved.moved) emitPlanChange({ sessionID: "", planID: plan.id });
       return {
         ok: true,
         mode: result.mode,

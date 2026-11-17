@@ -796,6 +796,23 @@ export function closeWorkItemForPlan(
 }
 
 /**
+ * Marks the item as being worked on when its plan starts executing. Like the
+ * merge closure this is the engine deciding, not an agent moving a need, so it
+ * writes the column directly; a finished or dropped item is never reopened.
+ */
+export function markWorkItemDoing(db: Db, workItemID: string): { moved: string | null } {
+  const item = getWorkItem(db, workItemID);
+  if (!item || item.status === "doing" || item.status === "done" || item.status === "dropped") {
+    return { moved: null };
+  }
+  const now = nowTimestamp();
+  db.prepare(
+    "UPDATE work_items SET status = 'doing', closed_at = NULL, updated_at = ? WHERE id = ?",
+  ).run(now, item.id);
+  return { moved: item.id };
+}
+
+/**
  * Closes the item once its work is integrated — the merge queue in a parallel
  * run, or `run/<id>` in a solo one. The caller is the one that confirmed the
  * integration, so this writes the column directly (the agent transition table
