@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   GRAPH_NODE_HEIGHT,
   GRAPH_PAD,
+  isTerminalWorkStatus,
   layoutWorkGraph,
   wouldCreateCycle,
   type GraphNodeInput,
@@ -86,5 +87,18 @@ describe("wouldCreateCycle", () => {
 
   test("rejects self-dependency", () => {
     expect(wouldCreateCycle([], "a", "a")).toBe(true);
+  });
+});
+
+describe("isTerminalWorkStatus", () => {
+  test("marks the closed states as terminal", () => {
+    expect(isTerminalWorkStatus("done")).toBe(true);
+    expect(isTerminalWorkStatus("dropped")).toBe(true);
+  });
+
+  test("keeps every open state actionable", () => {
+    for (const status of ["backlog", "ready", "doing", "blocked"] as const) {
+      expect(isTerminalWorkStatus(status)).toBe(false);
+    }
   });
 });

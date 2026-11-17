@@ -17,6 +17,7 @@ import {
   GRAPH_NODE_HEIGHT,
   GRAPH_NODE_WIDTH,
   GRAPH_PAD,
+  isTerminalWorkStatus,
   layoutWorkGraph,
   wouldCreateCycle,
   type GraphPlacement,
@@ -565,22 +566,24 @@ export function WorkGraph(props: {
                               </span>
                               <span class="work-graph-node-title">{node.title}</span>
                               <span class="work-graph-node-foot">
-                                <Show when={props.onAction}>
-                                  <Show
-                                    when={props.isRunning?.(node.id)}
-                                    fallback={
-                                      <ctx.ui.IconButton
-                                        class={props.hasPlan?.(node.id) ? "play-icon" : undefined}
-                                        icon={props.hasPlan?.(node.id) ? "fill-triangle-down" : "brain"}
-                                        label={t(props.hasPlan?.(node.id) ? "work.card.execute" : "work.card.plan")}
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          props.onAction?.(node.id);
-                                        }}
-                                      />
-                                    }
-                                  >
-                                    <StatusChip tone="info" label={t("run.item.running")} />
+                                <Show when={!isTerminalWorkStatus(node.status)}>
+                                  <Show when={props.onAction}>
+                                    <Show
+                                      when={props.isRunning?.(node.id)}
+                                      fallback={
+                                        <ctx.ui.IconButton
+                                          class={props.hasPlan?.(node.id) ? "play-icon" : undefined}
+                                          icon={props.hasPlan?.(node.id) ? "fill-triangle-down" : "brain"}
+                                          label={t(props.hasPlan?.(node.id) ? "work.card.execute" : "work.card.plan")}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            props.onAction?.(node.id);
+                                          }}
+                                        />
+                                      }
+                                    >
+                                      <StatusChip tone="info" label={t("run.item.running")} />
+                                    </Show>
                                   </Show>
                                 </Show>
                                 <Show when={node.plan}>

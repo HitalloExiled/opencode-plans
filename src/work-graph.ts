@@ -35,6 +35,14 @@ export const GRAPH_GAP_X = 90;
 export const GRAPH_GAP_Y = 16;
 export const GRAPH_PAD = 24;
 
+/**
+ * A closed work item offers no follow-up action: the engine closes it on
+ * `done`, the user on `dropped`, so the card buttons must not show.
+ */
+export function isTerminalWorkStatus(status: string): boolean {
+  return status === "done" || status === "dropped";
+}
+
 function orderNodes(nodes: readonly GraphNodeInput[]): GraphNodeInput[] {
   return [...nodes].sort((a, b) => {
     if (a.rank !== b.rank) return a.rank - b.rank;

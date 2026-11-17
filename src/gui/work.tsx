@@ -35,6 +35,7 @@ import {
 import { useT } from "./i18n";
 import { executionFor, planTarget } from "./execution";
 import { filterWorkGroups } from "../work-filter";
+import { isTerminalWorkStatus } from "../work-graph";
 import { planProgressOf } from "../work-progress";
 import { planWorkItem } from "./plan-item";
 import { openPlanDialog } from "./plan-dialog";
@@ -1495,22 +1496,24 @@ export function WorkBody(props: {
                                       </Show>
                                     </div>
                                     <span class="work-card-progress">
-                                      <Show
-                                        when={executingItem(item.id)}
-                                        fallback={
-                                          <ctx.ui.IconButton
-                                            class={plansByItem().get(item.id) ? "play-icon" : undefined}
-                                            icon={plansByItem().get(item.id) ? "fill-triangle-down" : "brain"}
-                                            label={t(plansByItem().get(item.id) ? "work.card.execute" : "work.card.plan")}
-                                            disabled={planning()}
-                                            onClick={(event) => {
-                                              event.stopPropagation();
-                                              cardAction(item.id);
-                                            }}
-                                          />
-                                        }
-                                      >
-                                        <StatusChip tone="info" label={t("run.item.running")} />
+                                      <Show when={!isTerminalWorkStatus(item.status)}>
+                                        <Show
+                                          when={executingItem(item.id)}
+                                          fallback={
+                                            <ctx.ui.IconButton
+                                              class={plansByItem().get(item.id) ? "play-icon" : undefined}
+                                              icon={plansByItem().get(item.id) ? "fill-triangle-down" : "brain"}
+                                              label={t(plansByItem().get(item.id) ? "work.card.execute" : "work.card.plan")}
+                                              disabled={planning()}
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                cardAction(item.id);
+                                              }}
+                                            />
+                                          }
+                                        >
+                                          <StatusChip tone="info" label={t("run.item.running")} />
+                                        </Show>
                                       </Show>
                                       <Show when={plansByItem().get(item.id)}>
                                         {(plan) => (
@@ -1608,22 +1611,24 @@ export function WorkBody(props: {
                                   </Show>
                                 </div>
                                 <span class="work-card-progress">
-                                  <Show
-                                    when={executingItem(entry.item.id)}
-                                    fallback={
-                                      <ctx.ui.IconButton
-                                        class={plansByItem().get(entry.item.id) ? "play-icon" : undefined}
-                                        icon={plansByItem().get(entry.item.id) ? "fill-triangle-down" : "brain"}
-                                        label={t(plansByItem().get(entry.item.id) ? "work.card.execute" : "work.card.plan")}
-                                        disabled={planning()}
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          cardAction(entry.item.id);
-                                        }}
-                                      />
-                                    }
-                                  >
-                                    <StatusChip tone="info" label={t("run.item.running")} />
+                                  <Show when={!isTerminalWorkStatus(entry.item.status)}>
+                                    <Show
+                                      when={executingItem(entry.item.id)}
+                                      fallback={
+                                        <ctx.ui.IconButton
+                                          class={plansByItem().get(entry.item.id) ? "play-icon" : undefined}
+                                          icon={plansByItem().get(entry.item.id) ? "fill-triangle-down" : "brain"}
+                                          label={t(plansByItem().get(entry.item.id) ? "work.card.execute" : "work.card.plan")}
+                                          disabled={planning()}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            cardAction(entry.item.id);
+                                          }}
+                                        />
+                                      }
+                                    >
+                                      <StatusChip tone="info" label={t("run.item.running")} />
+                                    </Show>
                                   </Show>
                                   <Show when={plansByItem().get(entry.item.id)}>
                                     {(plan) => (
