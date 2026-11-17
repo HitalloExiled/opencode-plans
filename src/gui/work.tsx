@@ -52,8 +52,14 @@ export const workView = viewMode;
 
 /** Itens | Visão geral | Ajustes: the initiative detail, one screen at a time. */
 export type WorkTab = "items" | "overview" | "settings";
-const WORK_TABS: readonly WorkTab[] = ["items", "overview", "settings"];
+/** Items is the base screen; the header toggles switch to the other two. */
+const WORK_TABS: readonly WorkTab[] = ["overview", "settings"];
 const [workTab, setWorkTab] = createSignal<WorkTab>("items");
+
+/** Opens the detail on a tab; the launcher uses it after creating an initiative. */
+export const openWorkTab = (tab: WorkTab): void => {
+  setWorkTab(tab);
+};
 
 export const workWideMode = (): boolean => workTab() === "items" && viewMode() !== "list";
 
@@ -788,7 +794,8 @@ export function WorkBody(props: {
       onCreated: (initiative) => {
         props.onInitiativeChanged(initiative);
         props.onSelectInitiative(initiative.id);
-        setWorkTab("items");
+        // The name is all we have: Settings is where the rest is configured.
+        setWorkTab("settings");
       },
     });
   };
@@ -1149,22 +1156,24 @@ export function WorkBody(props: {
             <ctx.ui.Button size="small" variant="ghost" icon="plus" onClick={createInitiative}>
               {t("work.initiative.new")}
             </ctx.ui.Button>
+            <div class="work-bar-gap" />
+            <div class="work-tabs" role="tablist" aria-label={t("work.tab.label")}>
+              <For each={WORK_TABS}>
+                {(entry) => (
+                  <ctx.ui.Button
+                    size="small"
+                    variant={workTab() === entry ? "neutral" : "ghost"}
+                    onClick={() => setWorkTab(workTab() === entry ? "items" : entry)}
+                  >
+                    {t(`work.tab.${entry}`)}
+                  </ctx.ui.Button>
+                )}
+              </For>
+            </div>
           </div>
 
-          <div class="work-tabs" role="tablist" aria-label={t("work.tab.label")}>
-            <For each={WORK_TABS}>
-              {(entry) => (
-                <ctx.ui.Button
-                  size="small"
-                  variant={workTab() === entry ? "neutral" : "ghost"}
-                  onClick={() => setWorkTab(entry)}
-                >
-                  {t(`work.tab.${entry}`)}
-                </ctx.ui.Button>
-              )}
-            </For>
-            <div class="work-bar-gap" />
-            <Show when={workTab() === "items"}>
+          <Show when={workTab() === "items"}>
+            <div class="work-toolbar">
               <div class="work-view-switch" role="group" aria-label={t("work.view.label")}>
                 <ctx.ui.Button
                   size="small"
@@ -1191,8 +1200,29 @@ export function WorkBody(props: {
                   {t("work.view.graph")}
                 </ctx.ui.Button>
               </div>
-            </Show>
-          </div>
+              <div class="work-bar-gap" />
+              <Show when={hasAgentItems()}>
+                <ctx.ui.Button
+                  size="small"
+                  variant={agentOnly() ? "neutral" : "ghost"}
+                  icon="review"
+                  onClick={() => setAgentOnly((value) => !value)}
+                >
+                  {t("work.filter.agent")}
+                </ctx.ui.Button>
+              </Show>
+              <Show when={hasDropped()}>
+                <ctx.ui.Button
+                  size="small"
+                  variant={showDropped() ? "neutral" : "ghost"}
+                  icon="archive"
+                  onClick={() => setShowDropped((value) => !value)}
+                >
+                  {t("work.filter.dropped")}
+                </ctx.ui.Button>
+              </Show>
+            </div>
+          </Show>
 
           <Show when={workTab() === "items"}>
             <div class="work-toolbar">
@@ -1234,27 +1264,6 @@ export function WorkBody(props: {
               >
                 {t("work.newItem")}
               </ctx.ui.Button>
-              <div class="work-bar-gap" />
-              <Show when={hasAgentItems()}>
-                <ctx.ui.Button
-                  size="small"
-                  variant={agentOnly() ? "neutral" : "ghost"}
-                  icon="review"
-                  onClick={() => setAgentOnly((value) => !value)}
-                >
-                  {t("work.filter.agent")}
-                </ctx.ui.Button>
-              </Show>
-              <Show when={hasDropped()}>
-                <ctx.ui.Button
-                  size="small"
-                  variant={showDropped() ? "neutral" : "ghost"}
-                  icon="archive"
-                  onClick={() => setShowDropped((value) => !value)}
-                >
-                  {t("work.filter.dropped")}
-                </ctx.ui.Button>
-              </Show>
             </div>
           </Show>
 

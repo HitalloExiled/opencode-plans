@@ -7,10 +7,10 @@
 
 import { createSignal } from "solid-js";
 
-export type OverlayMode = "initiatives" | "work" | "plans";
+export type OverlayMode = "work" | "plans";
 
 const [opened, setOpened] = createSignal(false);
-const [mode, setMode] = createSignal<OverlayMode>("initiatives");
+const [mode, setMode] = createSignal<OverlayMode>("work");
 const [pendingWorkItem, setPendingWorkItem] = createSignal<string | null>(null);
 
 export const plansOverlayOpen = opened;

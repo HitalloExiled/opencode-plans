@@ -22,8 +22,8 @@ import { builtinServer, globalTarget } from "./page";
 import { closePlansOverlay, openPlansOverlay, overlayMode, plansOverlayOpen, type OverlayMode } from "./overlay-state";
 import type { PlansTarget } from "./view";
 import { PlansBody } from "./view";
-import { WorkBody, workWideMode } from "./work";
-import { InitiativesBody } from "./initiatives";
+import { WorkBody, workWideMode, openWorkTab } from "./work";
+import { openInitiativeDialog } from "./initiative-dialog";
 import { initiativeSelection } from "./initiative-selection";
 
 const CSS = `
@@ -81,7 +81,7 @@ export function PlansPill(props: { active: boolean }) {
     const server = builtinServer(ctx);
     return server ? globalTarget(server) : null;
   };
-  const modes: readonly OverlayMode[] = ["initiatives", "work", "plans"];
+  const modes: readonly OverlayMode[] = ["work", "plans"];
   return (
     <Show when={props.active}>
       <div class="plans-nav" role="group" aria-label={t("view.label")}>
@@ -117,8 +117,8 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
   const selection = initiativeSelection(ctx);
   const [initiativeId, setInitiativeId] = createSignal<string | null>(selection.value?.id ?? null);
   const [initiatives, setInitiatives] = createSignal<Initiative[]>([]);
-  const [initiativesLoading, setInitiativesLoading] = createSignal(true);
-  const [initiativesError, setInitiativesError] = createSignal<string | null>(null);
+  const [initiativesLoaded, setInitiativesLoaded] = createSignal(false);
+  const [emptyPrompted, setEmptyPrompted] = createSignal(false);
   const [initiativesRevision, setInitiativesRevision] = createSignal(0);
   let panel: HTMLDivElement | undefined;
   let previous: Element | null = null;
@@ -144,14 +144,36 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
 
   createEffect(() => {
     void initiativesRevision();
-    setInitiativesLoading(true);
-    setInitiativesError(null);
     void props.target()
       .server.client.rpc(PlansRpc)
       .listInitiatives({})
-      .then((list) => setInitiatives(list as Initiative[]))
-      .catch((cause: unknown) => setInitiativesError(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => setInitiativesLoading(false));
+      .then((list) => {
+        setInitiatives(list as Initiative[]);
+        setInitiativesLoaded(true);
+      })
+      .catch(() => setInitiativesLoaded(true));
+  });
+
+  // With no initiative at all there is nothing to pick from: offer the create
+  // dialog once per empty episode, then land on Settings to fill the rest in.
+  createEffect(() => {
+    if (!initiativesLoaded()) return;
+    if (initiatives().length > 0) {
+      setEmptyPrompted(false);
+      return;
+    }
+    if (emptyPrompted()) return;
+    setEmptyPrompted(true);
+    openInitiativeDialog({
+      ctx,
+      server: props.target().server,
+      onCreated: (initiative) => {
+        upsert(initiative);
+        select(initiative.id);
+        openPlansOverlay("work");
+        openWorkTab("settings");
+      },
+    });
   });
 
   createEffect(() => {
@@ -235,23 +257,6 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
           <ctx.ui.IconButton icon="close" label={t("close")} onClick={() => props.onClose()} />
         </div>
         <div class="plans-modal-body">
-          <Show when={overlayMode() === "initiatives"}>
-            <InitiativesBody
-              server={props.target().server}
-              initiatives={initiatives()}
-              loading={initiativesLoading()}
-              error={initiativesError()}
-              onOpen={(id) => {
-                select(id);
-                openPlansOverlay("work");
-              }}
-              onCreated={(initiative) => {
-                upsert(initiative);
-                select(initiative.id);
-                openPlansOverlay("work");
-              }}
-            />
-          </Show>
           <Show when={overlayMode() === "work"}>
             <WorkBody
               target={() => ({
@@ -270,7 +275,6 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
                 else {
                   setInitiativeId(null);
                   selection.set({ id: null });
-                  openPlansOverlay("initiatives");
                 }
               }}
             />
