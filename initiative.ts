@@ -3,7 +3,7 @@
  * "initiative" namespace).
  *
  * An initiative is the user's grouping of needs across repositories. The agent
- * creates, lists and reads them here; editing (rename, description, macro view)
+ * creates, lists and reads them here; editing (rename, description, overview)
  * stays in the panel. Work items are created with `work.save({ initiativeID })`.
  */
 
@@ -58,7 +58,7 @@ type GetText = {
 
 const GET_TEXT: Record<NotificationLocale, GetText> = {
   "en-us": {
-    overview: "Macro view",
+    overview: "Overview",
     items: "Items",
     repos: "Repositories",
     base: "Base branch",
@@ -68,7 +68,7 @@ const GET_TEXT: Record<NotificationLocale, GetText> = {
     empty: "No work items yet.",
   },
   "pt-br": {
-    overview: "Visão macro",
+    overview: "Visão geral",
     items: "Itens",
     repos: "Repositórios",
     base: "Branch base",
@@ -146,13 +146,13 @@ export function createInitiativeTool(ctx: Ctx) {
 }
 
 /**
- * The macro view plus the work map: what a planning session needs to place a
+ * The overview plus the work map: what a planning session needs to place a
  * card in the initiative without already having the seed.
  */
 export function getInitiativeTool(ctx: Ctx) {
   return {
     name: "get",
-    description: "Read an initiative: macro view, repositories and the work map.",
+    description: "Read an initiative: overview, repositories and the work map.",
     input: getInput,
     async execute(input: z.infer<typeof getInput>): Promise<ToolResult> {
       try {

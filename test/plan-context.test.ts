@@ -6,7 +6,7 @@ const KEYS: Record<string, string> = {
   "work.plan.context.title": "## Context",
   "work.plan.context.repo": "Repository: {0}",
   "work.plan.context.initiative": "Initiative: {0}",
-  "work.plan.context.overview": "Macro view:",
+  "work.plan.context.overview": "Overview:",
   "work.plan.context.map": "Work map ({0} cards):",
   "work.plan.context.read": "Read the repository before planning.",
   "work.plan.context.touches": "Declare `touches` in `plans.save`.",
@@ -32,12 +32,12 @@ const map = [
 ];
 
 describe("planContext", () => {
-  test("brings the repository, the initiative, the macro view and the map", () => {
+  test("brings the repository, the initiative, the overview and the map", () => {
     const out = planContext({ repo: "/work/app", initiative, map }, t);
     expect(out).toContain("## Context");
     expect(out).toContain("Repository: /work/app");
     expect(out).toContain("Initiative: Todo List");
-    expect(out).toContain("Macro view:\n\n# What");
+    expect(out).toContain("Overview:\n\n# What");
     expect(out).toContain("Work map (2 cards):");
     expect(out).toContain("- [ready] Search — blocked by Base (done)");
     expect(out).toContain("Read the repository before planning.");
@@ -48,11 +48,11 @@ describe("planContext", () => {
     const out = planContext({ initiative: { name: "Empty" }, map: [] }, t);
     expect(out).toContain("Initiative: Empty");
     expect(out).not.toContain("Repository:");
-    expect(out).not.toContain("Macro view:");
+    expect(out).not.toContain("Overview:");
     expect(out).not.toContain("Work map");
   });
 
-  test("caps a long macro view and a long map", () => {
+  test("caps a long overview and a long map", () => {
     const long = "x".repeat(6500);
     const many = Array.from({ length: 45 }, (_, index): PlanContextInput["map"][number] => ({
       id: `i${index}`,

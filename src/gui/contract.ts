@@ -105,7 +105,7 @@ export type Initiative = {
   id: string;
   name: string;
   description?: string | undefined;
-  /** Macro view: what the initiative is, read by the agent when planning. */
+  /** Overview: what the initiative is, read by the agent when planning. */
   overview?: string | undefined;
   createdAt: string;
   updatedAt: string;
@@ -196,7 +196,7 @@ export type WorkMapEntry = {
 export type WorkItemDetail = {
   item: WorkItem & { body: string; closedAt?: string | undefined };
   initiative: Initiative;
-  /** Every card of the initiative with its blockers (the macro view). */
+  /** Every card of the initiative with its blockers (the overview). */
   map: readonly WorkMapEntry[];
   /** Items this one depends on. */
   blockedBy: readonly WorkItem[];

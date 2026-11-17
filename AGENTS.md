@@ -247,10 +247,10 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   workspace resolution is unchanged. An item created there takes the
   initiative's primary repo, or none when it has no repos.
 - **Initiative tools** (`initiative.*`): `list` (id, name, repos, item counts),
-  `get` (repos, base branch, macro view and the work map) and `create` (name +
-  optional description). Renaming, the description and the macro view stay in
+  `get` (repos, base branch, overview and the work map) and `create` (name +
+  optional description). Renaming, the description and the overview stay in
   the panel; repositories are born from the plan picker.
-- **The initiative carries a macro view.** `initiatives.overview` (schema v12)
+- **The initiative carries an overview.** `initiatives.overview` (schema v12)
   is a markdown document (product, stack, conventions) kept apart from
   `description`, which stays the one-line summary of the card and of the
   selector. The panel edits it; `initiative.get` exposes it to any session. The
@@ -258,7 +258,7 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   work map (40 cards), which is never stored.
 - **The planning seed carries the item's context.** `planWorkItem`
   (`src/gui/plan-item.ts`) prepends `planContext` (`src/gui/plan-context.ts`,
-  pure and tested): repository path, initiative name, macro view, the work map
+  pure and tested): repository path, initiative name, overview, the work map
   (status + blockers, from `getWorkItem`'s `map`) and the instructions to read
   the repository before planning and to declare `touches` in `plans.save`. It is
   per item, so it goes in the seed (a user message), never in the constant

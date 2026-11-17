@@ -1,6 +1,6 @@
 /**
  * The context a planning session starts with: where it runs, which initiative
- * the item belongs to, the initiative's macro view and the map of cards.
+ * the item belongs to, the initiative's overview and the map of cards.
  *
  * Pure and localized through `t`, because the same block feeds the native and
  * the dedicated seeds and must be testable without the UI. It goes in the seed

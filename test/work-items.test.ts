@@ -380,7 +380,7 @@ describe("work item containment", () => {
   });
 });
 
-describe("initiative macro view", () => {
+describe("initiative overview", () => {
   test("schema v12 carries the overview column", () => {
     const db = open();
     const columns = db.prepare("PRAGMA table_info(initiatives)").all() as { name: string }[];

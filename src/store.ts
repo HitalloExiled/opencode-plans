@@ -386,7 +386,7 @@ export function initSchema(db: Db): void {
   if (!hasColumn(db, "initiatives", "description")) {
     db.prepare("ALTER TABLE initiatives ADD COLUMN description TEXT").run();
   }
-  // v12 — the initiative's macro view, read by the agent when it plans.
+  // v12 — the initiative's overview, read by the agent when it plans.
   if (!hasColumn(db, "initiatives", "overview")) {
     db.prepare("ALTER TABLE initiatives ADD COLUMN overview TEXT").run();
   }
@@ -1192,7 +1192,7 @@ export type InitiativeRow = {
   id: string;
   name: string;
   description: string | null;
-  /** The macro view: what the initiative is, for humans and for planning. */
+  /** The overview: what the initiative is, for humans and for planning. */
   overview: string | null;
   /** Integration base for runs; null means the repo default branch. */
   base_branch: string | null;
@@ -1299,7 +1299,7 @@ export type UpdateInitiativeInput = {
   overview?: string | null | undefined;
 };
 
-/** Renames and/or rewrites the description or the macro view; omitted fields are kept. */
+/** Renames and/or rewrites the description or the overview; omitted fields are kept. */
 export function updateInitiative(db: Db, input: UpdateInitiativeInput): InitiativeOk | WorkStoreError {
   const current = getInitiative(db, input.id);
   if (!current) return { ok: false, error: `iniciativa não encontrada: ${input.id}` };
@@ -1801,7 +1801,7 @@ export function workItemDeps(db: Db, itemID: string): WorkItemDeps {
   return { blockedBy, blocks };
 }
 
-/** Every card of an initiative with its blockers, for the planner's macro view. */
+/** Every card of an initiative with its blockers, for the planner's overview. */
 export function initiativeMap(db: Db, initiativeID: string): WorkMapEntry[] {
   return sortWorkItems(listWorkItems(db, initiativeID)).map((item) => ({
     id: item.id,
