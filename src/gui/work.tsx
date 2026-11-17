@@ -1376,17 +1376,16 @@ export function WorkBody(props: {
                                         </span>
                                       )}
                                     </Show>
-                                    <span class={plansByItem().get(item.id) ? "play-icon" : undefined}>
-                                      <ctx.ui.IconButton
-                                        icon={plansByItem().get(item.id) ? "fill-triangle-down" : "brain"}
-                                        label={t(plansByItem().get(item.id) ? "work.card.execute" : "work.card.plan")}
-                                        disabled={planning()}
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          cardAction(item.id);
-                                        }}
-                                      />
-                                    </span>
+                                    <ctx.ui.IconButton
+                                      class={plansByItem().get(item.id) ? "play-icon" : undefined}
+                                      icon={plansByItem().get(item.id) ? "fill-triangle-down" : "brain"}
+                                      label={t(plansByItem().get(item.id) ? "work.card.execute" : "work.card.plan")}
+                                      disabled={planning()}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        cardAction(item.id);
+                                      }}
+                                    />
                                   </div>
                                 )}
                               </For>
@@ -1489,17 +1488,16 @@ export function WorkBody(props: {
                                   <Show when={entry.item.origin === "agent"}>
                                     <StatusChip label={t("work.agent")} tone="info" />
                                   </Show>
-                                  <span class={plansByItem().get(entry.item.id) ? "play-icon" : undefined}>
-                                    <ctx.ui.IconButton
-                                      icon={plansByItem().get(entry.item.id) ? "fill-triangle-down" : "brain"}
-                                      label={t(plansByItem().get(entry.item.id) ? "work.card.execute" : "work.card.plan")}
-                                      disabled={planning()}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        cardAction(entry.item.id);
-                                      }}
-                                    />
-                                  </span>
+                                  <ctx.ui.IconButton
+                                    class={plansByItem().get(entry.item.id) ? "play-icon" : undefined}
+                                    icon={plansByItem().get(entry.item.id) ? "fill-triangle-down" : "brain"}
+                                    label={t(plansByItem().get(entry.item.id) ? "work.card.execute" : "work.card.plan")}
+                                    disabled={planning()}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      cardAction(entry.item.id);
+                                    }}
+                                  />
                                 </span>
                               </div>
                             )}

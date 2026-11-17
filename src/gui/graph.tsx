@@ -554,11 +554,11 @@ export function WorkGraph(props: {
                             <span class="work-graph-node-title">{node.title}</span>
                             <Show when={props.onAction}>
                               <span
-                                class={props.hasPlan?.(node.id) ? "play-icon" : undefined}
                                 style={{ position: "absolute", top: "4px", right: "4px" }}
                                 onClick={(event) => event.stopPropagation()}
                               >
                                 <ctx.ui.IconButton
+                                  class={props.hasPlan?.(node.id) ? "play-icon" : undefined}
                                   icon={props.hasPlan?.(node.id) ? "fill-triangle-down" : "brain"}
                                   label={t(props.hasPlan?.(node.id) ? "work.card.execute" : "work.card.plan")}
                                   onClick={() => props.onAction?.(node.id)}
