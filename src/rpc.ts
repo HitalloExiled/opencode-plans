@@ -29,6 +29,7 @@ import { captureWorkItem } from "./work-capture.js";
 import { notificationLocale, tn } from "./notifications.js";
 import { emitPlanChange } from "./plan-events.js";
 import { cancelProjectRun, preflightRun, resumeProjectRun, retryRunItem, startProjectRun } from "./run-engine.js";
+import { beginWork, endWork } from "./work-execution.js";
 import {
   activeRun,
   addInitiativeRepo,
@@ -39,6 +40,7 @@ import {
   deleteInitiative as deleteInitiativeRow,
   deletePlan,
   deleteWorkItem as deleteWorkItemRow,
+  finishPlanExecutions,
   depEdges,
   getPlan,
   getPlanByWorkItem,
@@ -735,6 +737,37 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
     runCancel: async (input) => {
       const store = await requireStore();
       return cancelProjectRun(ctx, store.db, input.runID);
+    },
+
+    executionBegin: async (input) => {
+      const store = await requireStore();
+      const plan = getPlan(store.db, input.planID);
+      if (!plan) return { ok: false, error: `plano não encontrado: ${input.planID}` };
+      const itemID = input.workItemID ?? plan.work_item_id ?? undefined;
+      // A plan without a work item keeps today's behavior: no branch.
+      if (!itemID) return { ok: true, skipped: true };
+      const result = await beginWork({
+        db: store.db,
+        repo: plan.project_directory,
+        itemID,
+        planID: plan.id,
+        sessionID: input.sessionID ?? plan.session_id,
+      });
+      if (!result.ok) return { ok: false, error: result.error };
+      return {
+        ok: true,
+        mode: result.mode,
+        branch: result.branch,
+        directory: result.directory,
+        executionID: result.execution.id,
+      };
+    },
+
+    executionEnd: async (input) => {
+      const store = await requireStore();
+      endWork(store.db, input.planID);
+      finishPlanExecutions(store.db, input.planID);
+      return { ok: true };
     },
 
     runResume: async (input) => {

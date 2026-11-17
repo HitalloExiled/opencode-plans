@@ -126,7 +126,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -255,6 +255,21 @@ const BASE_SCHEMA = [
     path TEXT NOT NULL,
     PRIMARY KEY (plan_id, path)
   )`,
+  // v10 — one row per plan execution (interactive or run), so "is anybody else
+  // working on this repo?" is answerable across both paths.
+  `CREATE TABLE IF NOT EXISTS executions (
+    id TEXT PRIMARY KEY,
+    repo TEXT NOT NULL,
+    work_item_id TEXT,
+    plan_id TEXT,
+    session_id TEXT,
+    mode TEXT NOT NULL,
+    branch TEXT,
+    worktree TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_executions_repo ON executions(repo, finished_at)`,
 ];
 
 function apply(db: Db, statements: readonly string[]): void {
@@ -2024,6 +2039,121 @@ export function activeRun(db: Db, initiativeID: string): RunRow | undefined {
   return db
     .prepare("SELECT * FROM runs WHERE initiative_id = ? AND status IN ('running', 'interrupted')")
     .get(initiativeID) as RunRow | undefined;
+}
+
+/* ------------------------------------------------------------------ */
+/* Executions — who is working on a repository right now               */
+/* ------------------------------------------------------------------ */
+
+export type ExecutionMode = "solo" | "worktree";
+
+export type ExecutionRow = {
+  id: string;
+  repo: string;
+  work_item_id: string | null;
+  plan_id: string | null;
+  session_id: string | null;
+  mode: ExecutionMode;
+  branch: string | null;
+  worktree: string | null;
+  started_at: string;
+  finished_at: string | null;
+};
+
+export type StartExecutionInput = {
+  repo: string;
+  workItemID?: string | null;
+  planID?: string | null;
+  sessionID?: string | null;
+  mode: ExecutionMode;
+  branch: string;
+  worktree?: string | null;
+};
+
+export type ExecutionOk = { ok: true; execution: ExecutionRow };
+
+/** A row left open by a crashed app must not block solo executions forever. */
+export const EXECUTION_STALE_HOURS = 12;
+
+function executionCutoff(hours = EXECUTION_STALE_HOURS): string {
+  return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+}
+
+export function getExecution(db: Db, id: string): ExecutionRow | undefined {
+  return db.prepare("SELECT * FROM executions WHERE id = ?").get(id) as ExecutionRow | undefined;
+}
+
+export function startExecution(db: Db, input: StartExecutionInput): ExecutionOk | WriteError {
+  const repo = input.repo.trim();
+  if (!repo) return { ok: false, error: "o repositório da execução é obrigatório" };
+  if (!input.branch.trim()) return { ok: false, error: "a branch da execução é obrigatória" };
+  const id = crypto.randomUUID();
+  try {
+    db.prepare(
+      `INSERT INTO executions (id, repo, work_item_id, plan_id, session_id, mode, branch, worktree, started_at, finished_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    ).run(
+      id,
+      repo,
+      input.workItemID ?? null,
+      input.planID ?? null,
+      input.sessionID ?? null,
+      input.mode,
+      input.branch.trim(),
+      input.worktree ?? null,
+      nowTimestamp(),
+    );
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  const execution = getExecution(db, id);
+  if (!execution) return { ok: false, error: "execução não encontrada após a criação" };
+  return { ok: true, execution };
+}
+
+export function finishExecution(db: Db, id: string): Ok | WriteError {
+  const execution = getExecution(db, id);
+  if (!execution) return { ok: false, error: `execução não encontrada: ${id}` };
+  if (execution.finished_at) return { ok: true };
+  try {
+    db.prepare("UPDATE executions SET finished_at = ? WHERE id = ?").run(nowTimestamp(), id);
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
+/** In-flight executions in a repository, ignoring rows older than the cutoff. */
+export function activeExecutions(db: Db, repo: string, exceptID?: string): ExecutionRow[] {
+  const rows = db
+    .prepare(
+      "SELECT * FROM executions WHERE repo = ? AND finished_at IS NULL AND started_at >= ? ORDER BY started_at",
+    )
+    .all(repo.trim(), executionCutoff()) as ExecutionRow[];
+  return exceptID ? rows.filter((row) => row.id !== exceptID) : rows;
+}
+
+/** Closes every open execution of a plan; idempotent. */
+export function finishPlanExecutions(db: Db, planID: string): number {
+  const rows = db
+    .prepare("SELECT id FROM executions WHERE plan_id = ? AND finished_at IS NULL")
+    .all(planID) as { id: string }[];
+  for (const row of rows) {
+    db.prepare("UPDATE executions SET finished_at = ? WHERE id = ?").run(nowTimestamp(), row.id);
+  }
+  return rows.length;
+}
+
+/** Closes the rows a dead process left open; returns how many were closed. */
+export function staleExecutions(db: Db, hours = EXECUTION_STALE_HOURS): number {
+  const cutoff = executionCutoff(hours);
+  const rows = db
+    .prepare("SELECT id FROM executions WHERE finished_at IS NULL AND started_at < ?")
+    .all(cutoff) as { id: string }[];
+  for (const row of rows) {
+    db.prepare("UPDATE executions SET finished_at = ? WHERE id = ?").run(nowTimestamp(), row.id);
+  }
+  return rows.length;
 }
 
 export type CreateRunInput = {

@@ -561,6 +561,30 @@ export const updateInputSchema = Schema.Struct({
   locale: optString,
 });
 
+export const executionBeginInputSchema = Schema.Struct({
+  planID: Schema.String,
+  workItemID: optString,
+  sessionID: optString,
+});
+
+export const executionBeginViewSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  error: optString,
+  skipped: Schema.optional(Schema.Boolean),
+  mode: optString,
+  branch: optString,
+  directory: optString,
+});
+
+export type ExecutionBeginView = {
+  ok: boolean;
+  error?: string | undefined;
+  skipped?: boolean | undefined;
+  mode?: string | undefined;
+  branch?: string | undefined;
+  directory?: string | undefined;
+};
+
 export const setPlanWorkItemInputSchema = Schema.Struct({
   id: Schema.String,
   workItemID: Schema.NullOr(Schema.String),
@@ -920,6 +944,14 @@ export const PlansRpc = Rpc.define({
     },
     runCancel: {
       input: Schema.toStandardSchemaV1(runIDInputSchema),
+      output: Schema.toStandardSchemaV1(opResultSchema),
+    },
+    executionBegin: {
+      input: Schema.toStandardSchemaV1(executionBeginInputSchema),
+      output: Schema.toStandardSchemaV1(executionBeginViewSchema),
+    },
+    executionEnd: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({ planID: Schema.String })),
       output: Schema.toStandardSchemaV1(opResultSchema),
     },
     runResume: {
