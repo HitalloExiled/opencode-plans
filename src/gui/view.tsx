@@ -46,7 +46,8 @@ const CSS = `
 .plans-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .plans-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
 .plans-title-text { margin: 0; font-size: 13px; font-weight: 600; }
-.plans-count { font-size: 11px; color: var(--v2-text-text-muted); }
+.plans-count { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--v2-text-text-muted); }
+.plans-count-sep { color: var(--v2-text-text-faint); }
 .plans-actions { display: flex; align-items: center; gap: 6px; }
 .plans-filters { display: flex; flex-direction: column; gap: 8px; }
 .plans-toggles { display: flex; align-items: center; gap: 4px; }
@@ -1122,8 +1123,13 @@ export function PlansBody(props: { target: () => PlansTarget }) {
               <h2 class="plans-title-text">{t("title")}</h2>
             </Show>
             <span class="plans-count">
-              {filteredPlans().length}
-              {total() !== null && total() !== filteredPlans().length ? ` / ${total()}` : ""}
+              <Show when={!detached()}>
+                <span class="plans-count-sep" aria-hidden="true">·</span>
+              </Show>
+              {t("plans.showing", filteredPlans().length)}
+              {total() !== null && total() !== filteredPlans().length
+                ? ` · ${t("plans.total", total()!)}`
+                : ""}
             </span>
           </div>
           <div class="plans-actions">

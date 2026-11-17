@@ -13,6 +13,8 @@ import { createI18n, interpolate, supportedLocale } from "opencode-shared/gui";
 
 const EN = {
   title: "Plans",
+  "plans.showing": "Showing {0}",
+  "plans.total": "Total {0}",
   "view.label": "View",
   "view.initiatives": "Initiative",
   "view.work": "Work",
@@ -364,6 +366,8 @@ const EN = {
 
 const PT: Record<keyof typeof EN, string> = {
   title: "Planos",
+  "plans.showing": "Exibindo {0}",
+  "plans.total": "Total {0}",
   "view.label": "Visão",
   "view.initiatives": "Iniciativa",
   "view.work": "Trabalho",
