@@ -41,6 +41,7 @@ import { openPlanDialog } from "./plan-dialog";
 import { WorkGraph } from "./graph";
 import { openWorkItemDialog } from "./work-item-dialog";
 import { closePlansOverlay, consumePendingWorkItem } from "./overlay-state";
+import { openSessionTab } from "./session-open";
 
 export type WorkViewMode = "list" | "board" | "graph";
 
@@ -455,9 +456,7 @@ export function WorkBody(props: {
     initiative.repos.find((repo) => repo.primary)?.directory ?? initiative.repos[0]?.directory ?? "";
 
   const openSession = (id: string) => {
-    // Opening a session takes the user to the chat: the overlay must not stay on top.
-    closePlansOverlay();
-    ctx.tabs.open({ server: props.target().server.id, id }, { focus: true });
+    openSessionTab(ctx, id, props.target().server.id);
   };
 
   const loadRun = (initiativeID: string) => {
@@ -942,9 +941,7 @@ export function WorkBody(props: {
   };
 
   const openPlan = (plan: PlanSummary) => {
-    // Opening a session takes the user to the chat: the overlay must not stay on top.
-    closePlansOverlay();
-    ctx.tabs.open({ server: props.target().server.id, id: plan.sessionID }, { focus: true });
+    openSessionTab(ctx, plan.sessionID, props.target().server.id);
   };
 
   const parentCandidates = createMemo(() => {
