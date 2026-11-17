@@ -106,8 +106,9 @@ const WORK_CSS = `
 .work-dot.is-dropped { background: var(--v2-text-text-faint); opacity: 0.55; }
 .work-card {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   padding: 8px 10px;
   border: 1px solid var(--v2-border-border-muted);
   border-radius: 6px;
@@ -117,6 +118,9 @@ const WORK_CSS = `
 .work-card:hover { background-image: linear-gradient(var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)); }
 .work-card:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: -2px; }
 .work-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+/* Title, action and pills on one line; the progress bar on its own below. */
+.work-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.work-card-head .work-card-title { flex: 1; }
 .work-card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .work-card-progress { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .work-progress { width: 56px; flex: 0 0 auto; height: 4px; border-radius: 999px; overflow: hidden; background: var(--v2-overlay-simple-overlay-pressed); }
@@ -1342,50 +1346,50 @@ export function WorkBody(props: {
                                       }
                                     }}
                                   >
-                                    <div class="work-card-main">
+                                    <div class="work-card-head">
                                       <span class="work-card-title">{item.title}</span>
-                                      <Show when={plansByItem().get(item.id)}>
-                                        {(plan) => (
-                                          <span class="work-card-progress">
-                                            <span class="work-progress">
-                                              <span
-                                                class="work-progress-done"
-                                                style={{ width: `${planProgressOf(plan()).percent}%` }}
-                                              />
-                                            </span>
-                                            <span class="work-progress-label">
-                                              {t("work.progress", planProgressOf(plan()).done, planProgressOf(plan()).total)}
-                                            </span>
-                                            <Show when={planProgressOf(plan()).doing}>
-                                              {(doing) => <span class="work-progress-doing">{doing()}</span>}
-                                            </Show>
+                                      <ctx.ui.IconButton
+                                        class={plansByItem().get(item.id) ? "play-icon" : undefined}
+                                        icon={plansByItem().get(item.id) ? "fill-triangle-down" : "brain"}
+                                        label={t(plansByItem().get(item.id) ? "work.card.execute" : "work.card.plan")}
+                                        disabled={planning()}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          cardAction(item.id);
+                                        }}
+                                      />
+                                      <Show when={item.origin === "agent"}>
+                                        <StatusChip label={t("work.agent")} tone="info" />
+                                      </Show>
+                                      <Show when={runItems().get(item.id)}>
+                                        {(status) => (
+                                          <span class="work-run-badge">
+                                            <StatusChip
+                                              label={t(`run.item.${status()}`)}
+                                              tone={runItemTone(status())}
+                                            />
                                           </span>
                                         )}
                                       </Show>
                                     </div>
-                                    <Show when={item.origin === "agent"}>
-                                      <StatusChip label={t("work.agent")} tone="info" />
-                                    </Show>
-                                    <Show when={runItems().get(item.id)}>
-                                      {(status) => (
-                                        <span class="work-run-badge">
-                                          <StatusChip
-                                            label={t(`run.item.${status()}`)}
-                                            tone={runItemTone(status())}
-                                          />
+                                    <Show when={plansByItem().get(item.id)}>
+                                      {(plan) => (
+                                        <span class="work-card-progress">
+                                          <span class="work-progress">
+                                            <span
+                                              class="work-progress-done"
+                                              style={{ width: `${planProgressOf(plan()).percent}%` }}
+                                            />
+                                          </span>
+                                          <span class="work-progress-label">
+                                            {t("work.progress", planProgressOf(plan()).done, planProgressOf(plan()).total)}
+                                          </span>
+                                          <Show when={planProgressOf(plan()).doing}>
+                                            {(doing) => <span class="work-progress-doing">{doing()}</span>}
+                                          </Show>
                                         </span>
                                       )}
                                     </Show>
-                                    <ctx.ui.IconButton
-                                      class={plansByItem().get(item.id) ? "play-icon" : undefined}
-                                      icon={plansByItem().get(item.id) ? "fill-triangle-down" : "brain"}
-                                      label={t(plansByItem().get(item.id) ? "work.card.execute" : "work.card.plan")}
-                                      disabled={planning()}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        cardAction(item.id);
-                                      }}
-                                    />
                                   </div>
                                 )}
                               </For>
@@ -1456,35 +1460,8 @@ export function WorkBody(props: {
                                   }
                                 }}
                               >
-                                <div class="work-card-main">
+                                <div class="work-card-head">
                                   <span class="work-card-title">{entry.item.title}</span>
-                                  <Show when={plansByItem().get(entry.item.id)}>
-                                    {(plan) => (
-                                      <span class="work-card-progress">
-                                        <span class="work-progress">
-                                          <span
-                                            class="work-progress-done"
-                                            style={{ width: `${planProgressOf(plan()).percent}%` }}
-                                          />
-                                        </span>
-                                        <span class="work-progress-label">
-                                          {t("work.progress", planProgressOf(plan()).done, planProgressOf(plan()).total)}
-                                        </span>
-                                      </span>
-                                    )}
-                                  </Show>
-                                </div>
-                                <Show when={runItems().get(entry.item.id)}>
-                                  {(status) => (
-                                    <span class="work-run-badge">
-                                      <StatusChip
-                                        label={t(`run.item.${status()}`)}
-                                        tone={runItemTone(status())}
-                                      />
-                                    </span>
-                                  )}
-                                </Show>
-                                <span class="work-card-actions" onClick={(event) => event.stopPropagation()}>
                                   <ctx.ui.IconButton
                                     class={plansByItem().get(entry.item.id) ? "play-icon" : undefined}
                                     icon={plansByItem().get(entry.item.id) ? "fill-triangle-down" : "brain"}
@@ -1498,7 +1475,32 @@ export function WorkBody(props: {
                                   <Show when={entry.item.origin === "agent"}>
                                     <StatusChip label={t("work.agent")} tone="info" />
                                   </Show>
-                                </span>
+                                </div>
+                                <Show when={plansByItem().get(entry.item.id)}>
+                                  {(plan) => (
+                                    <span class="work-card-progress">
+                                      <span class="work-progress">
+                                        <span
+                                          class="work-progress-done"
+                                          style={{ width: `${planProgressOf(plan()).percent}%` }}
+                                        />
+                                      </span>
+                                      <span class="work-progress-label">
+                                        {t("work.progress", planProgressOf(plan()).done, planProgressOf(plan()).total)}
+                                      </span>
+                                    </span>
+                                  )}
+                                </Show>
+                                <Show when={runItems().get(entry.item.id)}>
+                                  {(status) => (
+                                    <span class="work-run-badge">
+                                      <StatusChip
+                                        label={t(`run.item.${status()}`)}
+                                        tone={runItemTone(status())}
+                                      />
+                                    </span>
+                                  )}
+                                </Show>
                               </div>
                             )}
                           </For>
