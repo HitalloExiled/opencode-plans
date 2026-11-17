@@ -126,7 +126,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -240,7 +240,9 @@ const BASE_SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_run_items_status ON run_items(run_id, status)`,
   `CREATE TABLE IF NOT EXISTS merge_queue (
     id TEXT PRIMARY KEY,
-    run_id TEXT NOT NULL,
+    run_id TEXT,
+    initiative_id TEXT,
+    repo TEXT,
     work_item_id TEXT NOT NULL,
     status TEXT NOT NULL,
     enqueued_at TEXT NOT NULL,
@@ -388,6 +390,61 @@ export function initSchema(db: Db): void {
   if (!hasColumn(db, "runs", "repo")) {
     db.prepare("ALTER TABLE runs ADD COLUMN repo TEXT").run();
   }
+
+  // v11 — merge entries without a run (manual executions). SQLite cannot relax
+  // NOT NULL in place, so the table is rebuilt and the rows carried over.
+  const mergeColumns = db.prepare("PRAGMA table_info(merge_queue)").all() as {
+    name?: string;
+    notnull?: number;
+  }[];
+  const runColumn = mergeColumns.find((column) => column.name === "run_id");
+  if (runColumn?.notnull === 1) {
+    db.prepare("BEGIN").run();
+    try {
+      db.prepare(
+        `CREATE TABLE merge_queue_v11 (
+          id TEXT PRIMARY KEY,
+          run_id TEXT,
+          initiative_id TEXT,
+          repo TEXT,
+          work_item_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          enqueued_at TEXT NOT NULL,
+          claimed_at TEXT,
+          finished_at TEXT,
+          error TEXT
+        )`,
+      ).run();
+      db.prepare(
+        `INSERT INTO merge_queue_v11 (id, run_id, initiative_id, repo, work_item_id, status, enqueued_at, claimed_at, finished_at, error)
+         SELECT id, run_id, NULL, NULL, work_item_id, status, enqueued_at, claimed_at, finished_at, error FROM merge_queue`,
+      ).run();
+      db.prepare("DROP TABLE merge_queue").run();
+      db.prepare("ALTER TABLE merge_queue_v11 RENAME TO merge_queue").run();
+      db.prepare(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_merge_queue_item ON merge_queue(run_id, work_item_id)",
+      ).run();
+      db.prepare(
+        "CREATE INDEX IF NOT EXISTS idx_merge_queue_fifo ON merge_queue(run_id, status, enqueued_at)",
+      ).run();
+      db.prepare(
+        "CREATE INDEX IF NOT EXISTS idx_merge_queue_manual ON merge_queue(repo, status, enqueued_at)",
+      ).run();
+      db.prepare("COMMIT").run();
+    } catch (error) {
+      try {
+        db.prepare("ROLLBACK").run();
+      } catch {
+        /* best effort */
+      }
+      throw error;
+    }
+  }
+  // Created after the rebuild: the old table has no `repo` column, so this can
+  // only run once the v11 shape is in place.
+  db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_merge_queue_manual ON merge_queue(repo, status, enqueued_at)",
+  ).run();
   db.prepare(`PRAGMA user_version = ${SCHEMA_VERSION}`).run();
 }
 
@@ -719,11 +776,20 @@ export function closeWorkItemForPlan(
 
   if (plan.status === "done") {
     if (item.status === "done" || item.status === "dropped") return { closed: null, reopened: null };
-    db.prepare("UPDATE work_items SET status = 'done', closed_at = ?, updated_at = ? WHERE id = ?").run(now, now, item.id);
-    return { closed: item.id, reopened: null };
+    // Every execution waits for a merge: outside a run the item queues one
+    // instead of closing. `merge.done` is what closes it.
+    enqueueManualMerge(db, {
+      initiativeID: item.initiative_id,
+      repo: plan.project_directory,
+      workItemID: item.id,
+    });
+    return { closed: null, reopened: null };
   }
   if (plan.status === "active" && item.status === "done") {
     db.prepare("UPDATE work_items SET status = 'ready', closed_at = NULL, updated_at = ? WHERE id = ?").run(now, item.id);
+    db.prepare(
+      "DELETE FROM merge_queue WHERE work_item_id = ? AND run_id IS NULL AND status IN ('queued', 'merging')",
+    ).run(item.id);
     return { closed: null, reopened: item.id };
   }
   return { closed: null, reopened: null };
@@ -2066,7 +2132,10 @@ export type RunItemRow = {
 
 export type MergeEntryRow = {
   id: string;
-  run_id: string;
+  /** Null on manual executions: the entry exists without a run. */
+  run_id: string | null;
+  initiative_id: string | null;
+  repo: string | null;
   work_item_id: string;
   status: MergeStatus;
   enqueued_at: string;
@@ -2437,6 +2506,63 @@ export type ClaimMergeResult = { ok: true; entry: MergeEntryRow | null } | WorkS
  * Claims the next queued item, FIFO. Only one `merging` per run: while one is
  * in flight the claim returns null rather than blocking.
  */
+/**
+ * Enqueues a manual execution's merge. There is no run, so the entry carries
+ * the initiative and the repository instead; one pending entry per item.
+ */
+export function enqueueManualMerge(
+  db: Db,
+  input: { initiativeID: string; repo: string; workItemID: string },
+): Ok | WorkStoreError {
+  const repo = input.repo.trim();
+  if (!repo) return { ok: false, error: "o repositório da entrada é obrigatório" };
+  const pending = db
+    .prepare("SELECT 1 AS one FROM merge_queue WHERE work_item_id = ? AND status IN ('queued', 'merging') LIMIT 1")
+    .get(input.workItemID);
+  if (pending) return { ok: true };
+  try {
+    db.prepare(
+      `INSERT INTO merge_queue (id, run_id, initiative_id, repo, work_item_id, status, enqueued_at, claimed_at, finished_at, error)
+       VALUES (?, NULL, ?, ?, ?, 'queued', ?, NULL, NULL, NULL)`,
+    ).run(crypto.randomUUID(), input.initiativeID, repo, input.workItemID, nowTimestamp());
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
+/** Claims the oldest queued manual entry of a repository; one merge at a time. */
+export function claimNextManualMerge(db: Db, repo: string): ClaimMergeResult {
+  const target = repo.trim();
+  if (!target) return { ok: true, entry: null };
+  const busy = db
+    .prepare("SELECT id FROM merge_queue WHERE repo = ? AND run_id IS NULL AND status = 'merging' LIMIT 1")
+    .get(target);
+  if (busy) return { ok: true, entry: null };
+
+  const next = db
+    .prepare(
+      "SELECT * FROM merge_queue WHERE repo = ? AND run_id IS NULL AND status = 'queued' ORDER BY enqueued_at ASC, rowid ASC LIMIT 1",
+    )
+    .get(target) as MergeEntryRow | undefined;
+  if (!next) return { ok: true, entry: null };
+
+  const claimedAt = nowTimestamp();
+  try {
+    transaction(db, () => {
+      const changed = db
+        .prepare("UPDATE merge_queue SET status = 'merging', claimed_at = ? WHERE id = ? AND status = 'queued'")
+        .run(claimedAt, next.id);
+      if (!changed || changed.changes === 0) throw new Error("a fila mudou durante o claim; tente de novo");
+    });
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  const entry = db.prepare("SELECT * FROM merge_queue WHERE id = ?").get(next.id) as MergeEntryRow | undefined;
+  if (!entry) return { ok: false, error: "entrada da fila não encontrada após o claim" };
+  return { ok: true, entry };
+}
+
 export function claimNextMerge(db: Db, runID: string): ClaimMergeResult {
   const busy = db
     .prepare("SELECT id FROM merge_queue WHERE run_id = ? AND status = 'merging' LIMIT 1")

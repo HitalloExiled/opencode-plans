@@ -241,10 +241,12 @@ dependências**; com uma iniciativa selecionada, **Executar iniciativa**. O
 - **Executar um plano com item**: o engine cria `wi/<item>` na hora. **Solo** —
   ninguém mais trabalhando no repo e árvore limpa — a branch entra no working
   tree e o agente edita ali; fora disso, worktree. A base nunca é tocada.
-- **Conclusão**: marcar o plano `done` marca todos os passos `done`. Fora de run
-  o item fecha na conclusão; **dentro de um run ele só fecha quando o merge
-  conclui** (`merge.done`), e o plano concluído apenas o coloca na fila. Reabrir
-  o plano devolve o item para `ready` só fora de run.
+- **Conclusão**: marcar o plano `done` marca todos os passos `done`. **Toda
+  execução espera um merge**: o item fica aberto com “aguardando merge” e só
+  fecha quando o `merge.done` confirma. Dentro de um run isso vem da sessão de
+  merge; fora dele a entrada fica na fila sem run e o merge manual não inicia
+  dependentes. Reabrir o plano devolve o item para `ready` (e descarta a entrada
+  pendente).
 - **Dependência**: um item só cria branch quando todos os predecessores já
   mergearam (`done`/`dropped`); a recusa é explícita e não cai no fallback.
 - **Run**: o pré-voo exige repositório git, `base_ref`, nenhum run ativo, itens `ready`

@@ -17,6 +17,7 @@ import { emitPlanChange } from "./src/plan-events.js";
 import { resumeAfterMerge } from "./src/run-engine.js";
 import { itemBranch, runPaths } from "./src/run-paths.js";
 import {
+  claimNextManualMerge,
   claimNextMerge,
   closeWorkItemForMerge,
   finishMerge,
@@ -53,6 +54,62 @@ async function contextFor(toolCtx: ToolContext): Promise<{ run: RunRow } | { err
   const run = runForMergeSession(store.db, String(toolCtx.sessionID));
   if (!run) return { error: fail("esta sessão não é a sessão de merge de um run") };
   return { run };
+}
+
+/** Manual executions have no run: the session's repository is the scope. */
+function manualRepo(ctx: Ctx): string {
+  return String(ctx.location.project.canonical ?? ctx.location.directory);
+}
+
+/** Pops the next manual merge of this repository (no run, no chain). */
+function manualNext(ctx: Ctx, db: import("./src/store.js").Db): ToolResult {
+  const repo = manualRepo(ctx);
+  const claimed = claimNextManualMerge(db, repo);
+  if (!claimed.ok) return fail(claimed.error);
+  if (!claimed.entry) {
+    return { content: "Nenhum merge manual pendente neste repositório.", metadata: { entry: null } };
+  }
+  const item = getWorkItem(db, claimed.entry.work_item_id);
+  const branch = itemBranch(claimed.entry.work_item_id);
+  return {
+    content: [
+      `Item da fila: "${item?.title ?? claimed.entry.work_item_id}" (work item ${claimed.entry.work_item_id})`,
+      `entry: ${claimed.entry.id}`,
+      `branch: ${branch}`,
+      "",
+      `Mergeie com git merge --no-edit ${branch} neste repositório (o seu checkout é a base).`,
+      `Depois marque com merge.done({ entryID: "${claimed.entry.id}" }). Nenhum dependente será iniciado.`,
+    ].join("\n"),
+    metadata: { entry: claimed.entry.id, workItemID: claimed.entry.work_item_id, branch, manual: true },
+  };
+}
+
+/** Records the manual merge and closes the item; never resumes a chain. */
+async function manualDone(
+  ctx: Ctx,
+  db: import("./src/store.js").Db,
+  input: { entryID: string; mergedSha?: string },
+): Promise<ToolResult> {
+  const entry = getMergeEntry(db, input.entryID);
+  if (!entry) return fail(`entrada da fila não encontrada: ${input.entryID}`);
+  if (entry.run_id !== null) return fail("essa entrada pertence a um run; abra a sessão de merge do run");
+  if (entry.status !== "merging") return fail(`a entrada não está em merging: ${entry.status}`);
+
+  const repo = entry.repo ?? manualRepo(ctx);
+  const branch = itemBranch(entry.work_item_id);
+  if (!(await isAncestor(repo, branch, "HEAD"))) {
+    return fail(`a branch ${branch} não está contida no HEAD; mergeie e verifique antes de marcar done`);
+  }
+  const sha = input.mergedSha?.trim() || (await currentSha(repo));
+  if (!sha) return fail("não foi possível resolver o SHA do repositório");
+
+  finishMerge(db, { id: entry.id, status: "merged", mergedSha: sha });
+  closeWorkItemForMerge(db, entry.work_item_id);
+  emitPlanChange({ sessionID: "" });
+  return {
+    content: `Merge concluído: ${entry.work_item_id} em ${sha.slice(0, 8)}. O item foi fechado; nenhum dependente foi iniciado.`,
+    metadata: { entry: entry.id, mergedSha: sha, manual: true, closed: entry.work_item_id },
+  };
 }
 
 const empty = z.object({});
@@ -95,9 +152,12 @@ export function mergeNextTool(ctx: Ctx) {
     input: empty,
     async execute(_input: z.infer<typeof empty>, toolCtx: ToolContext): Promise<ToolResult> {
       try {
+        const store = await requireStore();
+        // No run for this session? Then it is a manual merge in the repository.
+        const scope = runForMergeSession(store.db, String(toolCtx.sessionID));
+        if (!scope) return manualNext(ctx, store.db);
         const found = await contextFor(toolCtx);
         if ("error" in found) return found.error;
-        const store = await requireStore();
         const entries = listMergeQueue(store.db, found.run.id);
         if (entries.some((entry) => entry.status === "failed")) {
           return fail("a fila parou depois de um merge falho; o run vai falhar");
@@ -142,9 +202,11 @@ export function mergeDoneTool(ctx: Ctx) {
     }),
     async execute(input: { entryID: string; mergedSha?: string }, toolCtx: ToolContext): Promise<ToolResult> {
       try {
+        const store = await requireStore();
+        const scope = runForMergeSession(store.db, String(toolCtx.sessionID));
+        if (!scope) return await manualDone(ctx, store.db, input);
         const found = await contextFor(toolCtx);
         if ("error" in found) return found.error;
-        const store = await requireStore();
         const entry = getMergeEntry(store.db, input.entryID);
         if (!entry) return fail(`entrada da fila não encontrada: ${input.entryID}`);
         if (entry.run_id !== found.run.id) return fail("essa entrada pertence a outro run");

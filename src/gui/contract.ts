@@ -196,6 +196,8 @@ export type WorkItemDetail = {
   children: readonly WorkItem[];
   /** The plan that executes this item, when it has one. */
   plan?: PlanSummary | null | undefined;
+  /** A merge entry waiting in the queue (manual execution). */
+  mergePending?: boolean | undefined;
 };
 
 export type SaveWorkItemInput = {
@@ -412,6 +414,7 @@ export const workItemDetailSchema = Schema.Struct({
   parent: Schema.optional(Schema.NullOr(workItemSchema)),
   children: Schema.Array(workItemSchema),
   plan: Schema.optional(Schema.NullOr(planSummarySchema)),
+  mergePending: Schema.optional(Schema.Boolean),
 });
 
 export const opResultSchema = Schema.Struct({

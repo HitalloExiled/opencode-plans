@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 const { DatabaseSync } = (await import("node:sqlite")) as any;
 
 import {
+  claimNextManualMerge,
   closeWorkItemForMerge,
   createInitiative,
   createRun,
@@ -92,7 +93,7 @@ describe("setPlanWorkItem", () => {
 });
 
 describe("plan completion and the work item", () => {
-  test("finishing the plan closes the item, reopening the plan reopens it", () => {
+  test("finishing the plan queues a merge; the merge closes the item and reopening reopens it", () => {
     const { db, item, plan } = setup();
     const target = item("Needs a plan");
     const saved = plan("Adopted plan");
@@ -101,6 +102,13 @@ describe("plan completion and the work item", () => {
     const step = getPlan(db, saved.id)!.steps[0]!;
     expect(setStep(db, { id: saved.id, stepID: step.step_id, status: "done" }).ok).toBe(true);
     expect(getPlan(db, saved.id)?.status).toBe("done");
+    // Every execution waits for a merge: the item stays open and queues one.
+    expect(getWorkItem(db, target.id)?.status).not.toBe("done");
+    expect(
+      (db.prepare("SELECT COUNT(*) AS c FROM merge_queue WHERE work_item_id = ?").get(target.id) as { c: number }).c,
+    ).toBe(1);
+
+    expect(closeWorkItemForMerge(db, target.id).closed).toBe(target.id);
     expect(getWorkItem(db, target.id)?.status).toBe("done");
 
     expect(updatePlan(db, { id: saved.id, status: "active" }).ok).toBe(true);
@@ -128,5 +136,22 @@ describe("the merge owns the closure", () => {
 
     expect(closeWorkItemForMerge(db, target.id).closed).toBe(target.id);
     expect(getWorkItem(db, target.id)?.status).toBe("done");
+  });
+});
+
+describe("manual merge queue", () => {
+  test("the plan finishing queues an entry without a run, claimable by repository", () => {
+    const { db, item, plan } = setup();
+    const target = item("Manual");
+    const saved = plan("Manual plan");
+    setPlanWorkItem(db, { id: saved.id, workItemID: target.id });
+    const step = getPlan(db, saved.id)!.steps[0]!;
+    expect(setStep(db, { id: saved.id, stepID: step.step_id, status: "done" }).ok).toBe(true);
+
+    const claimed = claimNextManualMerge(db, "/work/app");
+    expect(claimed.ok).toBe(true);
+    if (!claimed.ok) return;
+    expect(claimed.entry?.work_item_id).toBe(target.id);
+    expect(claimed.entry?.run_id).toBeNull();
   });
 });

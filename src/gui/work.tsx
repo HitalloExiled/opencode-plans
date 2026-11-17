@@ -1639,6 +1639,10 @@ export function WorkBody(props: {
                     </Show>
                   </div>
 
+                  <Show when={current().mergePending}>
+                    <span class="work-dep-label">{t("work.merge.pending")}</span>
+                  </Show>
+
                   <Show
                     when={current().blockedBy.length > 0}
                     fallback={<div class="work-deps-empty">{t("work.deps.none")}</div>}

@@ -546,6 +546,13 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         blocks: deps.blocks.map(toWorkItem),
         parent: parent ? toWorkItem(parent) : null,
         children: workItemChildren(store.db, item.id).map(toWorkItem),
+        mergePending: Boolean(
+          store.db
+            .prepare(
+              "SELECT 1 AS one FROM merge_queue WHERE work_item_id = ? AND run_id IS NULL AND status IN ('queued', 'merging') LIMIT 1",
+            )
+            .get(item.id),
+        ),
         plan: plan && progress
           ? {
               id: plan.id,
