@@ -29,7 +29,8 @@ export type GraphLayout = {
 };
 
 export const GRAPH_NODE_WIDTH = 190;
-export const GRAPH_NODE_HEIGHT = 78;
+/** Tall enough for the pills row, two title lines and the action row. */
+export const GRAPH_NODE_HEIGHT = 100;
 export const GRAPH_GAP_X = 90;
 export const GRAPH_GAP_Y = 16;
 export const GRAPH_PAD = 24;
