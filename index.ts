@@ -40,6 +40,7 @@ import { notificationLocale, tn, type NotificationLocale } from "./src/notificat
 import { emitPlanChange, onPlanChange } from "./src/plan-events.js";
 import { createRpcHandlers } from "./src/rpc.js";
 import { recoverRuns } from "./src/run-engine.js";
+import { isFreshProcess } from "./src/runtime-pid.js";
 import {
   getPlanByWorkItem,
   getWorkItem,
@@ -374,10 +375,11 @@ export default Plugin.define({
   id: "plans",
   async setup(ctx) {
     // A run never resumes on its own: running -> interrupted, in-flight merges
-    // back to the queue. None of this blocks the plugin from loading.
+    // back to the queue. Only a real restart recovers: a hot reload keeps the
+    // same pid and its promises are still alive, so the run must survive it.
     try {
       const store = await requireStore();
-      recoverRuns(store.db);
+      if (isFreshProcess()) recoverRuns(store.db);
     } catch (error) {
       console.error(`[plans] could not recover runs: ${errorText(error)}`);
     }

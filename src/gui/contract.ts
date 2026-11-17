@@ -922,6 +922,10 @@ export const PlansRpc = Rpc.define({
       input: Schema.toStandardSchemaV1(runIDInputSchema),
       output: Schema.toStandardSchemaV1(opResultSchema),
     },
+    runResume: {
+      input: Schema.toStandardSchemaV1(runIDInputSchema),
+      output: Schema.toStandardSchemaV1(opResultSchema),
+    },
     runRetry: {
       input: Schema.toStandardSchemaV1(runRetryInputSchema),
       output: Schema.toStandardSchemaV1(opResultSchema),

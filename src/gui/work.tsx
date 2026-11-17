@@ -170,6 +170,7 @@ const WORK_CSS = `
   background: currentColor;
 }
 .work-run-hint { font-size: 10.5px; color: var(--v2-text-text-faint); }
+.work-run-error { font-size: 10.5px; color: var(--v2-state-fg-danger); overflow-wrap: anywhere; }
 .work-run-field { display: flex; flex-direction: column; gap: 3px; }
 .work-run-field-label { font-size: 11px; font-weight: 600; color: var(--v2-text-text-base); }
 /* Same play glyph as the plan Execute: the down triangle rotated into a play. */
@@ -493,6 +494,25 @@ export function WorkBody(props: {
       .then((result) => {
         if (!result.ok) {
           setRunError(result.error ?? t("work.run.cancelError"));
+          return;
+        }
+        loadRun(initiative.id);
+      })
+      .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setRunBusy(false));
+  };
+
+  const resumeRun = (runID: string) => {
+    const initiative = selectedInitiative();
+    if (!initiative || runBusy()) return;
+    setRunBusy(true);
+    setRunError(null);
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .runResume({ runID })
+      .then((result) => {
+        if (!result.ok) {
+          setRunError(result.error ?? t("work.run.resumeError"));
           return;
         }
         loadRun(initiative.id);
@@ -1109,6 +1129,18 @@ export function WorkBody(props: {
                 <div class="work-run-panel">
                   <div class="work-run-head">
                     <span class="work-dep-label">{t("work.run.items")}</span>
+                    <Show when={current().status === "interrupted"}>
+                      <ctx.ui.Button
+                        size="small"
+                        variant="neutral"
+                        class="work-run-play"
+                        icon="fill-triangle-down"
+                        busy={runBusy()}
+                        onClick={() => resumeRun(current().id)}
+                      >
+                        {t("work.run.resume")}
+                      </ctx.ui.Button>
+                    </Show>
                     <Show when={current().status === "running" || current().status === "interrupted"}>
                       <ctx.ui.Button
                         size="small"
@@ -1133,6 +1165,10 @@ export function WorkBody(props: {
                       )}
                     </Show>
                   </div>
+
+                  <Show when={current().error}>
+                    <span class="work-run-error">{current().error}</span>
+                  </Show>
 
                   <For each={current().items}>
                     {(entry) => (

@@ -28,7 +28,7 @@ import { sortWorkItems } from "./work-list.js";
 import { captureWorkItem } from "./work-capture.js";
 import { notificationLocale, tn } from "./notifications.js";
 import { emitPlanChange } from "./plan-events.js";
-import { cancelProjectRun, preflightRun, retryRunItem, startProjectRun } from "./run-engine.js";
+import { cancelProjectRun, preflightRun, resumeProjectRun, retryRunItem, startProjectRun } from "./run-engine.js";
 import {
   activeRun,
   addInitiativeRepo,
@@ -735,6 +735,11 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
     runCancel: async (input) => {
       const store = await requireStore();
       return cancelProjectRun(ctx, store.db, input.runID);
+    },
+
+    runResume: async (input) => {
+      const store = await requireStore();
+      return resumeProjectRun(ctx, store.db, input.runID);
     },
 
     runRetry: async (input) => {

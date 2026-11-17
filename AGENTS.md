@@ -316,8 +316,13 @@ Invariants:
 - **Cancellation wins races.** `executeItem` re-checks the run/item status
   after every await; a cancel that lands mid-git or mid-session must not be
   overwritten.
-- **No auto-resume.** `recoverRuns` (plugin setup) marks `running` runs
-  `interrupted` and returns in-flight merges/items to the queue.
+- **No auto-resume, but an explicit one.** `recoverRuns` marks `running` runs
+  `interrupted` and returns in-flight merges/items to the queue — but only on a
+  real restart: the setup stamps `process.pid` in `runtime.json` next to the
+  database and skips recovery while the pid is the same, because a hot reload
+  keeps the previous module's promises alive. An interrupted run is resumed by
+  the user (`runResume`), which flips it back to `running` and pumps the queued
+  items after cleaning their worktrees/branches.
 - **Footprint is conservative.** Exact-vs-glob is matched; two globs overlap
   when their literal prefixes are compatible; an empty footprint conflicts with
   everything. Over-serializing is safe, parallel writers are not.

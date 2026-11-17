@@ -524,6 +524,40 @@ export async function retryRunItem(
 }
 
 /**
+ * Resumes an interrupted run: the queued items go back to the scheduler. Their
+ * worktrees and branches are cleaned first, so `executeItem` starts them from
+ * the current integration tip exactly like a retry.
+ */
+export async function resumeProjectRun(
+  ctx: Ctx,
+  db: Db,
+  runID: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const run = getRun(db, runID);
+  if (!run) return { ok: false, error: `run não encontrado: ${runID}` };
+  if (run.status !== "interrupted") {
+    return { ok: false, error: `só runs interrompidas podem ser retomadas: ${run.status}` };
+  }
+
+  const repo = runRepo(db, run);
+  for (const item of listRunItems(db, runID)) {
+    if (item.status !== "queued") continue;
+    await removeWorktree(repo, runPaths(runID).item(item.work_item_id), true).catch(() => undefined);
+    if (await branchExists(repo, itemBranch(item.work_item_id))) {
+      await deleteBranch(repo, itemBranch(item.work_item_id)).catch(() => undefined);
+    }
+    setRunItemStatus(db, { runID, workItemID: item.work_item_id, status: "queued", error: null });
+  }
+
+  const resumed = setRunStatus(db, { id: runID, status: "running" });
+  if (!resumed.ok) return { ok: false, error: resumed.error };
+  controllers.set(runID, { cancelled: false });
+  notifyChange();
+  void pump(ctx, db, runID).catch(() => undefined);
+  return { ok: true };
+}
+
+/**
  * After a service restart nothing resumes on its own: runs marked running
  * become interrupted, in-flight merges go back to queued and running items
  * return to the queue. The user decides whether to retry.
