@@ -29,6 +29,7 @@ describe("resumeProjectRun", () => {
     const result = await resumeProjectRun({} as never, db, runID);
     expect(result.ok).toBe(true);
     expect(getRun(db, runID)?.status).not.toBe("interrupted");
+    expect(getRun(db, runID)?.error).toBeNull();
   });
 
   test("refuses a run that is not interrupted", async () => {

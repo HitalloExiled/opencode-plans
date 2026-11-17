@@ -549,7 +549,7 @@ export async function resumeProjectRun(
     setRunItemStatus(db, { runID, workItemID: item.work_item_id, status: "queued", error: null });
   }
 
-  const resumed = setRunStatus(db, { id: runID, status: "running" });
+  const resumed = setRunStatus(db, { id: runID, status: "running", error: null });
   if (!resumed.ok) return { ok: false, error: resumed.error };
   controllers.set(runID, { cancelled: false });
   notifyChange();
