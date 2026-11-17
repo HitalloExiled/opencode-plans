@@ -13,10 +13,12 @@ import type { ToolContext } from "@opencode/plugin/promise/tool";
 import { z } from "zod";
 import { currentSha, isAncestor } from "./src/git.js";
 import { runForMergeSession } from "./src/merge-session.js";
+import { emitPlanChange } from "./src/plan-events.js";
 import { resumeAfterMerge } from "./src/run-engine.js";
 import { itemBranch, runPaths } from "./src/run-paths.js";
 import {
   claimNextMerge,
+  closeWorkItemForMerge,
   finishMerge,
   getMergeEntry,
   getInitiative,
@@ -165,6 +167,9 @@ export function mergeDoneTool(ctx: Ctx) {
           status: "merged",
           mergedSha: sha,
         });
+        // The merge is what closes the item; the plan finishing only queued it.
+        closeWorkItemForMerge(store.db, entry.work_item_id);
+        emitPlanChange({ sessionID: "" });
         resumeAfterMerge(ctx, store.db, found.run.id);
         return {
           content: [

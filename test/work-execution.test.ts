@@ -14,7 +14,8 @@ const temp = () => {
 };
 process.env.PLANS_DB = join(temp(), "plans.db");
 
-const { initSchema, startExecution } = await import("../src/store");
+const { addWorkItemDep, createInitiative, createWorkItem, initSchema, setWorkItemStatus, startExecution } =
+  await import("../src/store");
 type Db = import("../src/store").Db;
 const { beginWork, endWork, executionWorktree, isRepoBusy, treeClean } = await import("../src/work-execution");
 const { currentBranch } = await import("../src/git");
@@ -90,5 +91,27 @@ describe("beginWork", () => {
     const db = open();
     const result = await beginWork({ db, repo: temp(), itemID: "item-4" });
     expect(result.ok).toBe(false);
+  });
+
+  test("a pending dependency blocks the branch until it is merged", async () => {
+    const db = open();
+    const dir = repo();
+    const initiative = createInitiative(db, { name: "Chain", repos: [{ directory: dir }] });
+    if (!initiative.ok) throw new Error(initiative.error);
+    const first = createWorkItem(db, { initiativeID: initiative.initiative.id, title: "First" });
+    const second = createWorkItem(db, { initiativeID: initiative.initiative.id, title: "Second" });
+    if (!first.ok || !second.ok) throw new Error("items");
+    addWorkItemDep(db, { itemID: second.item.id, blocksID: first.item.id });
+
+    const blocked = await beginWork({ db, repo: dir, itemID: second.item.id });
+    expect(blocked.ok).toBe(false);
+    if (blocked.ok) return;
+    expect(blocked.blocked).toBe(true);
+
+    for (const status of ["ready", "doing", "done"] as const) {
+      expect(setWorkItemStatus(db, { id: first.item.id, status }).ok).toBe(true);
+    }
+    const allowed = await beginWork({ db, repo: dir, itemID: second.item.id });
+    expect(allowed.ok).toBe(true);
   });
 });

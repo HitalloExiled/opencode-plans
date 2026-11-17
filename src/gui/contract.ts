@@ -571,6 +571,7 @@ export const executionBeginViewSchema = Schema.Struct({
   ok: Schema.Boolean,
   error: optString,
   skipped: Schema.optional(Schema.Boolean),
+  blocked: Schema.optional(Schema.Boolean),
   mode: optString,
   branch: optString,
   directory: optString,
@@ -580,6 +581,7 @@ export type ExecutionBeginView = {
   ok: boolean;
   error?: string | undefined;
   skipped?: boolean | undefined;
+  blocked?: boolean | undefined;
   mode?: string | undefined;
   branch?: string | undefined;
   directory?: string | undefined;

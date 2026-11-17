@@ -15,6 +15,7 @@ import {
   getInitiative,
   plansDbPath,
   startExecution,
+  workItemDeps,
   type Db,
   type ExecutionRow,
 } from "./store.js";
@@ -36,7 +37,7 @@ export type BeginWorkInput = {
 
 export type BeginWorkResult =
   | { ok: true; mode: WorkMode; branch: string; directory: string; execution: ExecutionRow }
-  | { ok: false; error: string };
+  | { ok: false; error: string; blocked?: boolean };
 
 function primaryRepo(db: Db, initiativeID: string): string {
   const initiative = getInitiative(db, initiativeID);
@@ -75,6 +76,19 @@ export async function beginWork(input: BeginWorkInput): Promise<BeginWorkResult>
   const repo = input.repo.trim();
   if (!repo) return { ok: false, error: "o plano não tem repositório para executar" };
   if (!(await isGitRepo(repo))) return { ok: false, error: `não é um repositório git: ${repo}` };
+
+  // Dependencies are measured by integration, not by the plan: a branch may only
+  // start once every predecessor is done (merged) or dropped.
+  const pending = workItemDeps(input.db, input.itemID).blockedBy.filter(
+    (dep) => dep.status !== "done" && dep.status !== "dropped",
+  );
+  if (pending.length > 0) {
+    return {
+      ok: false,
+      blocked: true,
+      error: `depende de ${pending.map((dep) => dep.title).join(", ")}, que ainda não foi mergeado`,
+    };
+  }
 
   const branch = itemBranch(input.itemID);
   const solo = input.force ? input.force === "solo" : !isRepoBusy(input.db, repo) && (await treeClean(repo));

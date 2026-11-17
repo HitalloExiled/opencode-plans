@@ -236,9 +236,10 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   render `<work-item-body>` as data; `save` caps at 3 items per request, dedupes
   by normalized title + parent + non-terminal status and always writes
   `origin=agent`; `update` moves status/order/parent/deps (cycles rejected) and
-  only the planner/user closes an item — except that a linked plan which reaches
-  `done` closes the item (the engine decides on the plan transition, straight to
-  the column, and reopens it when the plan goes back to `active`).
+  only the planner/user closes an item — except the engine: a linked plan
+  outside a run closes the item on `done` (and reopens it when the plan goes back
+  to `active`), while inside a run the **merge** closes it (`merge.done`) and the
+  plan finishing only enqueues it.
 - **`initiativeID` on `work.list`/`work.save`** files and reads needs for an
   initiative no directory owns (the Planner-style backlog); without it the
   workspace resolution is unchanged. An item created there takes the

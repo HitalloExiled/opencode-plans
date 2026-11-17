@@ -27,6 +27,7 @@ import { tn } from "./notifications.js";
 import { emitPlanChange } from "./plan-events.js";
 import {
   activeRun,
+  closeWorkItemForMerge,
   createRun,
   createRunItem,
   enqueueMerge,
@@ -350,6 +351,9 @@ async function executeSoloItem(ctx: Ctx, db: Db, run: RunRow, entry: PreflightIt
       mergedSha: (await currentSha(repo)) ?? undefined,
     });
     setRunStatus(db, { id: run.id, status: "done" });
+    // The integration exists (run/<id>), so the item can close now — never
+    // before, or the dependents would start from a branch without its work.
+    closeWorkItemForMerge(db, entry.item.id);
   } finally {
     endWork(db, work.execution.id);
     notifyChange();

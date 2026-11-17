@@ -705,6 +705,16 @@ export function closeWorkItemForPlan(
   if (!plan || !itemID) return { closed: null, reopened: null };
   const item = getWorkItem(db, itemID);
   if (!item) return { closed: null, reopened: null };
+
+  // Inside a run the merge owns the closure: the plan finishing only enqueues
+  // the item, it does not close it (and a merged item does not reopen here).
+  const inRun = db
+    .prepare(
+      "SELECT 1 AS one FROM run_items ri JOIN runs r ON r.id = ri.run_id WHERE ri.work_item_id = ? AND r.status IN ('running', 'interrupted') LIMIT 1",
+    )
+    .get(item.id);
+  if (inRun) return { closed: null, reopened: null };
+
   const now = nowTimestamp();
 
   if (plan.status === "done") {
@@ -717,6 +727,21 @@ export function closeWorkItemForPlan(
     return { closed: null, reopened: item.id };
   }
   return { closed: null, reopened: null };
+}
+
+/**
+ * Closes the item once its work is integrated — the merge queue in a parallel
+ * run, or `run/<id>` in a solo one. The caller is the one that confirmed the
+ * integration, so this writes the column directly (the agent transition table
+ * does not apply to the engine closing a merged item).
+ */
+export function closeWorkItemForMerge(db: Db, workItemID: string): { closed: string | null } {
+  const item = getWorkItem(db, workItemID);
+  if (!item || item.status === "dropped") return { closed: null };
+  if (item.status === "done") return { closed: item.id };
+  const now = nowTimestamp();
+  db.prepare("UPDATE work_items SET status = 'done', closed_at = ?, updated_at = ? WHERE id = ?").run(now, now, item.id);
+  return { closed: item.id };
 }
 
 export type SavePlanInput = {

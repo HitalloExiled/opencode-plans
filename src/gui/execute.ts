@@ -91,6 +91,11 @@ export async function runPlan(input: {
     .rpc(PlansRpc)
     .executionBegin({ planID: current.id, workItemID: current.workItemID, sessionID: target.sessionID })
     .catch(() => null);
+  // A pending dependency is not an isolation failure: stop instead of running
+  // without its branch.
+  if (begun && !begun.ok && begun.blocked) {
+    throw new Error(begun.error ?? t("execute.blocked"));
+  }
   const worktree = begun?.ok && begun.mode === "worktree" ? begun.directory : undefined;
 
   let sessionID = target.sessionID;

@@ -3,7 +3,10 @@ import { describe, expect, test } from "bun:test";
 const { DatabaseSync } = (await import("node:sqlite")) as any;
 
 import {
+  closeWorkItemForMerge,
   createInitiative,
+  createRun,
+  createRunItem,
   createWorkItem,
   getPlan,
   getPlanByWorkItem,
@@ -102,5 +105,28 @@ describe("plan completion and the work item", () => {
 
     expect(updatePlan(db, { id: saved.id, status: "active" }).ok).toBe(true);
     expect(getWorkItem(db, target.id)?.status).toBe("ready");
+  });
+});
+
+describe("the merge owns the closure", () => {
+  test("inside a run the plan does not close the item; the merge does", () => {
+    const { db, item, plan } = setup();
+    const target = item("In a run");
+    const saved = plan("Adopted plan");
+    setPlanWorkItem(db, { id: saved.id, workItemID: target.id });
+    const row = db.prepare("SELECT initiative_id FROM work_items WHERE id = ?").get(target.id) as {
+      initiative_id: string;
+    };
+    const run = createRun(db, { initiativeID: row.initiative_id, baseRef: "main" });
+    if (!run.ok) throw new Error(run.error);
+    createRunItem(db, { runID: run.run.id, workItemID: target.id });
+
+    const step = getPlan(db, saved.id)!.steps[0]!;
+    expect(setStep(db, { id: saved.id, stepID: step.step_id, status: "done" }).ok).toBe(true);
+    expect(getPlan(db, saved.id)?.status).toBe("done");
+    expect(getWorkItem(db, target.id)?.status).not.toBe("done");
+
+    expect(closeWorkItemForMerge(db, target.id).closed).toBe(target.id);
+    expect(getWorkItem(db, target.id)?.status).toBe("done");
   });
 });

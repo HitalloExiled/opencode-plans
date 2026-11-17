@@ -753,7 +753,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         planID: plan.id,
         sessionID: input.sessionID ?? plan.session_id,
       });
-      if (!result.ok) return { ok: false, error: result.error };
+      if (!result.ok) return { ok: false, error: result.error, blocked: result.blocked };
       return {
         ok: true,
         mode: result.mode,
