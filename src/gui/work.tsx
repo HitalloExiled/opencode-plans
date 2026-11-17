@@ -140,6 +140,7 @@ const WORK_CSS = `
 .work-detail { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
 .work-detail-head { display: flex; align-items: center; gap: 6px; }
 .work-detail-title { flex: 1; min-width: 0; margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.work-detail-id { flex: 0 0 auto; font-size: 10px; color: var(--v2-text-text-faint); font-variant-numeric: tabular-nums; }
 .work-detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--v2-text-text-muted); font-size: 11px; }
 .work-detail-body { flex: 1; min-height: 0; overflow-y: auto; }
 .work-detail-empty { color: var(--v2-text-text-muted); font-size: 11.5px; }
@@ -1554,6 +1555,9 @@ export function WorkBody(props: {
                 <div class="work-detail-head">
                   <ctx.ui.IconButton icon="arrow-left" label={t("work.back")} onClick={closeDetail} />
                   <h2 class="work-detail-title">{current().item.title}</h2>
+                  <span class="work-detail-id" title={current().item.id}>
+                    {t("work.item.id", current().item.id.slice(0, 8))}
+                  </span>
                   <Show
                     when={activePlan()}
                     fallback={<span class="work-run-hint">{t("work.execute.planFirst")}</span>}

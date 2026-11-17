@@ -116,8 +116,33 @@ export async function runPlan(input: {
     ctx.toast.show({ title: t("execute.branch", begun.branch), variant: "success" });
   }
 
-  await target.client.session.switchAgent({ sessionID, agent: runAgent(flow) });
-  await target.client.session.prompt({ sessionID, text: seed });
+  const startIn = async (sid: string) => {
+    await target.client.session.switchAgent({ sessionID: sid, agent: runAgent(flow) });
+    await target.client.session.prompt({ sessionID: sid, text: seed });
+  };
+
+  try {
+    await startIn(sessionID);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // The plan may have been written in a worktree that no longer exists (a
+    // finished run). Give it a live session in the directory beginWork chose
+    // and try exactly once more.
+    const directory = begun?.ok ? begun.directory : undefined;
+    if (!/location not found/i.test(message) || !directory) throw error;
+    const recovered = await target.client.session.create({
+      agent: runAgent(flow),
+      title: t("execute.worktreeTitle", current.title),
+      location: { directory: directory as never },
+    });
+    const into = await target.client
+      .rpc(PlansRpc)
+      .move({ id: current.id, sessionID: recovered.id, locale: ctx.locale.locale() }, { location: { directory } });
+    if (into.ok && into.plan) current = into.plan;
+    moved = true;
+    ctx.tabs.open({ server: target.serverID, id: recovered.id }, { focus: true });
+    await startIn(recovered.id);
+  }
 
   return { plan: current, moved };
 }

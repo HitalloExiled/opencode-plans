@@ -105,6 +105,14 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
             : t("work.initiative.createTitle")}
         </h2>
 
+        <Show when={current()}>
+          {(value) => (
+            <span class="initiative-dialog-hint" title={value().id}>
+              {t("work.initiative.id", value().id.slice(0, 8))}
+            </span>
+          )}
+        </Show>
+
         <props.ctx.ui.TextInput
           value={name()}
           onInput={(value) => setName(value)}
