@@ -110,6 +110,11 @@ const WORK_CSS = `
   align-items: stretch;
   gap: 4px;
   padding: 8px 10px;
+  /* A card never grows past its column: long titles and the "doing" step text
+     ellipsize instead of spilling over the neighbours. */
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
   border: 1px solid var(--v2-border-border-muted);
   border-radius: 6px;
   background: var(--v2-background-bg-layer-01);
@@ -119,10 +124,10 @@ const WORK_CSS = `
 .work-card:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: -2px; }
 .work-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 /* Title, action and pills on one line; the progress bar on its own below. */
-.work-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.work-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
 .work-card-head .work-card-title { flex: 1; }
 .work-card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.work-card-progress { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.work-card-progress { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
 .work-progress { width: 56px; flex: 0 0 auto; height: 4px; border-radius: 999px; overflow: hidden; background: var(--v2-overlay-simple-overlay-pressed); }
 .work-progress-done { display: block; height: 100%; background: var(--v2-state-fg-success); transition: width .2s ease; }
 .work-progress-label { flex: 0 0 auto; font-size: 10px; color: var(--v2-text-text-muted); font-variant-numeric: tabular-nums; }
