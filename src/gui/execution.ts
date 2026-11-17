@@ -107,6 +107,11 @@ export function executionFor(ctx: Context, target: ExecutionTarget): ExecutionHa
       const change = { running: running(), now: Date.now(), pendingMs: PENDING_MS };
       const next = nextExecution(state, change);
       if (next) store.set(next);
+      // The session went idle: whoever ran the plan is done, so the execution
+      // row stops blocking solo work in that repository.
+      if (next && next.planID === null && state.planID !== null) {
+        void target.client.rpc(PlansRpc).executionEnd({ planID: state.planID }).catch(() => undefined);
+      }
 
       if (!change.running && state.pending && state.startedAt !== null) {
         const remaining = PENDING_MS - (change.now - state.startedAt);

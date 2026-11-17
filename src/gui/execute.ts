@@ -73,23 +73,46 @@ export async function runPlan(input: {
   // only names the plan (and the item); the native flow has no tail and keeps
   // the full prompt.
   const flow = await target.client.rpc(PlansRpc).getFlow({});
-  await target.client.session.switchAgent({
-    sessionID: target.sessionID,
-    agent: runAgent(flow),
-  });
   const short = flow === "dedicated";
-  await target.client.session.prompt({
-    sessionID: target.sessionID,
-    text: detail
-      ? t(
-          short ? "execute.promptItemShort" : "execute.promptItem",
-          current.title,
-          current.id,
-          detail.item.title,
-          detail.item.id,
-        )
-      : t(short ? "execute.promptShort" : "execute.prompt", current.title, current.id),
-  });
+  const seed = detail
+    ? t(
+        short ? "execute.promptItemShort" : "execute.promptItem",
+        current.title,
+        current.id,
+        detail.item.title,
+        detail.item.id,
+      )
+    : t(short ? "execute.promptShort" : "execute.prompt", current.title, current.id);
+
+  // Where it runs: solo switches the repository to wi/<item>; parallel opens a
+  // session in a worktree. A failure here falls back to the current session
+  // instead of blocking the execution.
+  const begun = await target.client
+    .rpc(PlansRpc)
+    .executionBegin({ planID: current.id, workItemID: current.workItemID, sessionID: target.sessionID })
+    .catch(() => null);
+  const worktree = begun?.ok && begun.mode === "worktree" ? begun.directory : undefined;
+
+  let sessionID = target.sessionID;
+  if (worktree) {
+    const created = await target.client.session.create({
+      agent: runAgent(flow),
+      title: t("execute.worktreeTitle", current.title),
+      location: { directory: worktree as never },
+    });
+    sessionID = created.id;
+    const into = await target.client
+      .rpc(PlansRpc)
+      .move({ id: current.id, sessionID, locale: ctx.locale.locale() }, { location: { directory: worktree } });
+    if (into.ok && into.plan) current = into.plan;
+    moved = true;
+    ctx.tabs.open({ server: target.serverID, id: sessionID }, { focus: true });
+  } else if (begun?.ok && begun.mode === "solo" && begun.branch) {
+    ctx.toast.show({ title: t("execute.branch", begun.branch), variant: "success" });
+  }
+
+  await target.client.session.switchAgent({ sessionID, agent: runAgent(flow) });
+  await target.client.session.prompt({ sessionID, text: seed });
 
   return { plan: current, moved };
 }
