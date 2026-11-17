@@ -49,6 +49,19 @@ const [viewMode, setViewMode] = createSignal<WorkViewMode>("list");
 export const workView = viewMode;
 export const workWideMode = (): boolean => viewMode() !== "list";
 
+/**
+ * The board reads left to right as the flow, so Backlog comes first. The List
+ * keeps `WORK_STATUS_ORDER` (actionable first); only the columns reorder.
+ */
+const BOARD_STATUS_ORDER: readonly WorkItemStatus[] = [
+  "backlog",
+  "ready",
+  "doing",
+  "blocked",
+  "done",
+  "dropped",
+];
+
 export type WorkTarget = {
   server: ServerRef;
   /** The overlay is always on screen. */
@@ -634,7 +647,7 @@ export function WorkBody(props: {
 
   /** Dropped joins the board only when its filter is on. */
   const boardStatuses = createMemo(() =>
-    showDropped() ? [...WORK_STATUS_ORDER] : WORK_STATUS_ORDER.filter((status) => status !== "dropped"),
+    showDropped() ? [...BOARD_STATUS_ORDER] : BOARD_STATUS_ORDER.filter((status) => status !== "dropped"),
   );
 
   const boardColumns = createMemo(() => {
