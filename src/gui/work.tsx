@@ -176,7 +176,7 @@ const WORK_CSS = `
 /* Same play glyph as the plan Execute: the down triangle rotated into a play. */
 .play-icon { color: var(--v2-state-fg-success); }
 .play-icon:hover { color: var(--v2-state-fg-success); }
-.play-icon svg { transform: rotate(-90deg); }
+.play-icon svg { transform: rotate(-90deg); width: 20px; height: 20px; }
 .work-view-switch { display: flex; align-items: center; gap: 4px; }
 .work-board { display: flex; gap: 8px; flex: 1; min-height: 0; overflow-x: auto; padding-bottom: 4px; }
 .work-col {

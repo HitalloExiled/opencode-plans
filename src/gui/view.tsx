@@ -129,7 +129,7 @@ const CSS = `
 }
 .play-icon { color: var(--v2-state-fg-success); }
 .play-icon:hover { color: var(--v2-state-fg-success); }
-.play-icon svg { transform: rotate(-90deg); }
+.play-icon svg { transform: rotate(-90deg); width: 20px; height: 20px; }
 .plan-run-pause { color: var(--v2-state-fg-warning); }
 .plan-run-pause:hover { color: var(--v2-state-fg-warning); }
 .plan-updated { font-size: 10.5px; color: var(--v2-text-text-faint); }
