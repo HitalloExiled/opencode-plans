@@ -40,11 +40,13 @@ import { notificationLocale, tn, type NotificationLocale } from "./src/notificat
 import { emitPlanChange, onPlanChange } from "./src/plan-events.js";
 import { createRpcHandlers } from "./src/rpc.js";
 import { recoverRuns } from "./src/run-engine.js";
+import { wakeManualMerge } from "./src/merge-session.js";
 import { isFreshProcess } from "./src/runtime-pid.js";
 import {
   getPlanByWorkItem,
   getWorkItem,
   listPlans,
+  listManualMergeRepos,
   listWorkItems,
   planProgress,
   requireStore,
@@ -383,6 +385,19 @@ export default Plugin.define({
       if (isFreshProcess()) recoverRuns(store.db);
     } catch (error) {
       console.error(`[plans] could not recover runs: ${errorText(error)}`);
+    }
+
+    // Manual executions queue their merge; the merge session is per repository.
+    // Recovery only creates the missing one, so a hot reload does not nag it.
+    try {
+      const store = await requireStore();
+      for (const repo of listManualMergeRepos(store.db)) {
+        await wakeManualMerge(ctx, store.db, repo, false).catch((error: unknown) => {
+          console.error(`[plans] could not wake the manual merge of ${repo}: ${errorText(error)}`);
+        });
+      }
+    } catch (error) {
+      console.error(`[plans] could not recover manual merges: ${errorText(error)}`);
     }
 
     // Registered first: tool and RPC writes publish through its `changed`

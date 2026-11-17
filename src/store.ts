@@ -127,7 +127,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -224,6 +224,13 @@ const BASE_SCHEMA = [
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_active ON runs(initiative_id) WHERE status IN ('running', 'interrupted')`,
   `CREATE INDEX IF NOT EXISTS idx_runs_initiative ON runs(initiative_id, started_at DESC)`,
+  // v14 — the merge session of manual executions, one per repository (runs keep
+  // theirs on `runs.merge_session_id`).
+  `CREATE TABLE IF NOT EXISTS merge_sessions (
+    repo TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS run_items (
     run_id TEXT NOT NULL,
     work_item_id TEXT NOT NULL,
@@ -2424,6 +2431,35 @@ export function setRunMergeSession(db: Db, id: string, sessionID: string | null)
   const run = getRun(db, id);
   if (!run) return { ok: false, error: "run não encontrado após vincular a sessão de merge" };
   return { ok: true, run };
+}
+
+/** The merge session of a repository's manual executions, if one exists. */
+export function getMergeSessionRepo(db: Db, repo: string): string | undefined {
+  const row = db.prepare("SELECT session_id FROM merge_sessions WHERE repo = ?").get(repo.trim()) as
+    | { session_id?: string }
+    | undefined;
+  return row?.session_id;
+}
+
+export function setMergeSessionRepo(db: Db, repo: string, sessionID: string): Ok | WorkStoreError {
+  try {
+    db.prepare(
+      "INSERT INTO merge_sessions (repo, session_id, updated_at) VALUES (?, ?, ?) ON CONFLICT(repo) DO UPDATE SET session_id = excluded.session_id, updated_at = excluded.updated_at",
+    ).run(repo.trim(), sessionID, nowTimestamp());
+  } catch (error) {
+    return { ok: false, error: reason(error) };
+  }
+  return { ok: true };
+}
+
+/** Repositories with a manual merge still in the queue (boot recovery). */
+export function listManualMergeRepos(db: Db): string[] {
+  const rows = db
+    .prepare(
+      "SELECT DISTINCT repo FROM merge_queue WHERE run_id IS NULL AND status IN ('queued', 'merging') AND repo IS NOT NULL",
+    )
+    .all() as { repo?: string }[];
+  return rows.map((row) => row.repo ?? "").filter((repo) => repo.length > 0);
 }
 
 export type CreateRunItemInput = {

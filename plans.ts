@@ -33,6 +33,7 @@ import {
 } from "./src/store.js";
 import { normalizeStepText } from "./src/plan-body.js";
 import { emitPlanChange } from "./src/plan-events.js";
+import { wakeManualMergeSoon } from "./src/merge-session.js";
 
 type ToolResult = { content: string; metadata?: Record<string, unknown> };
 type Ctx = Plugin.Context;
@@ -171,6 +172,8 @@ export function saveTool(ctx: Ctx) {
           const item = getWorkItem(store.db, result.plan.work_item_id);
           if (item) recomputeImplicitDeps(store.db, item.initiative_id);
         }
+        // A plan can finish here: manual executions queue a merge to drain.
+        wakeManualMergeSoon(ctx, store.db, result.plan.project_directory);
         const checklist =
           result.plan.steps.length > 0
             ? result.plan.steps
@@ -345,6 +348,8 @@ export function updateTool(ctx: Ctx) {
         }
 
         emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
+        // A plan can finish here: manual executions queue a merge to drain.
+        wakeManualMergeSoon(ctx, store.db, result.plan.project_directory);
 
         return {
           content: [

@@ -28,6 +28,7 @@ import { sortWorkItems } from "./work-list.js";
 import { captureWorkItem } from "./work-capture.js";
 import { notificationLocale, tn } from "./notifications.js";
 import { emitPlanChange } from "./plan-events.js";
+import { wakeManualMergeSoon } from "./merge-session.js";
 import { cancelProjectRun, preflightRun, resumeProjectRun, retryRunItem, startProjectRun } from "./run-engine.js";
 import { beginWork, endWork } from "./work-execution.js";
 import {
@@ -313,6 +314,8 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
           const item = getWorkItemRow(store.db, result.plan.work_item_id);
           if (item) recomputeImplicitDeps(store.db, item.initiative_id);
         }
+        // A plan can finish here: manual executions queue a merge to drain.
+        wakeManualMergeSoon(ctx, store.db, result.plan.project_directory);
       }
       return fromWrite(result);
     },
@@ -327,6 +330,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       });
       if (!result.ok) return fromWrite(result);
       emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
+      wakeManualMergeSoon(ctx, store.db, result.plan.project_directory);
 
       const locale = notificationLocale(input.locale);
       if (input.status) {
@@ -363,6 +367,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       });
       if (!result.ok) return fromWrite(result);
       emitPlanChange({ sessionID: result.plan.session_id, planID: result.plan.id });
+      wakeManualMergeSoon(ctx, store.db, result.plan.project_directory);
 
       const step = result.plan.steps.find((item) => item.step_id === input.stepID);
       const { done, total } = planProgress(result.plan);

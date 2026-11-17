@@ -12,7 +12,7 @@ import { getFlow } from "./flow.js";
 import { runAgent } from "./flow-rules.js";
 import { notificationLocale, tn, type NotificationLocale } from "./notifications.js";
 import { integrationBranch, runPaths } from "./run-engine.js";
-import { getRun, setRunMergeSession, type Db, type RunRow } from "./store.js";
+import { getRun, setRunMergeSession, getMergeSessionRepo, setMergeSessionRepo, type Db, type RunRow } from "./store.js";
 
 type Ctx = Plugin.Context;
 
@@ -68,5 +68,65 @@ export async function wakeMergeSession(ctx: Ctx, db: Db, runID: string): Promise
     sessionID: ensured.sessionID as never,
     text: tn(locale, "run.merge.wake"),
     delivery: "queue",
+  });
+}
+
+/**
+ * Manual executions have no run, so their merge session is per repository: the
+ * checkout is the base. Created on the first pending merge, woken on later
+ * ones; with nothing queued, no session is made.
+ */
+export async function wakeManualMerge(
+  ctx: Ctx,
+  db: Db,
+  repo: string,
+  /** Boot recovery only creates a missing session; it does not nag a live one. */
+  wakeExisting = true,
+): Promise<void> {
+  const target = repo.trim();
+  if (!target) return;
+  const pending = db
+    .prepare(
+      "SELECT 1 AS one FROM merge_queue WHERE repo = ? AND run_id IS NULL AND status IN ('queued', 'merging') LIMIT 1",
+    )
+    .get(target);
+  if (!pending) return;
+
+  const existing = getMergeSessionRepo(db, target);
+  if (existing) {
+    if (!wakeExisting) return;
+    try {
+      const locale = await engineLocale(ctx);
+      await ctx.session.prompt({
+        sessionID: existing as never,
+        text: tn(locale, "run.merge.wake"),
+        delivery: "queue",
+      });
+      return;
+    } catch {
+      // The stored session is gone: fall through and create a fresh one.
+    }
+  }
+
+  const session = await ctx.session.create({
+    agent: runAgent(getFlow()),
+    title: `Merge: ${target.split("/").pop() || target}`,
+    location: { directory: target },
+  });
+  setMergeSessionRepo(db, target, String(session.id));
+  const locale = await engineLocale(ctx);
+  await ctx.session.prompt({
+    sessionID: session.id,
+    text: tn(locale, "run.merge.manualPrompt", target),
+  });
+}
+
+/** Best-effort wake for the plan write paths: a failure never fails the write. */
+export function wakeManualMergeSoon(ctx: Ctx, db: Db, repo: string | null | undefined): void {
+  if (!repo) return;
+  void wakeManualMerge(ctx, db, repo).catch((error: unknown) => {
+    console.warn(
+      `[plans] manual merge session for ${repo} could not be woken: ${error instanceof Error ? error.message : String(error)}`,
+    );
   });
 }
