@@ -127,9 +127,9 @@ const CSS = `
   border-radius: 1px;
   background: currentColor;
 }
-.plan-run-play { color: var(--v2-state-fg-success); }
-.plan-run-play:hover { color: var(--v2-state-fg-success); }
-.plan-run-play svg { transform: rotate(-90deg); width: 20px; height: 20px; }
+.play-icon { color: var(--v2-state-fg-success); }
+.play-icon:hover { color: var(--v2-state-fg-success); }
+.play-icon svg { transform: rotate(-90deg); }
 .plan-run-pause { color: var(--v2-state-fg-warning); }
 .plan-run-pause:hover { color: var(--v2-state-fg-warning); }
 .plan-updated { font-size: 10.5px; color: var(--v2-text-text-faint); }
@@ -1351,7 +1351,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
                 <ctx.ui.Button
                   size="small"
                   variant="ghost"
-                  class={isExecuting(plan()) ? "plan-run-pause" : "plan-run-play"}
+                  class={isExecuting(plan()) ? "plan-run-pause" : "play-icon"}
                   icon={isExecuting(plan()) ? undefined : "fill-triangle-down"}
                   disabled={runDisabled(plan())}
                   onClick={() => void toggleRun(plan())}

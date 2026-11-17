@@ -194,6 +194,8 @@ const EN = {
   "work.hier.clear": "Remove parent",
   "work.hier.none": "No parent or children.",
   "work.hier.error": "Could not change the parent.",
+  "work.card.plan": "Plan the item",
+  "work.card.execute": "Execute the plan",
   "work.plan": "Plan",
   "work.plan.title": "Plan: {0}",
   "work.plan.prompt":
@@ -527,6 +529,8 @@ const PT: Record<keyof typeof EN, string> = {
   "work.hier.clear": "Remover pai",
   "work.hier.none": "Sem pai ou filhos.",
   "work.hier.error": "Não foi possível alterar o pai.",
+  "work.card.plan": "Planejar o item",
+  "work.card.execute": "Executar o plano",
   "work.plan": "Planejar",
   "work.plan.title": "Planejar: {0}",
   "work.plan.prompt":

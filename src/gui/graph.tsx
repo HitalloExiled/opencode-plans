@@ -121,6 +121,10 @@ export function WorkGraph(props: {
   /** Bumped by the surface when something changed outside the graph. */
   revision: number;
   onOpen: (id: string) => void;
+  /** The card action, shared with the list and the board. */
+  onAction?: ((id: string) => void) | undefined;
+  /** Whether the item has an active plan (play) or needs planning (brain). */
+  hasPlan?: ((id: string) => boolean) | undefined;
 }) {
   const t = useT();
   const ctx = usePlugin();
@@ -548,6 +552,19 @@ export function WorkGraph(props: {
                             }}
                           >
                             <span class="work-graph-node-title">{node.title}</span>
+                            <Show when={props.onAction}>
+                              <span
+                                class={props.hasPlan?.(node.id) ? "play-icon" : undefined}
+                                style={{ position: "absolute", top: "4px", right: "4px" }}
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <ctx.ui.IconButton
+                                  icon={props.hasPlan?.(node.id) ? "fill-triangle-down" : "brain"}
+                                  label={t(props.hasPlan?.(node.id) ? "work.card.execute" : "work.card.plan")}
+                                  onClick={() => props.onAction?.(node.id)}
+                                />
+                              </span>
+                            </Show>
                             <span class="work-graph-node-meta">
                               <StatusChip tone={statusTone(node.status)} label={t(`work.status.${node.status}`)} />
                               <Show when={node.plan}>

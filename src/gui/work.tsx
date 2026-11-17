@@ -174,7 +174,9 @@ const WORK_CSS = `
 .work-run-field { display: flex; flex-direction: column; gap: 3px; }
 .work-run-field-label { font-size: 11px; font-weight: 600; color: var(--v2-text-text-base); }
 /* Same play glyph as the plan Execute: the down triangle rotated into a play. */
-.work-run-play svg { transform: rotate(-90deg); color: var(--v2-state-fg-success); }
+.play-icon { color: var(--v2-state-fg-success); }
+.play-icon:hover { color: var(--v2-state-fg-success); }
+.play-icon svg { transform: rotate(-90deg); }
 .work-view-switch { display: flex; align-items: center; gap: 4px; }
 .work-board { display: flex; gap: 8px; flex: 1; min-height: 0; overflow-x: auto; padding-bottom: 4px; }
 .work-col {
@@ -871,6 +873,25 @@ export function WorkBody(props: {
       .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)));
   };
 
+  /**
+   * The card action shared by the three views: plan the item when it has no
+   * active plan, execute that plan when it does.
+   */
+  const cardAction = (id: string) => {
+    const summary = plansByItem().get(id);
+    if (!summary) {
+      planFromCard(id);
+      return;
+    }
+    void props.target()
+      .server.client.rpc(PlansRpc)
+      .get(summary.id)
+      .then((plan) => {
+        if (plan) void toggleRun(plan as Plan);
+      })
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)));
+  };
+
   const openPlan = (plan: PlanSummary) => {
     ctx.tabs.open({ server: props.target().server.id, id: plan.sessionID }, { focus: true });
   };
@@ -1048,7 +1069,7 @@ export function WorkBody(props: {
               <ctx.ui.Button
                 size="small"
                 variant="neutral"
-                class="work-run-play"
+                class="play-icon"
                 icon="fill-triangle-down"
                 busy={preflightBusy()}
                 onClick={openPreflight}
@@ -1133,7 +1154,7 @@ export function WorkBody(props: {
                       <ctx.ui.Button
                         size="small"
                         variant="neutral"
-                        class="work-run-play"
+                        class="play-icon"
                         icon="fill-triangle-down"
                         busy={runBusy()}
                         onClick={() => resumeRun(current().id)}
@@ -1355,15 +1376,17 @@ export function WorkBody(props: {
                                         </span>
                                       )}
                                     </Show>
-                                    <ctx.ui.IconButton
-                                      icon="brain"
-                                      label={t("work.plan")}
-                                      disabled={planning()}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        planFromCard(item.id);
-                                      }}
-                                    />
+                                    <span class={plansByItem().get(item.id) ? "play-icon" : undefined}>
+                                      <ctx.ui.IconButton
+                                        icon={plansByItem().get(item.id) ? "fill-triangle-down" : "brain"}
+                                        label={t(plansByItem().get(item.id) ? "work.card.execute" : "work.card.plan")}
+                                        disabled={planning()}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          cardAction(item.id);
+                                        }}
+                                      />
+                                    </span>
                                   </div>
                                 )}
                               </For>
@@ -1466,6 +1489,17 @@ export function WorkBody(props: {
                                   <Show when={entry.item.origin === "agent"}>
                                     <StatusChip label={t("work.agent")} tone="info" />
                                   </Show>
+                                  <span class={plansByItem().get(entry.item.id) ? "play-icon" : undefined}>
+                                    <ctx.ui.IconButton
+                                      icon={plansByItem().get(entry.item.id) ? "fill-triangle-down" : "brain"}
+                                      label={t(plansByItem().get(entry.item.id) ? "work.card.execute" : "work.card.plan")}
+                                      disabled={planning()}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        cardAction(entry.item.id);
+                                      }}
+                                    />
+                                  </span>
                                 </span>
                               </div>
                             )}
@@ -1485,6 +1519,8 @@ export function WorkBody(props: {
                   initiativeID={selectedInitiative()?.id}
                   revision={reload()}
                   onOpen={openItem}
+                  onAction={cardAction}
+                  hasPlan={(id) => Boolean(plansByItem().get(id))}
                 />
               </Show>
             </Show>
@@ -1515,6 +1551,7 @@ export function WorkBody(props: {
                       <ctx.ui.Button
                         size="small"
                         variant="contrast"
+                        class={isExecuting(plan()) ? "" : "play-icon"}
                         icon={isExecuting(plan()) ? undefined : "fill-triangle-down"}
                         disabled={runDisabled(plan())}
                         onClick={() => void toggleRun(plan())}
