@@ -126,9 +126,9 @@ export async function runPlan(input: {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // The plan may have been written in a worktree that no longer exists (a
-    // finished run). Give it a live session in the directory beginWork chose
-    // and try exactly once more.
-    const directory = begun?.ok ? begun.directory : undefined;
+    // finished run). Give it a live session in the directory beginWork chose —
+    // or the plan's own project, when even that call failed — and retry once.
+    const directory = (begun?.ok ? begun.directory : undefined) ?? current.projectDirectory;
     if (!/location not found/i.test(message) || !directory) throw error;
     const recovered = await target.client.session.create({
       agent: runAgent(flow),
