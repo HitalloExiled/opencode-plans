@@ -1485,9 +1485,6 @@ export function WorkBody(props: {
                                   )}
                                 </Show>
                                 <span class="work-card-actions" onClick={(event) => event.stopPropagation()}>
-                                  <Show when={entry.item.origin === "agent"}>
-                                    <StatusChip label={t("work.agent")} tone="info" />
-                                  </Show>
                                   <ctx.ui.IconButton
                                     class={plansByItem().get(entry.item.id) ? "play-icon" : undefined}
                                     icon={plansByItem().get(entry.item.id) ? "fill-triangle-down" : "brain"}
@@ -1498,6 +1495,9 @@ export function WorkBody(props: {
                                       cardAction(entry.item.id);
                                     }}
                                   />
+                                  <Show when={entry.item.origin === "agent"}>
+                                    <StatusChip label={t("work.agent")} tone="info" />
+                                  </Show>
                                 </span>
                               </div>
                             )}

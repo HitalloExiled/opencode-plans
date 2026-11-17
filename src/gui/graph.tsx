@@ -63,7 +63,7 @@ const CSS = `
 .work-graph-node-meta { display: flex; align-items: center; gap: 6px; }
 /* Pills on top, title in the middle, the action and the progress at the bottom. */
 .work-graph-node-foot { display: flex; align-items: center; gap: 6px; margin-top: auto; }
-.work-graph-progress { font-size: 10px; color: var(--v2-text-text-faint); font-variant-numeric: tabular-nums; }
+.work-graph-progress { flex: 1; min-width: 0; }
 .work-graph-handle {
   position: absolute;
   right: -9px;
@@ -571,8 +571,18 @@ export function WorkGraph(props: {
                               </Show>
                               <Show when={node.plan}>
                                 {(plan) => (
-                                  <span class="work-graph-progress">
-                                    {plan().done}/{plan().total}
+                                  <span class="work-card-progress work-graph-progress">
+                                    <span class="work-progress">
+                                      <span
+                                        class="work-progress-done"
+                                        style={{
+                                          width: `${plan().total === 0 ? 0 : Math.round((plan().done / plan().total) * 100)}%`,
+                                        }}
+                                      />
+                                    </span>
+                                    <span class="work-progress-label">
+                                      {plan().done}/{plan().total}
+                                    </span>
                                   </span>
                                 )}
                               </Show>
