@@ -8,6 +8,7 @@ import type { Context, ServerRef } from "@opencode/plugin/gui";
 import type { Location } from "@opencode/schema/location";
 import { PlansRpc, type WorkItemDetail } from "./contract";
 import type { Translate } from "./execute";
+import { planContext } from "./plan-context";
 import { pauseAgent } from "../flow-rules.js";
 import { repoForItem } from "../work-plan.js";
 
@@ -26,13 +27,15 @@ export async function planWorkItem(input: {
   const { ctx, target, detail, t } = input;
   const body = detail.item.body.trim() || t("work.detail.noBody");
   const plan = detail.plan;
+  const repo = repoForItem(detail.initiative, detail.item.repoID ?? null);
+  const directory = input.directory?.trim() || repo?.directory;
 
   // The dedicated planner gets the contract from the <plans-flow> tail, so the
   // seed only carries the item, the body and the save call. Native keeps the
   // full prompt: it has no tail.
   const flow = await target.server.client.rpc(PlansRpc).getFlow({});
   const short = flow === "dedicated";
-  const seed = plan
+  const prompt = plan
     ? t(
         short ? "work.replan.promptShort" : "work.replan.prompt",
         detail.item.title,
@@ -47,6 +50,16 @@ export async function planWorkItem(input: {
         detail.item.id,
         body,
       );
+  // The repository, the initiative and the work map are per item: they belong
+  // in the seed (a user message), never in the constant <plans-flow> tail.
+  const seed = `${planContext(
+    {
+      repo: directory,
+      initiative: detail.initiative,
+      map: detail.map,
+    },
+    t,
+  )}\n\n${prompt}`;
 
   // Replanning continues in the session that wrote the plan, when it still
   // exists; a missing session falls through to a fresh one.
@@ -56,14 +69,19 @@ export async function planWorkItem(input: {
       .then(() => plan.sessionID)
       .catch(() => undefined);
     if (existing) {
-      ctx.tabs.open({ server: target.server.id, id: existing }, { focus: true });
-      await target.server.client.session.prompt({ sessionID: existing as never, text: seed });
-      return existing;
+      try {
+        await target.server.client.session.prompt({ sessionID: existing as never, text: seed });
+        ctx.tabs.open({ server: target.server.id, id: existing }, { focus: true });
+        return existing;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // The plan may live in a worktree a finished run already removed; give
+        // it a fresh session in the repository instead of failing.
+        if (!/location not found/i.test(message)) throw error;
+      }
     }
   }
 
-  const repo = repoForItem(detail.initiative, detail.item.repoID ?? null);
-  const directory = input.directory?.trim() || repo?.directory;
   if (!directory) throw new Error(t("work.plan.error"));
 
   const agent = pauseAgent(flow);

@@ -16,8 +16,9 @@
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
-import { WORK_ITEM_TRANSITIONS } from "./gui/contract.js";
+import { WORK_ITEM_TRANSITIONS, type WorkMapEntry } from "./gui/contract.js";
 import { computeImplicitDeps, type FootprintItem } from "./work-footprint.js";
+import { sortWorkItems } from "./work-list.js";
 
 import {
   buildTemplate,
@@ -126,7 +127,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -162,6 +163,7 @@ const BASE_SCHEMA = [
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
+    overview TEXT,
     base_branch TEXT,
     max_parallel INTEGER NOT NULL DEFAULT 2,
     verify_command TEXT,
@@ -383,6 +385,10 @@ export function initSchema(db: Db): void {
   }
   if (!hasColumn(db, "initiatives", "description")) {
     db.prepare("ALTER TABLE initiatives ADD COLUMN description TEXT").run();
+  }
+  // v12 — the initiative's macro view, read by the agent when it plans.
+  if (!hasColumn(db, "initiatives", "overview")) {
+    db.prepare("ALTER TABLE initiatives ADD COLUMN overview TEXT").run();
   }
 
   // v9 — the run's repository, derived from its plans. Nullable: runs created
@@ -1186,6 +1192,8 @@ export type InitiativeRow = {
   id: string;
   name: string;
   description: string | null;
+  /** The macro view: what the initiative is, for humans and for planning. */
+  overview: string | null;
   /** Integration base for runs; null means the repo default branch. */
   base_branch: string | null;
   max_parallel: number;
@@ -1288,9 +1296,10 @@ export type UpdateInitiativeInput = {
   id: string;
   name?: string | undefined;
   description?: string | null | undefined;
+  overview?: string | null | undefined;
 };
 
-/** Renames and/or rewrites the description; omitted fields are kept. */
+/** Renames and/or rewrites the description or the macro view; omitted fields are kept. */
 export function updateInitiative(db: Db, input: UpdateInitiativeInput): InitiativeOk | WorkStoreError {
   const current = getInitiative(db, input.id);
   if (!current) return { ok: false, error: `iniciativa não encontrada: ${input.id}` };
@@ -1298,14 +1307,12 @@ export function updateInitiative(db: Db, input: UpdateInitiativeInput): Initiati
   if (!name) return { ok: false, error: "o nome da iniciativa é obrigatório" };
   const description =
     input.description === undefined ? current.description : input.description?.trim() || null;
+  const overview = input.overview === undefined ? current.overview : input.overview?.trim() || null;
 
   try {
-    db.prepare("UPDATE initiatives SET name = ?, description = ?, updated_at = ? WHERE id = ?").run(
-      name,
-      description,
-      nowTimestamp(),
-      input.id,
-    );
+    db.prepare(
+      "UPDATE initiatives SET name = ?, description = ?, overview = ?, updated_at = ? WHERE id = ?",
+    ).run(name, description, overview, nowTimestamp(), input.id);
   } catch (error) {
     return { ok: false, error: reason(error) };
   }
@@ -1322,6 +1329,7 @@ export type InitiativeRepoInput = {
 export type CreateInitiativeInput = {
   name: string;
   description?: string | null | undefined;
+  overview?: string | null | undefined;
   /** Repositories are optional: a new initiative can start empty. */
   repos?: readonly InitiativeRepoInput[] | undefined;
 };
@@ -1338,6 +1346,7 @@ export function createInitiative(db: Db, input: CreateInitiativeInput): Initiati
   const name = input.name.trim();
   if (!name) return { ok: false, error: "o nome da iniciativa é obrigatório" };
   const description = input.description?.trim() || null;
+  const overview = input.overview?.trim() || null;
 
   const repos = (input.repos ?? []).map((repo) => {
     const directory = normalizeWorkspaceDirectory(repo.directory);
@@ -1364,8 +1373,8 @@ export function createInitiative(db: Db, input: CreateInitiativeInput): Initiati
   try {
     transaction(db, () => {
       db.prepare(
-        "INSERT INTO initiatives (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      ).run(id, name, description, now, now);
+        "INSERT INTO initiatives (id, name, description, overview, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(id, name, description, overview, now, now);
       repos.forEach((repo, index) => {
         db.prepare(
           `INSERT INTO initiative_repos (id, initiative_id, directory, label, is_primary, position, created_at)
@@ -1790,6 +1799,19 @@ export function workItemDeps(db: Db, itemID: string): WorkItemDeps {
     )
     .all(itemID) as WorkItemRow[];
   return { blockedBy, blocks };
+}
+
+/** Every card of an initiative with its blockers, for the planner's macro view. */
+export function initiativeMap(db: Db, initiativeID: string): WorkMapEntry[] {
+  return sortWorkItems(listWorkItems(db, initiativeID)).map((item) => ({
+    id: item.id,
+    title: item.title,
+    status: item.status,
+    blockedBy: workItemDeps(db, item.id).blockedBy.map((dep) => ({
+      title: dep.title,
+      status: dep.status,
+    })),
+  }));
 }
 
 export function moveWorkItem(db: Db, input: MoveWorkItemInput): WorkItemOk | WorkStoreError {

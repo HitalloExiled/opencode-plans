@@ -148,6 +148,9 @@ const EN = {
   "work.initiative.select": "Select initiative",
   "work.initiative.description": "Description",
   "work.initiative.descriptionHint": "Optional",
+  "work.initiative.overview": "Macro view",
+  "work.initiative.overviewHint": "What this initiative is: product, stack, conventions.",
+  "work.initiative.overviewNote": "The agent reads this when planning an item.",
   "work.initiative.save": "Save",
   "work.newItem": "New item",
   "work.newItem.hint": "The repository is chosen when you plan the item.",
@@ -204,6 +207,17 @@ const EN = {
     'Plan the work item "{0}" (id: {1}).\n\nThe body below is the need, not the implementation: decide how to build it.\n\n---\n{2}\n---\n\nDiscuss anything ambiguous and save the plan with plans.save, passing workItemID: "{1}" so the plan is linked to this item. Do not implement anything in this session.',
   "work.plan.promptShort":
     'Plan the work item "{0}" (id: {1}). The body below is the need; discuss anything ambiguous and save with plans.save({ workItemID: "{1}" }).\n\n---\n{2}\n---',
+  "work.plan.context.title": "## Context",
+  "work.plan.context.repo": "Repository: {0}",
+  "work.plan.context.initiative": "Initiative: {0}",
+  "work.plan.context.overview": "Macro view:",
+  "work.plan.context.map": "Work map ({0} cards):",
+  "work.plan.context.read":
+    "Read the repository before planning — AGENTS.md, README and the code this card touches. The code is the source of truth; this context may be stale.",
+  "work.plan.context.touches":
+    "Declare `touches` in `plans.save` with the files or globs the plan changes, so parallel runs do not collide.",
+  "work.map.blockedBy": "blocked by",
+  "work.map.more": "+{0} more cards",
   "work.plan.error": "Could not open the planning session.",
   "work.plan.dialog.title": "Plan: {0}",
   "work.plan.dialog.hint":
@@ -485,6 +499,9 @@ const PT: Record<keyof typeof EN, string> = {
   "work.initiative.select": "Selecionar iniciativa",
   "work.initiative.description": "Descrição",
   "work.initiative.descriptionHint": "Opcional",
+  "work.initiative.overview": "Visão macro",
+  "work.initiative.overviewHint": "O que é esta iniciativa: produto, stack, convenções.",
+  "work.initiative.overviewNote": "O agente lê este texto ao planejar um item.",
   "work.initiative.save": "Salvar",
   "work.newItem": "Novo item",
   "work.newItem.hint": "O repositório é escolhido ao planejar o item.",
@@ -562,6 +579,17 @@ const PT: Record<keyof typeof EN, string> = {
   "work.replan.prompt":
     'Replaneje o work item "{0}" (id: {1}).\n\nO plano "{3}" (id: {2}) já existe: leia-o com plans.get, ajuste o como (o corpo abaixo é a necessidade, não a implementação) e salve o MESMO plano com plans.save({ id: "{2}"; workItemID: "{1}" }). Não crie outro plano; um item tem um plano só. Se o plano estava concluído, o novo corpo o reabre como ativo.\n\n---\n{4}\n---\n\nNão implemente nada nesta sessão.',
   "work.plan.section": "Plano",
+  "work.plan.context.title": "## Contexto",
+  "work.plan.context.repo": "Repositório: {0}",
+  "work.plan.context.initiative": "Iniciativa: {0}",
+  "work.plan.context.overview": "Visão macro:",
+  "work.plan.context.map": "Mapa de trabalho ({0} cards):",
+  "work.plan.context.read":
+    "Leia o repositório antes de planejar — AGENTS.md, README e o código que este card toca. O código é a fonte de verdade; este contexto pode estar desatualizado.",
+  "work.plan.context.touches":
+    "Declare `touches` no `plans.save` com os arquivos ou globs que o plano muda, para os runs paralelos não colidirem.",
+  "work.map.blockedBy": "bloqueado por",
+  "work.map.more": "+{0} cards",
   "work.plan.none": "Sem plano ainda. Use Planejar para decidir o como.",
   "work.plan.progress": "{0}/{1} passos",
   "work.progress": "{0}/{1}",

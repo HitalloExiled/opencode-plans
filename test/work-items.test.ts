@@ -379,3 +379,35 @@ describe("work item containment", () => {
     expect(getWorkItem(db, "missing")).toBeUndefined();
   });
 });
+
+describe("initiative macro view", () => {
+  test("schema v12 carries the overview column", () => {
+    const db = open();
+    const columns = db.prepare("PRAGMA table_info(initiatives)").all() as { name: string }[];
+    expect(columns.some((column) => column.name === "overview")).toBe(true);
+    expect(schemaVersion(db)).toBe(12);
+  });
+
+  test("the overview round-trips and never replaces the description", () => {
+    const db = open();
+    const created = createInitiative(db, {
+      name: "App",
+      description: "one line",
+      overview: "# What\n\nA todo app.",
+      repos: [{ directory: "/work/app" }],
+    });
+    if (!created.ok) throw new Error(created.error);
+    expect(created.initiative.overview).toBe("# What\n\nA todo app.");
+    expect(created.initiative.description).toBe("one line");
+
+    // Omitted fields are kept; a blank overview clears it and nothing else.
+    const renamed = updateInitiative(db, { id: created.initiative.id, name: "App 2" });
+    expect(renamed.ok).toBe(true);
+    expect(getInitiative(db, created.initiative.id)?.overview).toBe("# What\n\nA todo app.");
+
+    const cleared = updateInitiative(db, { id: created.initiative.id, overview: "   " });
+    expect(cleared.ok).toBe(true);
+    expect(getInitiative(db, created.initiative.id)?.overview).toBe(null);
+    expect(getInitiative(db, created.initiative.id)?.description).toBe("one line");
+  });
+});

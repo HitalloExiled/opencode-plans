@@ -246,9 +246,25 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   initiative no directory owns (the Planner-style backlog); without it the
   workspace resolution is unchanged. An item created there takes the
   initiative's primary repo, or none when it has no repos.
-- **Initiative tools** (`initiative.*`): `list` (id, name, repos, item counts)
-  and `create` (name + optional description). Renaming and the description stay
-  in the panel; repositories are born from the plan picker.
+- **Initiative tools** (`initiative.*`): `list` (id, name, repos, item counts),
+  `get` (repos, base branch, macro view and the work map) and `create` (name +
+  optional description). Renaming, the description and the macro view stay in
+  the panel; repositories are born from the plan picker.
+- **The initiative carries a macro view.** `initiatives.overview` (schema v12)
+  is a markdown document (product, stack, conventions) kept apart from
+  `description`, which stays the one-line summary of the card and of the
+  selector. The panel edits it; `initiative.get` exposes it to any session. The
+  planning seed embeds it (truncated to 6000 chars) together with the derived
+  work map (40 cards), which is never stored.
+- **The planning seed carries the item's context.** `planWorkItem`
+  (`src/gui/plan-item.ts`) prepends `planContext` (`src/gui/plan-context.ts`,
+  pure and tested): repository path, initiative name, macro view, the work map
+  (status + blockers, from `getWorkItem`'s `map`) and the instructions to read
+  the repository before planning and to declare `touches` in `plans.save`. It is
+  per item, so it goes in the seed (a user message), never in the constant
+  `<plans-flow>` tail. Replanning reuses the plan's session; a
+  `location not found` (a removed worktree) falls back to a new session in the
+  repository, like Execute.
 - **`plans.link`** adopts a saved plan into an item (`workItemID: null`
   unlinks), enforcing one plan per item exactly like `savePlan`. It is the way
   back for a plan created before its item existed.

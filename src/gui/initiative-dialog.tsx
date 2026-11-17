@@ -11,10 +11,26 @@ import { PlansRpc, type Initiative } from "./contract";
 import { useT } from "./i18n";
 
 const CSS = `
-.initiative-dialog { display: flex; flex-direction: column; gap: 10px; width: min(520px, calc(100vw - 48px)); pointer-events: auto; }
+.initiative-dialog { display: flex; flex-direction: column; gap: 10px; width: min(560px, calc(100vw - 48px)); pointer-events: auto; }
 .initiative-dialog-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--v2-text-text-base); overflow-wrap: anywhere; }
 .initiative-dialog-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .initiative-dialog-hint { margin: 0; font-size: 11px; color: var(--v2-text-text-muted); }
+.initiative-dialog-field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--v2-text-text-muted); }
+.initiative-dialog-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 150px;
+  resize: vertical;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--v2-text-text-base);
+  background: var(--v2-background-bg-layer-01);
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: 6px;
+  padding: 8px;
+}
+.initiative-dialog-field textarea:focus { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
 `;
 
 export type InitiativeDialogInput = {
@@ -36,6 +52,7 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
   const [mode, setMode] = createSignal<"create" | "edit">(props.mode === "edit" && props.initiative ? "edit" : "create");
   const [name, setName] = createSignal(props.initiative?.name ?? "");
   const [description, setDescription] = createSignal(props.initiative?.description ?? "");
+  const [overview, setOverview] = createSignal(props.initiative?.overview ?? "");
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -54,7 +71,7 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
     setError(null);
     void props.server.client
       .rpc(PlansRpc)
-      .createInitiative({ name: title, description: description().trim() || undefined })
+      .createInitiative({ name: title, description: description().trim() || undefined, overview: overview().trim() || undefined })
       .then((result) => {
         if (!result.ok || !result.initiative) {
           setError(result.error ?? t("work.initiative.error"));
@@ -79,6 +96,7 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
         id: value.id,
         name: title,
         description: description().trim() || null,
+        overview: overview().trim() || null,
       })
       .then((result) => {
         if (!result.ok || !result.initiative) {
@@ -89,6 +107,7 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
         setMode("edit");
         setName(result.initiative.name);
         setDescription(result.initiative.description ?? "");
+        setOverview(result.initiative.overview ?? "");
         props.onChanged(result.initiative, "updated");
       })
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
@@ -128,6 +147,17 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
           placeholder={t("work.initiative.descriptionHint")}
           onSubmit={() => (mode() === "edit" ? save() : create())}
         />
+
+        <label class="initiative-dialog-field">
+          <span>{t("work.initiative.overview")}</span>
+          <textarea
+            value={overview()}
+            aria-label={t("work.initiative.overview")}
+            placeholder={t("work.initiative.overviewHint")}
+            onInput={(event) => setOverview(event.currentTarget.value)}
+          />
+        </label>
+        <p class="initiative-dialog-hint">{t("work.initiative.overviewNote")}</p>
 
         <p class="initiative-dialog-hint">{t("work.initiative.reposHint")}</p>
 

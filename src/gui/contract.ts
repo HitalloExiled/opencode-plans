@@ -105,6 +105,8 @@ export type Initiative = {
   id: string;
   name: string;
   description?: string | undefined;
+  /** Macro view: what the initiative is, read by the agent when planning. */
+  overview?: string | undefined;
   createdAt: string;
   updatedAt: string;
   repos: readonly InitiativeRepo[];
@@ -183,9 +185,19 @@ export type WorkListInput = {
   directory?: string | undefined;
 };
 
+export type WorkMapEntry = {
+  id: string;
+  title: string;
+  status: WorkItemStatus;
+  /** Items this one waits for. */
+  blockedBy: readonly { title: string; status: WorkItemStatus }[];
+};
+
 export type WorkItemDetail = {
   item: WorkItem & { body: string; closedAt?: string | undefined };
   initiative: Initiative;
+  /** Every card of the initiative with its blockers (the macro view). */
+  map: readonly WorkMapEntry[];
   /** Items this one depends on. */
   blockedBy: readonly WorkItem[];
   /** Items that depend on this one. */
@@ -321,6 +333,7 @@ export const initiativeSchema = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   description: optString,
+  overview: optString,
   createdAt: Schema.String,
   updatedAt: Schema.String,
   repos: Schema.Array(initiativeRepoSchema),
@@ -340,6 +353,7 @@ export const initiativeResultSchema = Schema.Struct({
 export const createInitiativeInputSchema = Schema.Struct({
   name: Schema.String,
   description: optString,
+  overview: optString,
   repos: Schema.optional(Schema.Array(Schema.Struct({ directory: Schema.String, label: optString }))),
 });
 
@@ -347,6 +361,7 @@ export const updateInitiativeInputSchema = Schema.Struct({
   id: Schema.String,
   name: optString,
   description: Schema.optional(Schema.NullOr(Schema.String)),
+  overview: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 export const initiativeRepoInputSchema = Schema.Struct({
@@ -406,9 +421,17 @@ export const workItemFullSchema = Schema.Struct({
   closedAt: optString,
 });
 
+export const workMapEntrySchema = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  status: workStatusSchema,
+  blockedBy: Schema.Array(Schema.Struct({ title: Schema.String, status: workStatusSchema })),
+});
+
 export const workItemDetailSchema = Schema.Struct({
   item: workItemFullSchema,
   initiative: initiativeSchema,
+  map: Schema.Array(workMapEntrySchema),
   blockedBy: Schema.Array(workItemSchema),
   blocks: Schema.Array(workItemSchema),
   parent: Schema.optional(Schema.NullOr(workItemSchema)),

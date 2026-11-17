@@ -50,6 +50,7 @@ import {
   getStore,
   getRun,
   getWorkItem as getWorkItemRow,
+  initiativeMap,
   listMergeQueue,
   listPlans,
   listRunItems,
@@ -128,6 +129,7 @@ const toInitiative = (initiative: StoreInitiative): Initiative => ({
   id: initiative.id,
   name: initiative.name,
   ...(initiative.description ? { description: initiative.description } : {}),
+  ...(initiative.overview ? { overview: initiative.overview } : {}),
   createdAt: initiative.created_at,
   updatedAt: initiative.updated_at,
   ...(initiative.base_branch ? { baseBranch: initiative.base_branch } : {}),
@@ -456,6 +458,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const result = createInitiative(store.db, {
         name: input.name,
         description: input.description,
+        overview: input.overview,
         repos: (input.repos ?? []).map((repo) => ({
           directory: repo.directory,
           ...(repo.label ? { label: repo.label } : {}),
@@ -470,6 +473,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         id: input.id,
         name: input.name,
         description: input.description,
+        overview: input.overview,
       });
       return result.ok ? initiativeOk(result.initiative) : initiativeError(result.error);
     },
@@ -549,6 +553,7 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       return {
         item: toWorkItemFull(item),
         initiative: toInitiative(initiative),
+        map: initiativeMap(store.db, item.initiative_id),
         blockedBy: deps.blockedBy.map(toWorkItem),
         blocks: deps.blocks.map(toWorkItem),
         parent: parent ? toWorkItem(parent) : null,

@@ -28,7 +28,7 @@ import {
   type InjectMessage,
 } from "./src/inject.js";
 import { PLANS_NAMESPACE, deleteTool, doctorTool, getTool, linkTool, listTool, saveTool, updateTool } from "./plans.js";
-import { INITIATIVE_NAMESPACE, createInitiativeTool, listInitiativeTool } from "./initiative.js";
+import { INITIATIVE_NAMESPACE, createInitiativeTool, getInitiativeTool, listInitiativeTool } from "./initiative.js";
 import { WORK_NAMESPACE, getWorkTool, listWorkTool, saveWorkTool, updateWorkTool } from "./work.js";
 import { MERGE_NAMESPACE, mergeDoneTool, mergeFailTool, mergeListTool, mergeNextTool } from "./merge.js";
 import { registerAgents } from "./src/agents.js";
@@ -104,6 +104,7 @@ export async function registerTools(ctx: Ctx) {
     // lists them; renaming and the description stay in the panel.
     editor.namespace(INITIATIVE_NAMESPACE);
     editor.add({ ...listInitiativeTool(ctx), options: { namespace: "initiative", pinned: true } });
+    editor.add({ ...getInitiativeTool(ctx), options: { namespace: "initiative", pinned: true } });
     editor.add({ ...createInitiativeTool(ctx), options: { namespace: "initiative", pinned: true } });
 
     // Work items are the needs; plans are the how. A separate group keeps the
