@@ -517,9 +517,10 @@ export function PlansBody(props: { target: () => PlansTarget }) {
     onCleanup(() => {
       live = false;
     });
+    setWorkItemMissing(false);
     void client()
       .rpc(PlansRpc)
-      .getWorkItem({ id })
+      .getWorkItem({ id }, rpcOptions())
       .then((value) => {
         const detail = value as WorkItemDetail | null;
         const item = detail
@@ -531,10 +532,10 @@ export function PlansBody(props: { target: () => PlansTarget }) {
         setWorkItemMissing(item === null);
       })
       .catch(() => {
-        workItemCache.set(id, null);
+        // A transport failure is not "the item is gone": keep the id and retry next time.
         if (!live) return;
         setPlanWorkItem(null);
-        setWorkItemMissing(true);
+        setWorkItemMissing(false);
       });
   });
 
