@@ -15,7 +15,7 @@ import { PlansRpc } from "./contract";
 import { executionFor, planTarget, sessionTarget } from "./execution";
 import type { Plan, PlanFlow, PlanStatus, PlanStep, StepStatus, WorkItemDetail } from "./contract";
 import { useT } from "./i18n";
-import { openPlansOverlay, requestWorkItem } from "./overlay-state";
+import { closePlansOverlay, openPlansOverlay, requestWorkItem } from "./overlay-state";
 import { initiativeSelection } from "./initiative-selection";
 import { bodyWithoutSteps } from "../plan-body";
 import { orderPlans, projectKeyOf, projectLabel as projectSectionName } from "./order";
@@ -1011,6 +1011,8 @@ export function PlansBody(props: { target: () => PlansTarget }) {
 
   /** The page opens the plan's own session; it never moves the plan. */
   const openSession = (plan: Plan) => {
+    // Opening a session takes the user to the chat: the overlay must not stay on top.
+    closePlansOverlay();
     ctx.tabs.open({ server: target().server.id, id: plan.sessionID }, { focus: true });
   };
 

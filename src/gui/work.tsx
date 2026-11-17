@@ -455,6 +455,8 @@ export function WorkBody(props: {
     initiative.repos.find((repo) => repo.primary)?.directory ?? initiative.repos[0]?.directory ?? "";
 
   const openSession = (id: string) => {
+    // Opening a session takes the user to the chat: the overlay must not stay on top.
+    closePlansOverlay();
     ctx.tabs.open({ server: props.target().server.id, id }, { focus: true });
   };
 
@@ -940,6 +942,8 @@ export function WorkBody(props: {
   };
 
   const openPlan = (plan: PlanSummary) => {
+    // Opening a session takes the user to the chat: the overlay must not stay on top.
+    closePlansOverlay();
     ctx.tabs.open({ server: props.target().server.id, id: plan.sessionID }, { focus: true });
   };
 
