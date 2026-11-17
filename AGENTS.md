@@ -236,7 +236,9 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   render `<work-item-body>` as data; `save` caps at 3 items per request, dedupes
   by normalized title + parent + non-terminal status and always writes
   `origin=agent`; `update` moves status/order/parent/deps (cycles rejected) and
-  only the planner/user closes an item.
+  only the planner/user closes an item — except that a linked plan which reaches
+  `done` closes the item (the engine decides on the plan transition, straight to
+  the column, and reopens it when the plan goes back to `active`).
 - **`initiativeID` on `work.list`/`work.save`** files and reads needs for an
   initiative no directory owns (the Planner-style backlog); without it the
   workspace resolution is unchanged. An item created there takes the
@@ -281,8 +283,8 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
 
 The run layer executes a whole initiative, not one item. Files:
 
-- `src/store.ts` — schema v9: `runs` (with `repo`, the directory the preflight
-  resolved), `run_items`, `merge_queue`,
+- `src/store.ts` — schema v10: `runs` (with `repo`, the directory the preflight
+  resolved), `executions` (who is working in a repository), `run_items`, `merge_queue`,
   `plan_touches`, plus `projects.base_branch/max_parallel/verify_command`.
   One active run per project (partial unique index); `claimNextMerge` is the
   single transactional FIFO claim; `stopMergeQueue` is the failure brake.
@@ -303,6 +305,13 @@ Invariants:
 
 - **The base branch is never touched.** Items accumulate as `wi/<item>`
   branches; the engine enqueues and only the merge session writes `run/<id>`.
+- **One execution path decides solo vs worktree.** With a work item, executing a
+  plan calls `beginWork` (`src/work-execution.ts`): solo (nobody else in the
+  repository, clean tree) switches the working tree to `wi/<item>`; anything
+  else gets a worktree under `plans/worktrees/executions/<item>`. The run keeps
+  its integration worktree for every item (solo runs still need the cancel and
+  merge gates). Rows live in `executions`; one left open by a dead app stops
+  blocking solo after 12 hours.
 - **The run's repository may be derived from the plans.** The preflight resolves
   it as the session's repository, else the item's `repo_id`, else the
   `project_directory` of the item's plan (all selected items must agree, or

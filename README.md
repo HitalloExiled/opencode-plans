@@ -238,13 +238,20 @@ dependências**; com uma iniciativa selecionada, **Executar iniciativa**. O
 - **Planejar**: sem plano, um popup lista os **projetos do OpenCode** e aceita um
   caminho novo; o path vira repositório da iniciativa, fica no item e a sessão
   abre nele. Com plano, o Planejar reabre a sessão do plano.
+- **Executar um plano com item**: o engine cria `wi/<item>` na hora. **Solo** —
+  ninguém mais trabalhando no repo e árvore limpa — a branch entra no working
+  tree e o agente edita ali; fora disso, worktree. A base nunca é tocada.
+- **Conclusão**: plano que chega a `done` **fecha o item** (a cadeia anda) e
+  reabrir o plano devolve o item para `ready`; marcar o plano `done` marca todos
+  os passos `done`.
 - **Run**: o pré-voo exige repositório git, `base_ref`, nenhum run ativo, itens `ready`
   com plano `active` e grafo acíclico. O repositório do run é o da iniciativa; se a
   iniciativa não tiver nenhum, ele é **derivado do `project_directory` do plano** de
   cada item (todos precisam concordar), e fica gravado em `runs.repo`. O run cria
   `run/<id>` (integração) e, por
   item, um worktree + branch `wi/<item>` a partir do **tip da integração**; a
-  sessão do executor roda nesse diretório e o plano é a fonte da verdade.
+  sessão do executor roda nesse diretório e o plano é a fonte da verdade. O run
+  mantém a integração para todo item; o caminho solo vale para o Execute manual.
 - **Fila de merge**: item concluído é **enfileirado**, nunca mergeado pelo
   engine. Uma **sessão única** (worktree de integração) drena com
   `merge.list/next/done/fail`: claim FIFO com um `merging` por vez,

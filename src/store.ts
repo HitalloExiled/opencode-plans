@@ -690,6 +690,35 @@ export function setPlanWorkItem(db: Db, input: SetPlanWorkItemInput): Ok | Write
   return { ok: true };
 }
 
+/**
+ * A plan linked to a work item closes it when the plan finishes, and reopens it
+ * when the plan goes back to active. Closing writes the status directly: this is
+ * the engine deciding on a plan transition, not an agent moving a need, so it
+ * does not go through `WORK_ITEM_TRANSITIONS`.
+ */
+export function closeWorkItemForPlan(
+  db: Db,
+  planID: string,
+): { closed: string | null; reopened: string | null } {
+  const plan = getPlan(db, planID);
+  const itemID = plan?.work_item_id;
+  if (!plan || !itemID) return { closed: null, reopened: null };
+  const item = getWorkItem(db, itemID);
+  if (!item) return { closed: null, reopened: null };
+  const now = nowTimestamp();
+
+  if (plan.status === "done") {
+    if (item.status === "done" || item.status === "dropped") return { closed: null, reopened: null };
+    db.prepare("UPDATE work_items SET status = 'done', closed_at = ?, updated_at = ? WHERE id = ?").run(now, now, item.id);
+    return { closed: item.id, reopened: null };
+  }
+  if (plan.status === "active" && item.status === "done") {
+    db.prepare("UPDATE work_items SET status = 'ready', closed_at = NULL, updated_at = ? WHERE id = ?").run(now, item.id);
+    return { closed: null, reopened: item.id };
+  }
+  return { closed: null, reopened: null };
+}
+
 export type SavePlanInput = {
   id?: string | undefined;
   title?: string | undefined;
@@ -815,6 +844,10 @@ export function savePlan(db: Db, input: SavePlanInput): SaveOk | WriteError {
          VALUES (?, ?, ?, ?, ?)`,
       );
       steps.forEach((step, index) => insert.run(id, index, `s${index + 1}`, step.text, step.status));
+      // A plan marked done is done all the way down.
+      if (status === "done") {
+        db.prepare("UPDATE plan_steps SET status = 'done' WHERE plan_id = ?").run(id);
+      }
       if (input.touches !== undefined) {
         db.prepare("DELETE FROM plan_touches WHERE plan_id = ?").run(id);
         for (const path of new Set(input.touches.map((entry) => entry.trim()).filter(Boolean))) {
@@ -825,6 +858,9 @@ export function savePlan(db: Db, input: SavePlanInput): SaveOk | WriteError {
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+
+  // A finished plan closes its work item; reopening it puts the item back.
+  closeWorkItemForPlan(db, id);
 
   const plan = getPlan(db, id);
   if (!plan) return { ok: false, error: "plano gravado, mas não pôde ser lido de volta" };
@@ -927,6 +963,9 @@ export function setStep(db: Db, input: SetStepInput): SaveOk | WriteError {
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+
+  // `deriveStatus` may have just finished the plan: the item follows.
+  closeWorkItemForPlan(db, plan.id);
 
   const updated = getPlan(db, plan.id);
   if (!updated) return { ok: false, error: "passo atualizado, mas o plano não pôde ser lido de volta" };

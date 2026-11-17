@@ -29,6 +29,9 @@ export type BeginWorkInput = {
   itemID: string;
   planID?: string | null;
   sessionID?: string | null;
+  /** The caller already decided; used by the single-item run, whose own row
+   * would otherwise make the repository look busy. */
+  force?: WorkMode | undefined;
 };
 
 export type BeginWorkResult =
@@ -74,7 +77,7 @@ export async function beginWork(input: BeginWorkInput): Promise<BeginWorkResult>
   if (!(await isGitRepo(repo))) return { ok: false, error: `não é um repositório git: ${repo}` };
 
   const branch = itemBranch(input.itemID);
-  const solo = !isRepoBusy(input.db, repo) && (await treeClean(repo));
+  const solo = input.force ? input.force === "solo" : !isRepoBusy(input.db, repo) && (await treeClean(repo));
 
   if (solo) {
     const switched = (await branchExists(repo, branch))

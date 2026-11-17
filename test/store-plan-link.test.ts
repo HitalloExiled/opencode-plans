@@ -7,9 +7,12 @@ import {
   createWorkItem,
   getPlan,
   getPlanByWorkItem,
+  getWorkItem,
   initSchema,
   savePlan,
   setPlanWorkItem,
+  setStep,
+  updatePlan,
   type Db,
 } from "../src/store";
 
@@ -82,5 +85,22 @@ describe("setPlanWorkItem", () => {
 
     expect(setPlanWorkItem(db, { id: "nope", workItemID: target.id }).ok).toBe(false);
     expect(setPlanWorkItem(db, { id: saved.id, workItemID: "nope" }).ok).toBe(false);
+  });
+});
+
+describe("plan completion and the work item", () => {
+  test("finishing the plan closes the item, reopening the plan reopens it", () => {
+    const { db, item, plan } = setup();
+    const target = item("Needs a plan");
+    const saved = plan("Adopted plan");
+    setPlanWorkItem(db, { id: saved.id, workItemID: target.id });
+
+    const step = getPlan(db, saved.id)!.steps[0]!;
+    expect(setStep(db, { id: saved.id, stepID: step.step_id, status: "done" }).ok).toBe(true);
+    expect(getPlan(db, saved.id)?.status).toBe("done");
+    expect(getWorkItem(db, target.id)?.status).toBe("done");
+
+    expect(updatePlan(db, { id: saved.id, status: "active" }).ok).toBe(true);
+    expect(getWorkItem(db, target.id)?.status).toBe("ready");
   });
 });
