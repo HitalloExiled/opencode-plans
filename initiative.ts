@@ -38,7 +38,6 @@ const listInput = z.object({});
 
 const createInput = z.object({
   name: z.string().min(1).max(200).describe("Initiative name."),
-  description: z.string().max(2000).optional().describe("Optional description."),
 });
 
 const getInput = z.object({
@@ -123,14 +122,13 @@ export function listInitiativeTool(ctx: Ctx) {
 export function createInitiativeTool(ctx: Ctx) {
   return {
     name: "create",
-    description: "Create an initiative from a name and an optional description.",
+    description: "Create an initiative from a name.",
     input: createInput,
     async execute(input: z.infer<typeof createInput>): Promise<ToolResult> {
       try {
         const store = await requireStore();
         const result = createInitiative(store.db, {
           name: input.name,
-          description: input.description,
         });
         if (!result.ok) return fail(result.error);
         emitPlanChange({ sessionID: "" });
@@ -169,7 +167,6 @@ export function getInitiativeTool(ctx: Ctx) {
           : "—";
         const lines = [
           `# ${initiative.name} (id=${initiative.id})`,
-          ...(initiative.description ? ["", initiative.description] : []),
           "",
           `${text.repos}: ${repos}`,
           ...(initiative.base_branch ? [`${text.base}: ${initiative.base_branch}`] : []),

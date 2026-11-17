@@ -32,7 +32,6 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
   const t = useT();
   let shell: HTMLDivElement | undefined;
   const [name, setName] = createSignal("");
-  const [description, setDescription] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -51,7 +50,7 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
     setError(null);
     void props.server.client
       .rpc(PlansRpc)
-      .createInitiative({ name: title, description: description().trim() || undefined })
+      .createInitiative({ name: title })
       .then((result) => {
         if (!result.ok || !result.initiative) {
           setError(result.error ?? t("work.initiative.error"));
@@ -75,14 +74,6 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
           onInput={(value) => setName(value)}
           label={t("work.initiative.name")}
           placeholder={t("work.initiative.nameHint")}
-          onSubmit={create}
-        />
-
-        <props.ctx.ui.TextInput
-          value={description()}
-          onInput={(value) => setDescription(value)}
-          label={t("work.initiative.description")}
-          placeholder={t("work.initiative.descriptionHint")}
           onSubmit={create}
         />
 

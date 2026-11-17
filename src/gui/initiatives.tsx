@@ -31,7 +31,6 @@ const CSS = `
 .initiative-card:hover { border-color: var(--v2-border-border-strong); background-image: linear-gradient(var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)); }
 .initiative-card:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: -2px; }
 .initiative-name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
-.initiative-description { font-size: 11.5px; color: var(--v2-text-text-muted); overflow-wrap: anywhere; }
 .initiative-meta { display: flex; gap: 10px; font-size: 10.5px; color: var(--v2-text-text-faint); }
 .initiative-overview-mark { padding: 0 4px; border: 1px solid var(--v2-border-border-muted); border-radius: 4px; color: var(--v2-text-text-muted); }
 `;
@@ -127,9 +126,6 @@ export function InitiativesBody(props: {
                     }}
                   >
                     <span class="initiative-name">{initiative.name}</span>
-                    <Show when={initiative.description}>
-                      <span class="initiative-description">{initiative.description}</span>
-                    </Show>
                     <span class="initiative-meta">
                       <Show when={initiative.overview}>
                         <span class="initiative-overview-mark">{t("work.initiative.overview")}</span>

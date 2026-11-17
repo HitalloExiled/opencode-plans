@@ -793,7 +793,7 @@ export function WorkBody(props: {
     });
   };
 
-  const saveInitiative = (patch: { name?: string; description?: string | null; overview?: string | null }) => {
+  const saveInitiative = (patch: { name?: string; overview?: string | null }) => {
     const initiative = selectedInitiative();
     if (!initiative) return Promise.reject(new Error(t("work.initiative.select")));
     return props.target()
@@ -808,7 +808,6 @@ export function WorkBody(props: {
   };
 
   const [initiativeName, setInitiativeName] = createSignal("");
-  const [initiativeDescription, setInitiativeDescription] = createSignal("");
   const [initiativeOverview, setInitiativeOverview] = createSignal("");
   const [initiativeSaving, setInitiativeSaving] = createSignal(false);
   const [initiativeDeleting, setInitiativeDeleting] = createSignal(false);
@@ -817,7 +816,6 @@ export function WorkBody(props: {
   createEffect(() => {
     const initiative = selectedInitiative();
     setInitiativeName(initiative?.name ?? "");
-    setInitiativeDescription(initiative?.description ?? "");
     setInitiativeOverview(initiative?.overview ?? "");
     setBaseInput(initiative?.baseBranch ?? "main");
     setParallelInput(String(initiative?.maxParallel ?? 2));
@@ -834,7 +832,6 @@ export function WorkBody(props: {
     setActionError(null);
     void saveInitiative({
       name,
-      description: initiativeDescription().trim() || null,
       overview: initiativeOverview().trim() || null,
     })
       .then(() =>
@@ -1708,15 +1705,6 @@ export function WorkBody(props: {
                       value={initiativeName()}
                       onInput={(value) => setInitiativeName(value)}
                       label={t("work.initiative.name")}
-                    />
-                  </div>
-                  <div class="work-run-field">
-                    <span class="work-run-field-label">{t("work.initiative.description")}</span>
-                    <textarea
-                      class="work-initiative-textarea"
-                      value={initiativeDescription()}
-                      aria-label={t("work.initiative.description")}
-                      onInput={(event) => setInitiativeDescription(event.currentTarget.value)}
                     />
                   </div>
                   <div class="work-run-field">

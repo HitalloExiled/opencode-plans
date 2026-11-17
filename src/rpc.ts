@@ -128,7 +128,6 @@ const toInitiativeRepo = (repo: StoreInitiative["repos"][number]) => ({
 const toInitiative = (initiative: StoreInitiative): Initiative => ({
   id: initiative.id,
   name: initiative.name,
-  ...(initiative.description ? { description: initiative.description } : {}),
   ...(initiative.overview ? { overview: initiative.overview } : {}),
   createdAt: initiative.created_at,
   updatedAt: initiative.updated_at,
@@ -457,7 +456,6 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const store = await requireStore();
       const result = createInitiative(store.db, {
         name: input.name,
-        description: input.description,
         overview: input.overview,
         repos: (input.repos ?? []).map((repo) => ({
           directory: repo.directory,
@@ -472,7 +470,6 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
       const result = updateInitiativeRow(store.db, {
         id: input.id,
         name: input.name,
-        description: input.description,
         overview: input.overview,
       });
       return result.ok ? initiativeOk(result.initiative) : initiativeError(result.error);

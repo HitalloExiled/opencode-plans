@@ -104,7 +104,6 @@ export type InitiativeRepo = {
 export type Initiative = {
   id: string;
   name: string;
-  description?: string | undefined;
   /** Overview: what the initiative is, read by the agent when planning. */
   overview?: string | undefined;
   createdAt: string;
@@ -332,7 +331,6 @@ export const initiativeRepoSchema = Schema.Struct({
 export const initiativeSchema = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
-  description: optString,
   overview: optString,
   createdAt: Schema.String,
   updatedAt: Schema.String,
@@ -352,7 +350,6 @@ export const initiativeResultSchema = Schema.Struct({
 
 export const createInitiativeInputSchema = Schema.Struct({
   name: Schema.String,
-  description: optString,
   overview: optString,
   repos: Schema.optional(Schema.Array(Schema.Struct({ directory: Schema.String, label: optString }))),
 });
@@ -360,7 +357,6 @@ export const createInitiativeInputSchema = Schema.Struct({
 export const updateInitiativeInputSchema = Schema.Struct({
   id: Schema.String,
   name: optString,
-  description: Schema.optional(Schema.NullOr(Schema.String)),
   overview: Schema.optional(Schema.NullOr(Schema.String)),
 });
 

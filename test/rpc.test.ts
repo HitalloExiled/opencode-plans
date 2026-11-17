@@ -501,23 +501,20 @@ describe("work graph RPC", () => {
 });
 
 describe("initiative RPC", () => {
-  test("creates with a description and no repositories, then updates it", async () => {
-    const created = await h.createInitiative({ name: "  Empty  ", description: "  Soon  " });
+  test("creates without repositories, then renames it", async () => {
+    const created = await h.createInitiative({ name: "  Empty  " });
     expect(created.ok).toBe(true);
     if (!created.ok || !created.initiative) return;
     expect(created.initiative.name).toBe("Empty");
-    expect(created.initiative.description).toBe("Soon");
     expect(created.initiative.repos).toEqual([]);
 
     const updated = await h.updateInitiative({
       id: created.initiative.id,
       name: "Empty 2",
-      description: null,
     });
     expect(updated.ok).toBe(true);
     if (!updated.ok || !updated.initiative) return;
     expect(updated.initiative.name).toBe("Empty 2");
-    expect(updated.initiative.description).toBeUndefined();
   });
 });
 

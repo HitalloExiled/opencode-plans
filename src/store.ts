@@ -127,7 +127,7 @@ async function nativeDb(path: string): Promise<Db> {
 /* Schema DDL (embedded; all idempotent via IF NOT EXISTS)             */
 /* ------------------------------------------------------------------ */
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plans (
@@ -162,7 +162,6 @@ const BASE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS initiatives (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    description TEXT,
     overview TEXT,
     base_branch TEXT,
     max_parallel INTEGER NOT NULL DEFAULT 2,
@@ -383,8 +382,9 @@ export function initSchema(db: Db): void {
   if (!hasColumn(db, "initiatives", "verify_command")) {
     db.prepare("ALTER TABLE initiatives ADD COLUMN verify_command TEXT").run();
   }
-  if (!hasColumn(db, "initiatives", "description")) {
-    db.prepare("ALTER TABLE initiatives ADD COLUMN description TEXT").run();
+  // v13 — the column had no consumer; the overview carries the initiative text.
+  if (hasColumn(db, "initiatives", "description")) {
+    db.prepare("ALTER TABLE initiatives DROP COLUMN description").run();
   }
   // v12 — the initiative's overview, read by the agent when it plans.
   if (!hasColumn(db, "initiatives", "overview")) {
@@ -1191,7 +1191,6 @@ export type WorkOrigin = "user" | "agent";
 export type InitiativeRow = {
   id: string;
   name: string;
-  description: string | null;
   /** The overview: what the initiative is, for humans and for planning. */
   overview: string | null;
   /** Integration base for runs; null means the repo default branch. */
@@ -1295,24 +1294,24 @@ export function listInitiatives(db: Db): Initiative[] {
 export type UpdateInitiativeInput = {
   id: string;
   name?: string | undefined;
-  description?: string | null | undefined;
   overview?: string | null | undefined;
 };
 
-/** Renames and/or rewrites the description or the overview; omitted fields are kept. */
+/** Renames and/or rewrites the overview; omitted fields are kept. */
 export function updateInitiative(db: Db, input: UpdateInitiativeInput): InitiativeOk | WorkStoreError {
   const current = getInitiative(db, input.id);
   if (!current) return { ok: false, error: `iniciativa não encontrada: ${input.id}` };
   const name = input.name === undefined ? current.name : input.name.trim();
   if (!name) return { ok: false, error: "o nome da iniciativa é obrigatório" };
-  const description =
-    input.description === undefined ? current.description : input.description?.trim() || null;
   const overview = input.overview === undefined ? current.overview : input.overview?.trim() || null;
 
   try {
-    db.prepare(
-      "UPDATE initiatives SET name = ?, description = ?, overview = ?, updated_at = ? WHERE id = ?",
-    ).run(name, description, overview, nowTimestamp(), input.id);
+    db.prepare("UPDATE initiatives SET name = ?, overview = ?, updated_at = ? WHERE id = ?").run(
+      name,
+      overview,
+      nowTimestamp(),
+      input.id,
+    );
   } catch (error) {
     return { ok: false, error: reason(error) };
   }
@@ -1328,7 +1327,6 @@ export type InitiativeRepoInput = {
 
 export type CreateInitiativeInput = {
   name: string;
-  description?: string | null | undefined;
   overview?: string | null | undefined;
   /** Repositories are optional: a new initiative can start empty. */
   repos?: readonly InitiativeRepoInput[] | undefined;
@@ -1345,7 +1343,6 @@ export type Ok = { ok: true };
 export function createInitiative(db: Db, input: CreateInitiativeInput): InitiativeOk | WorkStoreError {
   const name = input.name.trim();
   if (!name) return { ok: false, error: "o nome da iniciativa é obrigatório" };
-  const description = input.description?.trim() || null;
   const overview = input.overview?.trim() || null;
 
   const repos = (input.repos ?? []).map((repo) => {
@@ -1373,8 +1370,8 @@ export function createInitiative(db: Db, input: CreateInitiativeInput): Initiati
   try {
     transaction(db, () => {
       db.prepare(
-        "INSERT INTO initiatives (id, name, description, overview, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-      ).run(id, name, description, overview, now, now);
+        "INSERT INTO initiatives (id, name, overview, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ).run(id, name, overview, now, now);
       repos.forEach((repo, index) => {
         db.prepare(
           `INSERT INTO initiative_repos (id, initiative_id, directory, label, is_primary, position, created_at)

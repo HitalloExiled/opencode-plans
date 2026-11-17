@@ -138,7 +138,6 @@ describe("v8 migration", () => {
     initSchema(db);
 
     expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(getInitiative(db, "i1")?.description).toBeNull();
   });
 });
 
@@ -152,13 +151,12 @@ describe("projects", () => {
     expect(app.repos.map((repo) => repo.label)).toEqual(["app", "plugins"]);
   });
 
-  test("can start empty, with a name and an optional description", () => {
+  test("can start empty, with only a name", () => {
     const db = open();
-    const created = createInitiative(db, { name: "Empty", description: "  Later  " });
+    const created = createInitiative(db, { name: "Empty" });
     expect(created.ok).toBe(true);
     if (!created.ok) return;
     expect(created.initiative.repos).toEqual([]);
-    expect(created.initiative.description).toBe("Later");
     expect(createInitiative(db, { name: "Plain" }).ok).toBe(true);
   });
 
@@ -227,17 +225,16 @@ describe("projects", () => {
     expect(getInitiative(db, app.id)!.repos).toEqual([]);
   });
 
-  test("updates the name and description keeping ids and links", () => {
+  test("updates the name keeping ids and links", () => {
     const db = open();
     const app = project(db);
     const item = createWorkItem(db, { initiativeID: app.id, title: "Need" });
     if (!item.ok) throw new Error(item.error);
 
-    const renamed = updateInitiative(db, { id: app.id, name: "  New name  ", description: "  Why  " });
+    const renamed = updateInitiative(db, { id: app.id, name: "  New name  " });
     expect(renamed.ok).toBe(true);
     if (!renamed.ok) return;
     expect(renamed.initiative.name).toBe("New name");
-    expect(renamed.initiative.description).toBe("Why");
     expect(renamed.initiative.id).toBe(app.id);
     expect(renamed.initiative.repos.map((repo) => repo.id)).toEqual(
       app.repos.map((repo) => repo.id),
@@ -385,20 +382,18 @@ describe("initiative overview", () => {
     const db = open();
     const columns = db.prepare("PRAGMA table_info(initiatives)").all() as { name: string }[];
     expect(columns.some((column) => column.name === "overview")).toBe(true);
-    expect(schemaVersion(db)).toBe(12);
+    expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
   });
 
-  test("the overview round-trips and never replaces the description", () => {
+  test("the overview round-trips", () => {
     const db = open();
     const created = createInitiative(db, {
       name: "App",
-      description: "one line",
       overview: "# What\n\nA todo app.",
       repos: [{ directory: "/work/app" }],
     });
     if (!created.ok) throw new Error(created.error);
     expect(created.initiative.overview).toBe("# What\n\nA todo app.");
-    expect(created.initiative.description).toBe("one line");
 
     // Omitted fields are kept; a blank overview clears it and nothing else.
     const renamed = updateInitiative(db, { id: created.initiative.id, name: "App 2" });
@@ -408,6 +403,5 @@ describe("initiative overview", () => {
     const cleared = updateInitiative(db, { id: created.initiative.id, overview: "   " });
     expect(cleared.ok).toBe(true);
     expect(getInitiative(db, created.initiative.id)?.overview).toBe(null);
-    expect(getInitiative(db, created.initiative.id)?.description).toBe("one line");
   });
 });
