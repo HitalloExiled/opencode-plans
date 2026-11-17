@@ -308,10 +308,12 @@ Invariants:
 - **One execution path decides solo vs worktree.** With a work item, executing a
   plan calls `beginWork` (`src/work-execution.ts`): solo (nobody else in the
   repository, clean tree) switches the working tree to `wi/<item>`; anything
-  else gets a worktree under `plans/worktrees/executions/<item>`. The run keeps
-  its integration worktree for every item (solo runs still need the cancel and
-  merge gates). Rows live in `executions`; one left open by a dead app stops
-  blocking solo after 12 hours.
+  else gets a worktree under `plans/worktrees/executions/<item>`. A run with a
+  single item skips the integration worktree and the merge session entirely: the
+  plan runs in place on `wi/<item>`, `run/<id>` is created from the item branch
+  head and the item is `merged`. Cancel and plan checks mirror `executeItem`, so
+  a cancel that lands mid-turn still owns the outcome. Rows live in `executions`;
+  one left open by a dead app stops blocking solo after 12 hours.
 - **The run's repository may be derived from the plans.** The preflight resolves
   it as the session's repository, else the item's `repo_id`, else the
   `project_directory` of the item's plan (all selected items must agree, or

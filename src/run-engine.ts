@@ -57,6 +57,8 @@ import { findDependencyCycle } from "./work-footprint.js";
 import { scheduleRun, summarizeRun, type SchedulerItem } from "./run-scheduler.js";
 import { integrationBranch, itemBranch, runPaths } from "./run-paths.js";
 import { engineLocale, wakeMergeSession } from "./merge-session.js";
+import { git } from "./git.js";
+import { beginWork, endWork, isRepoBusy, treeClean } from "./work-execution.js";
 
 export { runPaths, integrationBranch, itemBranch } from "./run-paths.js";
 
@@ -243,6 +245,118 @@ export type StartRunResult =
   | { ok: false; error?: string; blockers?: readonly PreflightBlocker[] };
 
 /**
+ * The single-item run: the item works in the repository on `wi/<item>` and,
+ * when the plan is done, `run/<id>` is created pointing at its head. Nothing
+ * touches the base branch and no merge session is needed — there is nothing to
+ * merge. Cancel and plan checks mirror `executeItem`, so the same invariants
+ * hold without the integration worktree.
+ */
+function startSoloRun(
+  ctx: Ctx,
+  db: Db,
+  initiativeID: string,
+  pre: Preflight,
+  entry: PreflightItem,
+): StartRunResult {
+  const created = createRun(db, {
+    initiativeID,
+    baseRef: pre.baseRef,
+    maxParallel: 1,
+    repo: pre.repo,
+  });
+  if (!created.ok) return { ok: false, error: created.error };
+  const run = created.run;
+
+  const item = createRunItem(db, { runID: run.id, workItemID: entry.item.id, planID: entry.plan.id });
+  if (!item.ok) {
+    setRunStatus(db, { id: run.id, status: "failed", error: item.error });
+    return { ok: false, error: item.error };
+  }
+
+  controllers.set(run.id, { cancelled: false });
+  notifyChange();
+  void executeSoloItem(ctx, db, run, entry).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[plans] solo run ${run.id} failed: ${message}`);
+    if (getRun(db, run.id)?.status !== "running") return;
+    setRunItemStatus(db, { runID: run.id, workItemID: entry.item.id, status: "failed", error: message });
+    setRunStatus(db, { id: run.id, status: "failed", error: message });
+    notifyChange();
+  });
+  return { ok: true, runID: run.id };
+}
+
+async function executeSoloItem(ctx: Ctx, db: Db, run: RunRow, entry: PreflightItem): Promise<void> {
+  const repo = runRepo(db, run);
+  const work = await beginWork({
+    db,
+    repo,
+    itemID: entry.item.id,
+    planID: entry.plan.id,
+    force: "solo",
+  });
+  if (!work.ok) throw new Error(work.error);
+
+  // A cancel that lands mid-flight owns the outcome, exactly like the
+  // integration path: never overwrite it.
+  const stillRunning = (): boolean =>
+    controllers.get(run.id)?.cancelled !== true &&
+    getRun(db, run.id)?.status === "running" &&
+    getRunItem(db, run.id, entry.item.id)?.status === "running";
+
+  setRunItemStatus(db, {
+    runID: run.id,
+    workItemID: entry.item.id,
+    status: "running",
+    branch: work.branch,
+  });
+  notifyChange();
+
+  try {
+    const locale = await engineLocale(ctx);
+    const session = await ctx.session.create({
+      agent: runAgent(getFlow()),
+      title: `Run: ${entry.item.title}`,
+      location: { directory: work.directory },
+    });
+    if (!stillRunning()) {
+      await ctx.session.interrupt({ sessionID: session.id }).catch(() => undefined);
+      return;
+    }
+    setRunItemStatus(db, {
+      runID: run.id,
+      workItemID: entry.item.id,
+      status: "running",
+      sessionID: session.id,
+    });
+
+    await ctx.session.prompt({
+      sessionID: session.id,
+      text: tn(locale, "run.item.prompt", entry.plan.title, entry.plan.id, entry.item.title, entry.item.id),
+    });
+    if (!stillRunning()) return;
+
+    const plan = getPlan(db, entry.plan.id);
+    if (!plan || plan.status !== "done") {
+      throw new Error(`o plano não foi concluído (status: ${plan?.status ?? "ausente"})`);
+    }
+    // One item, one branch: the integration is the item's head.
+    const branch = await git(repo, ["branch", integrationBranch(run.id), itemBranch(entry.item.id)]);
+    if (!branch.ok) throw new Error(`integração: ${branch.error}`);
+    setRunItemStatus(db, {
+      runID: run.id,
+      workItemID: entry.item.id,
+      status: "merged",
+      mergedSha: (await currentSha(repo)) ?? undefined,
+    });
+    setRunStatus(db, { id: run.id, status: "done" });
+  } finally {
+    endWork(db, work.execution.id);
+    notifyChange();
+  }
+}
+
+/**
  * Starts a initiative run: preflight, the run row, the integration worktree and
  * the item rows, then the first scheduling pass. The call returns as soon as
  * the run is launched; items execute in the background.
@@ -250,6 +364,16 @@ export type StartRunResult =
 export async function startProjectRun(ctx: Ctx, db: Db, input: StartRunInput): Promise<StartRunResult> {
   const pre = await preflightRun(db, input.initiativeID, input.directory);
   if (!pre.ok) return { ok: false, blockers: pre.blockers };
+
+  // A single item, with nobody else in the repository and a clean tree, needs
+  // neither an integration worktree nor a merge session: it runs in place on
+  // wi/<item> and the integration branch is created from its head.
+  if (pre.value.items.length === 1) {
+    const only = pre.value.items[0]!;
+    if (!isRepoBusy(db, pre.value.repo) && (await treeClean(pre.value.repo))) {
+      return startSoloRun(ctx, db, input.initiativeID, pre.value, only);
+    }
+  }
 
   const created = createRun(db, {
     initiativeID: input.initiativeID,

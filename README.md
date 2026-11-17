@@ -251,7 +251,10 @@ dependências**; com uma iniciativa selecionada, **Executar iniciativa**. O
   `run/<id>` (integração) e, por
   item, um worktree + branch `wi/<item>` a partir do **tip da integração**; a
   sessão do executor roda nesse diretório e o plano é a fonte da verdade. O run
-  mantém a integração para todo item; o caminho solo vale para o Execute manual.
+  com um **único item** e o repositório livre roda em solo: sem worktree de
+  integração nem sessão de merge — o item trabalha no repo em `wi/<item>` e
+  `run/<id>` nasce apontando para o head dele. Com 2+ itens, a integração
+  continua como sempre.
 - **Fila de merge**: item concluído é **enfileirado**, nunca mergeado pelo
   engine. Uma **sessão única** (worktree de integração) drena com
   `merge.list/next/done/fail`: claim FIFO com um `merging` por vez,
