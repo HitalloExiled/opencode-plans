@@ -403,223 +403,223 @@ export function WorkGraph(props: {
                   role="region"
                   aria-label={t("work.graph.region")}
                 >
-                <div
-                  class="work-graph-canvas"
-                  style={{
-                    width: `${layout()?.width ?? 0}px`,
-                    height: `${layout()?.height ?? 0}px`,
-                    transform: `translate(${tx()}px, ${ty()}px) scale(${scale()})`,
-                  }}
-                >
-                  <For each={stages()}>
-                    {(stage) => (
-                      <span class="work-graph-stage" style={{ left: `${stage.x}px` }}>
-                        {t("work.graph.stage", stage.layer + 1)}
-                        <Show when={stage.count > 1}>
-                          <span class="work-graph-stage-note">{t("work.graph.parallel")}</span>
-                        </Show>
-                      </span>
-                    )}
-                  </For>
-                  <svg class="work-graph-edges" width={layout()?.width ?? 0} height={layout()?.height ?? 0}>
-                    <defs>
-                      <marker
-                        id="work-graph-arrow"
-                        viewBox="0 0 10 10"
-                        refX="9.5"
-                        refY="5"
-                        markerWidth="11"
-                        markerHeight="11"
-                        markerUnits="userSpaceOnUse"
-                        orient="auto"
-                      >
-                        <path d="M 0 0 L 10 5 L 0 10 z" class="work-graph-arrow" />
-                      </marker>
-                      <marker
-                        id="work-graph-arrow-implicit"
-                        viewBox="0 0 10 10"
-                        refX="9.5"
-                        refY="5"
-                        markerWidth="11"
-                        markerHeight="11"
-                        markerUnits="userSpaceOnUse"
-                        orient="auto"
-                      >
-                        <path d="M 0 0 L 10 5 L 0 10 z" class="work-graph-arrow is-implicit" />
-                      </marker>
-                      <marker
-                        id="work-graph-arrow-ghost"
-                        viewBox="0 0 10 10"
-                        refX="9.5"
-                        refY="5"
-                        markerWidth="11"
-                        markerHeight="11"
-                        markerUnits="userSpaceOnUse"
-                        orient="auto"
-                      >
-                        <path d="M 0 0 L 10 5 L 0 10 z" class="work-graph-arrow is-ghost" />
-                      </marker>
-                      <marker
-                        id="work-graph-arrow-invalid"
-                        viewBox="0 0 10 10"
-                        refX="9.5"
-                        refY="5"
-                        markerWidth="11"
-                        markerHeight="11"
-                        markerUnits="userSpaceOnUse"
-                        orient="auto"
-                      >
-                        <path d="M 0 0 L 10 5 L 0 10 z" class="work-graph-arrow is-invalid" />
-                      </marker>
-                    </defs>
-                    <For each={current().edges}>
-                      {(edge) => {
-                        const path = edgePath(edge);
-                        return (
-                          <Show when={path}>
-                            {(value) => (
-                              <>
-                                <path
-                                  class={`work-graph-edge is-${edge.kind}`}
-                                  classList={{
-                                    "is-active":
-                                      hovered() !== null &&
-                                      (edge.itemID === hovered() || edge.blocksID === hovered()),
-                                    "is-dim":
-                                      hovered() !== null &&
-                                      edge.itemID !== hovered() &&
-                                      edge.blocksID !== hovered(),
-                                  }}
-                                  d={value()}
-                                  marker-end={
-                                    edge.kind === "implicit"
-                                      ? "url(#work-graph-arrow-implicit)"
-                                      : "url(#work-graph-arrow)"
-                                  }
-                                >
-                                  <Show when={edge.reason}>
-                                    <title>{edge.reason}</title>
-                                  </Show>
-                                </path>
-                                <Show when={edge.kind === "explicit"}>
-                                  <path class="work-graph-hit" d={value()} onClick={() => void removeEdge(edge)}>
-                                    <title>{t("work.graph.removeHint")}</title>
-                                  </path>
-                                </Show>
-                              </>
-                            )}
+                  <div
+                    class="work-graph-canvas"
+                    style={{
+                      width: `${layout()?.width ?? 0}px`,
+                      height: `${layout()?.height ?? 0}px`,
+                      transform: `translate(${tx()}px, ${ty()}px) scale(${scale()})`,
+                    }}
+                  >
+                    <For each={stages()}>
+                      {(stage) => (
+                        <span class="work-graph-stage" style={{ left: `${stage.x}px` }}>
+                          {t("work.graph.stage", stage.layer + 1)}
+                          <Show when={stage.count > 1}>
+                            <span class="work-graph-stage-note">{t("work.graph.parallel")}</span>
                           </Show>
-                        );
-                      }}
+                        </span>
+                      )}
                     </For>
-                    <Show when={linking()}>
-                      {(current_) => {
-                        const from = placements().get(current_().from);
-                        return (
-                          <Show when={from}>
-                            {(placement) => {
-                              const x1 = placement().x + GRAPH_NODE_WIDTH;
-                              const y1 = placement().y + GRAPH_NODE_HEIGHT / 2;
-                              const bend = Math.max(24, Math.min(80, Math.abs(current_().x - x1) / 2));
-                              return (
-                                <path
-                                  class="work-graph-ghost"
-                                  classList={{ "is-invalid": linkInvalid() }}
-                                  d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${current_().x - bend} ${current_().y}, ${current_().x} ${current_().y}`}
-                                  marker-end={
-                                    linkInvalid()
-                                      ? "url(#work-graph-arrow-invalid)"
-                                      : "url(#work-graph-arrow-ghost)"
-                                  }
-                                />
-                              );
-                            }}
-                          </Show>
-                        );
-                      }}
-                    </Show>
-                  </svg>
-                  <For each={current().nodes}>
-                    {(node) => (
-                      <Show when={placements().get(node.id)}>
-                        {(placement) => (
-                          <div
-                            class="work-graph-node"
-                            classList={{ "is-active": hovered() === node.id }}
-                            data-item-id={node.id}
-                            style={{ left: `${placement().x}px`, top: `${placement().y}px` }}
-                            role="button"
-                            tabIndex={0}
-                            onPointerEnter={() => setHovered(node.id)}
-                            onPointerLeave={() => setHovered(null)}
-                            onClick={() => props.onOpen(node.id)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                props.onOpen(node.id);
-                              }
-                            }}
-                          >
-                            <span class="work-graph-node-meta">
-                              <StatusChip tone={statusTone(node.status)} label={t(`work.status.${node.status}`)} />
-                            </span>
-                            <span class="work-graph-node-title">{node.title}</span>
-                            <span class="work-graph-node-foot">
-                              <Show when={props.onAction}>
-                                <Show
-                                  when={props.isRunning?.(node.id)}
-                                  fallback={
-                                    <ctx.ui.IconButton
-                                      class={props.hasPlan?.(node.id) ? "play-icon" : undefined}
-                                      icon={props.hasPlan?.(node.id) ? "fill-triangle-down" : "brain"}
-                                      label={t(props.hasPlan?.(node.id) ? "work.card.execute" : "work.card.plan")}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        props.onAction?.(node.id);
-                                      }}
-                                    />
-                                  }
-                                >
-                                  <StatusChip tone="info" label={t("run.item.running")} />
-                                </Show>
-                              </Show>
-                              <Show when={node.plan}>
-                                {(plan) => (
-                                  <span class="work-card-progress work-graph-progress">
-                                    <span class="work-progress">
-                                      <span
-                                        class="work-progress-done"
-                                        style={{
-                                          width: `${plan().total === 0 ? 0 : Math.round((plan().done / plan().total) * 100)}%`,
+                    <svg class="work-graph-edges" width={layout()?.width ?? 0} height={layout()?.height ?? 0}>
+                      <defs>
+                        <marker
+                          id="work-graph-arrow"
+                          viewBox="0 0 10 10"
+                          refX="9.5"
+                          refY="5"
+                          markerWidth="11"
+                          markerHeight="11"
+                          markerUnits="userSpaceOnUse"
+                          orient="auto"
+                        >
+                          <path d="M 0 0 L 10 5 L 0 10 z" class="work-graph-arrow" />
+                        </marker>
+                        <marker
+                          id="work-graph-arrow-implicit"
+                          viewBox="0 0 10 10"
+                          refX="9.5"
+                          refY="5"
+                          markerWidth="11"
+                          markerHeight="11"
+                          markerUnits="userSpaceOnUse"
+                          orient="auto"
+                        >
+                          <path d="M 0 0 L 10 5 L 0 10 z" class="work-graph-arrow is-implicit" />
+                        </marker>
+                        <marker
+                          id="work-graph-arrow-ghost"
+                          viewBox="0 0 10 10"
+                          refX="9.5"
+                          refY="5"
+                          markerWidth="11"
+                          markerHeight="11"
+                          markerUnits="userSpaceOnUse"
+                          orient="auto"
+                        >
+                          <path d="M 0 0 L 10 5 L 0 10 z" class="work-graph-arrow is-ghost" />
+                        </marker>
+                        <marker
+                          id="work-graph-arrow-invalid"
+                          viewBox="0 0 10 10"
+                          refX="9.5"
+                          refY="5"
+                          markerWidth="11"
+                          markerHeight="11"
+                          markerUnits="userSpaceOnUse"
+                          orient="auto"
+                        >
+                          <path d="M 0 0 L 10 5 L 0 10 z" class="work-graph-arrow is-invalid" />
+                        </marker>
+                      </defs>
+                      <For each={current().edges}>
+                        {(edge) => {
+                          const path = edgePath(edge);
+                          return (
+                            <Show when={path}>
+                              {(value) => (
+                                <>
+                                  <path
+                                    class={`work-graph-edge is-${edge.kind}`}
+                                    classList={{
+                                      "is-active":
+                                        hovered() !== null &&
+                                        (edge.itemID === hovered() || edge.blocksID === hovered()),
+                                      "is-dim":
+                                        hovered() !== null &&
+                                        edge.itemID !== hovered() &&
+                                        edge.blocksID !== hovered(),
+                                    }}
+                                    d={value()}
+                                    marker-end={
+                                      edge.kind === "implicit"
+                                        ? "url(#work-graph-arrow-implicit)"
+                                        : "url(#work-graph-arrow)"
+                                    }
+                                  >
+                                    <Show when={edge.reason}>
+                                      <title>{edge.reason}</title>
+                                    </Show>
+                                  </path>
+                                  <Show when={edge.kind === "explicit"}>
+                                    <path class="work-graph-hit" d={value()} onClick={() => void removeEdge(edge)}>
+                                      <title>{t("work.graph.removeHint")}</title>
+                                    </path>
+                                  </Show>
+                                </>
+                              )}
+                            </Show>
+                          );
+                        }}
+                      </For>
+                      <Show when={linking()}>
+                        {(current_) => {
+                          const from = placements().get(current_().from);
+                          return (
+                            <Show when={from}>
+                              {(placement) => {
+                                const x1 = placement().x + GRAPH_NODE_WIDTH;
+                                const y1 = placement().y + GRAPH_NODE_HEIGHT / 2;
+                                const bend = Math.max(24, Math.min(80, Math.abs(current_().x - x1) / 2));
+                                return (
+                                  <path
+                                    class="work-graph-ghost"
+                                    classList={{ "is-invalid": linkInvalid() }}
+                                    d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${current_().x - bend} ${current_().y}, ${current_().x} ${current_().y}`}
+                                    marker-end={
+                                      linkInvalid()
+                                        ? "url(#work-graph-arrow-invalid)"
+                                        : "url(#work-graph-arrow-ghost)"
+                                    }
+                                  />
+                                );
+                              }}
+                            </Show>
+                          );
+                        }}
+                      </Show>
+                    </svg>
+                    <For each={current().nodes}>
+                      {(node) => (
+                        <Show when={placements().get(node.id)}>
+                          {(placement) => (
+                            <div
+                              class="work-graph-node"
+                              classList={{ "is-active": hovered() === node.id }}
+                              data-item-id={node.id}
+                              style={{ left: `${placement().x}px`, top: `${placement().y}px` }}
+                              role="button"
+                              tabIndex={0}
+                              onPointerEnter={() => setHovered(node.id)}
+                              onPointerLeave={() => setHovered(null)}
+                              onClick={() => props.onOpen(node.id)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  props.onOpen(node.id);
+                                }
+                              }}
+                            >
+                              <span class="work-graph-node-meta">
+                                <StatusChip tone={statusTone(node.status)} label={t(`work.status.${node.status}`)} />
+                              </span>
+                              <span class="work-graph-node-title">{node.title}</span>
+                              <span class="work-graph-node-foot">
+                                <Show when={props.onAction}>
+                                  <Show
+                                    when={props.isRunning?.(node.id)}
+                                    fallback={
+                                      <ctx.ui.IconButton
+                                        class={props.hasPlan?.(node.id) ? "play-icon" : undefined}
+                                        icon={props.hasPlan?.(node.id) ? "fill-triangle-down" : "brain"}
+                                        label={t(props.hasPlan?.(node.id) ? "work.card.execute" : "work.card.plan")}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          props.onAction?.(node.id);
                                         }}
                                       />
+                                    }
+                                  >
+                                    <StatusChip tone="info" label={t("run.item.running")} />
+                                  </Show>
+                                </Show>
+                                <Show when={node.plan}>
+                                  {(plan) => (
+                                    <span class="work-card-progress work-graph-progress">
+                                      <span class="work-progress">
+                                        <span
+                                          class="work-progress-done"
+                                          style={{
+                                            width: `${plan().total === 0 ? 0 : Math.round((plan().done / plan().total) * 100)}%`,
+                                          }}
+                                        />
+                                      </span>
+                                      <span class="work-progress-label">
+                                        {plan().done}/{plan().total}
+                                      </span>
                                     </span>
-                                    <span class="work-progress-label">
-                                      {plan().done}/{plan().total}
-                                    </span>
-                                  </span>
-                                )}
-                              </Show>
-                            </span>
-                            <span
-                              class="work-graph-handle"
-                              classList={{ "is-active": hovered() === node.id }}
-                              role="button"
-                              aria-label={t("work.graph.handle", node.title)}
-                              onPointerDown={(event) => startLink(event, node.id)}
-                            >
-                              +
-                            </span>
-                          </div>
-                        )}
-                      </Show>
-                    )}
-                  </For>
-                </div>
-                <div class="work-graph-legend">
-                  <span class="work-graph-legend-line" /> {t("work.graph.explicit")} · {t("work.graph.legendFlow")}
-                  <span class="work-graph-legend-line is-implicit" /> {t("work.graph.implicit")}
-                </div>
+                                  )}
+                                </Show>
+                              </span>
+                              <span
+                                class="work-graph-handle"
+                                classList={{ "is-active": hovered() === node.id }}
+                                role="button"
+                                aria-label={t("work.graph.handle", node.title)}
+                                onPointerDown={(event) => startLink(event, node.id)}
+                              >
+                                +
+                              </span>
+                            </div>
+                          )}
+                        </Show>
+                      )}
+                    </For>
+                  </div>
+                  <div class="work-graph-legend">
+                    <span class="work-graph-legend-line" /> {t("work.graph.explicit")} · {t("work.graph.legendFlow")}
+                    <span class="work-graph-legend-line is-implicit" /> {t("work.graph.implicit")}
+                  </div>
                 </div>
               </div>
             </Show>
