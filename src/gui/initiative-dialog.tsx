@@ -8,6 +8,7 @@ import { createSignal, onMount, Show } from "solid-js";
 import type { Context, ServerRef } from "@opencode/plugin/gui";
 import { ErrorBanner, SHARED_CSS } from "opencode-shared/gui";
 import { PlansRpc, type Initiative } from "./contract";
+import { DIALOG_SURFACE_CSS } from "./dialog-surface";
 import { useT } from "./i18n";
 
 const CSS = `
@@ -116,8 +117,8 @@ function InitiativeDialog(props: InitiativeDialogInput & { close: () => void }) 
 
   return (
     <>
-      <style>{SHARED_CSS + CSS}</style>
-      <div class="initiative-dialog" ref={shell}>
+      <style>{SHARED_CSS + DIALOG_SURFACE_CSS + CSS}</style>
+      <div class="initiative-dialog plans-dialog-surface" ref={shell}>
         <h2 class="initiative-dialog-title">
           {mode() === "edit" && current()
             ? t("work.initiative.editTitle", current()!.name)

@@ -9,6 +9,7 @@ import { createEffect, createMemo, createSignal, For, onMount, Show } from "soli
 import type { Context, ServerRef } from "@opencode/plugin/gui";
 import { ErrorBanner, LoadingRow, SHARED_CSS } from "opencode-shared/gui";
 import { PlansRpc, type WorkItemDetail } from "./contract";
+import { DIALOG_SURFACE_CSS } from "./dialog-surface";
 import { useT } from "./i18n";
 import { planWorkItem } from "./plan-item";
 import { repoForItem } from "../work-plan";
@@ -141,8 +142,8 @@ function PlanDialog(props: PlanDialogInput & { close: () => void }) {
 
   return (
     <>
-      <style>{SHARED_CSS + CSS}</style>
-      <div class="plan-dialog" ref={shell}>
+      <style>{SHARED_CSS + DIALOG_SURFACE_CSS + CSS}</style>
+      <div class="plan-dialog plans-dialog-surface" ref={shell}>
         <h2 class="plan-dialog-title">{t("work.plan.dialog.title", props.detail.item.title)}</h2>
         <p class="plan-dialog-hint">{t("work.plan.dialog.hint")}</p>
 

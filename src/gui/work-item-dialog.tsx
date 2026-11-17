@@ -7,6 +7,7 @@ import { createSignal, onMount } from "solid-js";
 import type { Context, ServerRef } from "@opencode/plugin/gui";
 import { ErrorBanner, SHARED_CSS } from "opencode-shared/gui";
 import { PlansRpc, type Initiative, type WorkItem } from "./contract";
+import { DIALOG_SURFACE_CSS } from "./dialog-surface";
 import { useT } from "./i18n";
 
 const CSS = `
@@ -75,8 +76,8 @@ function WorkItemDialog(props: WorkItemDialogInput & { close: () => void }) {
 
   return (
     <>
-      <style>{SHARED_CSS + CSS}</style>
-      <div class="work-item-dialog" ref={shell}>
+      <style>{SHARED_CSS + DIALOG_SURFACE_CSS + CSS}</style>
+      <div class="work-item-dialog plans-dialog-surface" ref={shell}>
         <h2 class="work-item-dialog-title">{t("work.newItem")}</h2>
 
         <props.ctx.ui.TextInput
