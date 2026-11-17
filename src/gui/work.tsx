@@ -171,6 +171,9 @@ const WORK_CSS = `
 .work-dep-label { font-size: 10.5px; color: var(--v2-text-text-faint); }
 .work-dep-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .work-dep-row .work-dot { flex: 0 0 auto; }
+/* The plan title is the link: shrink it, never push the progress label away. */
+.work-plan-link { flex: 0 1 auto; min-width: 0; max-width: 100%; justify-content: flex-start; overflow: hidden; }
+.work-plan-link-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .work-deps-empty { font-size: 11px; color: var(--v2-text-text-muted); }
 .work-editor { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
 .work-editor textarea {
@@ -1715,15 +1718,17 @@ export function WorkBody(props: {
                     {(plan) => (
                       <div class="work-dep-row">
                         <StatusChip tone={planTone(plan().status)} label={t(`status.${plan().status}`)} />
-                        <span class="work-card-title">{plan().title}</span>
+                        <ctx.ui.Button
+                          size="small"
+                          variant="ghost"
+                          class="work-plan-link"
+                          onClick={() => openPlan(plan())}
+                        >
+                          <span class="work-plan-link-text">{plan().title}</span>
+                        </ctx.ui.Button>
                         <span class="work-dep-label">
                           {t("work.plan.progress", plan().done, plan().total)}
                         </span>
-                        <ctx.ui.IconButton
-                          icon="arrow-up-right"
-                          label={t("work.plan.open")}
-                          onClick={() => openPlan(plan())}
-                        />
                       </div>
                     )}
                   </Show>
