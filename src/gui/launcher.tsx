@@ -250,19 +250,6 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
                 select(initiative.id);
                 openPlansOverlay("work");
               }}
-              onChanged={upsert}
-              onDeleted={(id) => {
-                const remaining = initiatives().filter((entry) => entry.id !== id);
-                setInitiatives(remaining);
-                if (initiativeId() === id) {
-                  const next = remaining[0];
-                  if (next) select(next.id);
-                  else {
-                    setInitiativeId(null);
-                    selection.set({ id: null });
-                  }
-                }
-              }}
             />
           </Show>
           <Show when={overlayMode() === "work"}>
@@ -275,6 +262,17 @@ function PlansModal(props: { target: () => PlansTarget; onClose: () => void }) {
               initiatives={initiatives()}
               onSelectInitiative={select}
               onInitiativeChanged={upsert}
+              onInitiativeDeleted={(id) => {
+                const remaining = initiatives().filter((entry) => entry.id !== id);
+                setInitiatives(remaining);
+                const next = remaining[0];
+                if (next) select(next.id);
+                else {
+                  setInitiativeId(null);
+                  selection.set({ id: null });
+                  openPlansOverlay("initiatives");
+                }
+              }}
             />
           </Show>
           <Show when={overlayMode() === "plans"}>

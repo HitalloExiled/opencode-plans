@@ -34,8 +34,6 @@ const CSS = `
 .initiative-description { font-size: 11.5px; color: var(--v2-text-text-muted); overflow-wrap: anywhere; }
 .initiative-meta { display: flex; gap: 10px; font-size: 10.5px; color: var(--v2-text-text-faint); }
 .initiative-overview-mark { padding: 0 4px; border: 1px solid var(--v2-border-border-muted); border-radius: 4px; color: var(--v2-text-text-muted); }
-.initiative-actions { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; }
-.initiative-card { position: relative; }
 `;
 
 export function InitiativesBody(props: {
@@ -45,8 +43,6 @@ export function InitiativesBody(props: {
   error: string | null;
   onOpen: (id: string) => void;
   onCreated: (initiative: Initiative) => void;
-  onChanged: (initiative: Initiative) => void;
-  onDeleted: (id: string) => void;
 }) {
   const ctx = usePlugin();
   const t = useT();
@@ -72,56 +68,11 @@ export function InitiativesBody(props: {
   const itemCount = (id: string) =>
     groups().find((group) => group.initiative.id === id)?.items.length ?? 0;
 
-  const remove = async (initiative: Initiative) => {
-    const confirmed = await ctx.dialogs.confirm({
-      title: t("work.initiative.deleteTitle"),
-      description: t("work.initiative.deleteMessage", initiative.name, itemCount(initiative.id)),
-      confirm: t("work.initiative.deleteConfirm"),
-      cancel: t("cancel"),
-      danger: true,
-    });
-    if (!confirmed) return;
-    void props.server.client
-      .rpc(PlansRpc)
-      .deleteInitiative({ id: initiative.id })
-      .then((result) => {
-        if (!result.ok) {
-          ctx.toast.show({
-            title: t("work.initiative.deleteError"),
-            ...(result.error ? { description: result.error } : {}),
-            variant: "error",
-          });
-          return;
-        }
-        ctx.toast.show({ title: t("work.initiative.deleted"), variant: "success" });
-        props.onDeleted(initiative.id);
-      })
-      .catch((cause: unknown) =>
-        ctx.toast.show({
-          title: t("work.initiative.deleteError"),
-          description: cause instanceof Error ? cause.message : String(cause),
-          variant: "error",
-        }),
-      );
-  };
-
-  const edit = (initiative: Initiative) => {
-    openInitiativeDialog({
-      ctx,
-      server: props.server,
-      mode: "edit",
-      initiative,
-      onChanged: (updated) => props.onChanged(updated),
-    });
-  };
-
   const create = () => {
     openInitiativeDialog({
       ctx,
       server: props.server,
-      mode: "create",
-      onChanged: (initiative, action) => {
-        if (action !== "created") return;
+      onCreated: (initiative) => {
         ctx.toast.show({ title: t("work.initiative.created"), variant: "success" });
         props.onCreated(initiative);
       },
@@ -185,18 +136,6 @@ export function InitiativesBody(props: {
                       </Show>
                       <span>{t("work.initiative.reposCount", initiative.repos.length)}</span>
                       <span>{t("work.initiative.itemsCount", itemCount(initiative.id))}</span>
-                    </span>
-                    <span class="initiative-actions" onClick={(event) => event.stopPropagation()}>
-                      <ctx.ui.IconButton
-                        icon="pencil-line"
-                        label={t("work.initiative.edit")}
-                        onClick={() => edit(initiative)}
-                      />
-                      <ctx.ui.IconButton
-                        icon="trash"
-                        label={t("work.initiative.delete")}
-                        onClick={() => void remove(initiative)}
-                      />
                     </span>
                   </div>
                 )}

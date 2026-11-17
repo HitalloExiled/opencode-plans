@@ -38,6 +38,7 @@ import { filterWorkGroups } from "../work-filter";
 import { planProgressOf } from "../work-progress";
 import { planWorkItem } from "./plan-item";
 import { openPlanDialog } from "./plan-dialog";
+import { openInitiativeDialog } from "./initiative-dialog";
 import { WorkGraph } from "./graph";
 import { openWorkItemDialog } from "./work-item-dialog";
 import { closePlansOverlay, consumePendingWorkItem } from "./overlay-state";
@@ -48,7 +49,13 @@ export type WorkViewMode = "list" | "board" | "graph";
 /** Lista | Quadro | Grafo. Module state so the overlay can widen with the board/graph. */
 const [viewMode, setViewMode] = createSignal<WorkViewMode>("list");
 export const workView = viewMode;
-export const workWideMode = (): boolean => viewMode() !== "list";
+
+/** Itens | Visão geral | Ajustes: the initiative detail, one screen at a time. */
+export type WorkTab = "items" | "overview" | "settings";
+const WORK_TABS: readonly WorkTab[] = ["items", "overview", "settings"];
+const [workTab, setWorkTab] = createSignal<WorkTab>("items");
+
+export const workWideMode = (): boolean => workTab() === "items" && viewMode() !== "list";
 
 /**
  * The board reads left to right as the flow, so Backlog comes first. The List
@@ -148,6 +155,29 @@ const WORK_CSS = `
 .work-progress-done { display: block; height: 100%; background: var(--v2-state-fg-success); transition: width .2s ease; }
 .work-progress-label { flex: 0 0 auto; font-size: 10px; color: var(--v2-text-text-muted); font-variant-numeric: tabular-nums; }
 .work-progress-doing { flex: 1 1 auto; width: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--v2-text-text-faint); }
+.work-initiative-head { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--v2-border-border-muted); }
+.work-tabs { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; }
+.work-overview { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.work-overview-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; border: 1px solid var(--v2-border-border-muted); border-radius: 8px; background: var(--v2-background-bg-layer-01); }
+.work-overview-actions { display: flex; justify-content: flex-end; gap: 6px; flex: 0 0 auto; }
+.work-overview-input {
+  flex: 1;
+  min-height: 160px;
+  resize: none;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--v2-text-text-base);
+  background: var(--v2-background-bg-layer-01);
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: 6px;
+  padding: 8px;
+}
+.work-overview-input:focus { outline: 2px solid var(--v2-border-border-focus); outline-offset: 0; }
+.work-initiative-settings { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow-y: auto; }
+.work-initiative-textarea { min-height: 80px; resize: vertical; font: inherit; font-size: 12px; line-height: 1.5; color: var(--v2-text-text-base); background: var(--v2-background-bg-layer-01); border: 1px solid var(--v2-border-border-muted); border-radius: 6px; padding: 8px; }
+.work-initiative-repos { display: flex; flex-direction: column; gap: 2px; }
+.work-danger { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--v2-border-border-muted); display: flex; justify-content: flex-start; }
 .work-toolbar { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; }
 /* Left group stays, right group rides the far edge; collapses on narrow windows. */
 .work-bar-gap { flex: 1 1 0; min-width: 0; }
@@ -296,6 +326,8 @@ export function WorkBody(props: {
   initiatives: Initiative[];
   onSelectInitiative: (id: string) => void;
   onInitiativeChanged: (initiative: Initiative) => void;
+  /** The initiative was deleted from the Ajustes tab. */
+  onInitiativeDeleted: (id: string) => void;
 }) {
   const ctx = usePlugin();
   const t = useT();
@@ -796,6 +828,107 @@ export function WorkBody(props: {
     });
   };
 
+  /** Creation lives in the list too; from the detail it selects the new initiative. */
+  const createInitiative = () => {
+    openInitiativeDialog({
+      ctx,
+      server: props.target().server,
+      onCreated: (initiative) => {
+        props.onInitiativeChanged(initiative);
+        props.onSelectInitiative(initiative.id);
+        setWorkTab("items");
+      },
+    });
+  };
+
+  const [overviewEditing, setOverviewEditing] = createSignal(false);
+  const [overviewDraft, setOverviewDraft] = createSignal("");
+  const [overviewSaving, setOverviewSaving] = createSignal(false);
+
+  const startOverviewEdit = () => {
+    setOverviewDraft(selectedInitiative()?.overview ?? "");
+    setOverviewEditing(true);
+    setActionError(null);
+  };
+
+  const saveInitiative = (patch: { name?: string; description?: string | null; overview?: string | null }) => {
+    const initiative = selectedInitiative();
+    if (!initiative) return Promise.reject(new Error(t("work.initiative.select")));
+    return props.target()
+      .server.client.rpc(PlansRpc)
+      .updateInitiative({ id: initiative.id, ...patch })
+      .then((result) => {
+        if (!result.ok || !result.initiative) {
+          throw new Error(result.error ?? t("work.initiative.error"));
+        }
+        props.onInitiativeChanged(result.initiative);
+      });
+  };
+
+  const saveOverview = () => {
+    if (overviewSaving()) return;
+    setOverviewSaving(true);
+    setActionError(null);
+    void saveInitiative({ overview: overviewDraft().trim() || null })
+      .then(() => setOverviewEditing(false))
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setOverviewSaving(false));
+  };
+
+  const [initiativeName, setInitiativeName] = createSignal("");
+  const [initiativeDescription, setInitiativeDescription] = createSignal("");
+  const [initiativeSaving, setInitiativeSaving] = createSignal(false);
+  const [initiativeDeleting, setInitiativeDeleting] = createSignal(false);
+
+  // The Ajustes drafts follow the selected initiative; a save rewrites them.
+  createEffect(() => {
+    const initiative = selectedInitiative();
+    setInitiativeName(initiative?.name ?? "");
+    setInitiativeDescription(initiative?.description ?? "");
+  });
+
+  const saveInitiativeSettings = () => {
+    if (initiativeSaving()) return;
+    const name = initiativeName().trim();
+    if (!name) return;
+    setInitiativeSaving(true);
+    setActionError(null);
+    void saveInitiative({ name, description: initiativeDescription().trim() || null })
+      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setInitiativeSaving(false));
+  };
+
+  const deleteInitiative = () => {
+    const initiative = selectedInitiative();
+    if (!initiative || initiativeDeleting()) return;
+    const items = groups().find((group) => group.initiative.id === initiative.id)?.items.length ?? 0;
+    void ctx.dialogs
+      .confirm({
+        title: t("work.initiative.deleteTitle"),
+        description: t("work.initiative.deleteMessage", initiative.name, items),
+        confirm: t("work.initiative.deleteConfirm"),
+        cancel: t("cancel"),
+        danger: true,
+      })
+      .then((confirmed) => {
+        if (!confirmed) return;
+        setInitiativeDeleting(true);
+        return props.target()
+          .server.client.rpc(PlansRpc)
+          .deleteInitiative({ id: initiative.id })
+          .then((result) => {
+            if (!result.ok) {
+              setActionError(result.error ?? t("work.initiative.deleteError"));
+              return;
+            }
+            ctx.toast.show({ title: t("work.initiative.deleted"), variant: "success" });
+            props.onInitiativeDeleted(initiative.id);
+          })
+          .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+          .finally(() => setInitiativeDeleting(false));
+      });
+  };
+
   const depCandidates = createMemo(() => {
     const current = detail();
     if (!current) return [];
@@ -1046,7 +1179,37 @@ export function WorkBody(props: {
       <style>{SHARED_CSS + WORK_CSS}</style>
       <div class="work">
         <Show when={!selectedID()}>
-          <div class="work-toolbar">
+          <div class="work-initiative-head">
+            <Show when={props.initiatives.length > 0}>
+              <ctx.ui.Menu
+                trigger="button"
+                icon="workspace"
+                label={selectedInitiative()?.name ?? t("work.initiative.select")}
+                items={props.initiatives.map((initiative) => ({
+                  label: initiative.name,
+                  onSelect: () => props.onSelectInitiative(initiative.id),
+                }))}
+              />
+            </Show>
+            <ctx.ui.Button size="small" variant="ghost" icon="plus" onClick={createInitiative}>
+              {t("work.initiative.new")}
+            </ctx.ui.Button>
+          </div>
+
+          <div class="work-tabs" role="tablist" aria-label={t("work.tab.label")}>
+            <For each={WORK_TABS}>
+              {(entry) => (
+                <ctx.ui.Button
+                  size="small"
+                  variant={workTab() === entry ? "neutral" : "ghost"}
+                  onClick={() => setWorkTab(entry)}
+                >
+                  {t(`work.tab.${entry}`)}
+                </ctx.ui.Button>
+              )}
+            </For>
+            <div class="work-bar-gap" />
+            <Show when={workTab() === "items"}>
               <div class="work-view-switch" role="group" aria-label={t("work.view.label")}>
                 <ctx.ui.Button
                   size="small"
@@ -1073,94 +1236,85 @@ export function WorkBody(props: {
                   {t("work.view.graph")}
                 </ctx.ui.Button>
               </div>
-            <div class="work-bar-gap" />
-            <ctx.ui.Button
-              size="small"
-              variant="ghost"
-              icon="settings-gear"
-              onClick={() => {
-                setSettingsOpen((value) => !value);
-                syncSettings();
-              }}
-            >
-              {t("work.run.settings")}
-            </ctx.ui.Button>
+            </Show>
           </div>
 
-          <div class="work-toolbar">
-            <Show when={selectedInitiative()}>
+          <Show when={workTab() === "items"}>
+            <div class="work-toolbar">
+              <Show when={selectedInitiative()}>
+                <ctx.ui.Button
+                  size="small"
+                  variant="neutral"
+                  class="play-icon"
+                  icon="fill-triangle-down"
+                  busy={preflightBusy()}
+                  onClick={openPreflight}
+                >
+                  {t("work.run.button")}
+                </ctx.ui.Button>
+              </Show>
+              <ctx.ui.Button
+                size="small"
+                variant="ghost"
+                icon="settings-gear"
+                onClick={() => {
+                  setSettingsOpen((value) => !value);
+                  syncSettings();
+                }}
+              >
+                {t("work.run.settings")}
+              </ctx.ui.Button>
+              <Show when={run()}>
+                {(current) => (
+                  <>
+                    <StatusChip
+                      tone={runTone(current().status)}
+                      label={t(`run.status.${current().status}`)}
+                    />
+                    <span class="work-dep-label">
+                      {t(
+                        "work.run.progress",
+                        current().items.filter((entry) => entry.status === "merged").length,
+                        current().items.length,
+                      )}
+                    </span>
+                  </>
+                )}
+              </Show>
               <ctx.ui.Button
                 size="small"
                 variant="neutral"
-                class="play-icon"
-                icon="fill-triangle-down"
-                busy={preflightBusy()}
-                onClick={openPreflight}
+                icon="plus"
+                disabled={!selectedInitiative()}
+                onClick={openNewItem}
               >
-                {t("work.run.button")}
+                {t("work.newItem")}
               </ctx.ui.Button>
-            </Show>
-            <Show when={run()}>
-              {(current) => (
-                <>
-                  <StatusChip
-                    tone={runTone(current().status)}
-                    label={t(`run.status.${current().status}`)}
-                  />
-                  <span class="work-dep-label">
-                    {t(
-                      "work.run.progress",
-                      current().items.filter((entry) => entry.status === "merged").length,
-                      current().items.length,
-                    )}
-                  </span>
-                </>
-              )}
-            </Show>
-            <ctx.ui.Button
-              size="small"
-              variant="neutral"
-              icon="plus"
-              disabled={!selectedInitiative()}
-              onClick={openNewItem}
-            >
-              {t("work.newItem")}
-            </ctx.ui.Button>
-            <div class="work-bar-gap" />
-            <Show when={props.initiatives.length > 0}>
-              <ctx.ui.Menu
-                trigger="button"
-                icon="workspace"
-                label={selectedInitiative()?.name ?? t("work.initiative.select")}
-                items={props.initiatives.map((initiative) => ({
-                  label: initiative.name,
-                  onSelect: () => props.onSelectInitiative(initiative.id),
-                }))}
-              />
-            </Show>
-            <Show when={hasAgentItems()}>
-              <ctx.ui.Button
-                size="small"
-                variant={agentOnly() ? "neutral" : "ghost"}
-                icon="review"
-                onClick={() => setAgentOnly((value) => !value)}
-              >
-                {t("work.filter.agent")}
-              </ctx.ui.Button>
-            </Show>
-            <Show when={hasDropped()}>
-              <ctx.ui.Button
-                size="small"
-                variant={showDropped() ? "neutral" : "ghost"}
-                icon="archive"
-                onClick={() => setShowDropped((value) => !value)}
-              >
-                {t("work.filter.dropped")}
-              </ctx.ui.Button>
-            </Show>
-          </div>
+              <div class="work-bar-gap" />
+              <Show when={hasAgentItems()}>
+                <ctx.ui.Button
+                  size="small"
+                  variant={agentOnly() ? "neutral" : "ghost"}
+                  icon="review"
+                  onClick={() => setAgentOnly((value) => !value)}
+                >
+                  {t("work.filter.agent")}
+                </ctx.ui.Button>
+              </Show>
+              <Show when={hasDropped()}>
+                <ctx.ui.Button
+                  size="small"
+                  variant={showDropped() ? "neutral" : "ghost"}
+                  icon="archive"
+                  onClick={() => setShowDropped((value) => !value)}
+                >
+                  {t("work.filter.dropped")}
+                </ctx.ui.Button>
+              </Show>
+            </div>
+          </Show>
 
-          <Show when={selectedInitiative()}>
+          <Show when={workTab() === "items" && selectedInitiative()}>
             <Show when={runError()}>
               <ErrorBanner message={runError()!} />
             </Show>
@@ -1299,7 +1453,7 @@ export function WorkBody(props: {
             </Show>
           </Show>
 
-          <Show when={settingsOpen()}>
+          <Show when={workTab() === "items" && settingsOpen()}>
             <div class="work-run-panel">
               <div class="work-run-field">
                 <span class="work-run-field-label">{t("work.run.base")}</span>
@@ -1340,20 +1494,20 @@ export function WorkBody(props: {
             </div>
           </Show>
 
-          <Show when={actionError()}>
+          <Show when={workTab() === "items" && actionError()}>
             <ErrorBanner message={actionError()!} />
           </Show>
 
-          <Show when={loading()}>
+          <Show when={workTab() === "items" && loading()}>
             <LoadingRow label={t("work.loading")} />
           </Show>
 
-          <Show when={!loading() && error()}>
+          <Show when={workTab() === "items" && !loading() && error()}>
             <ErrorBanner message={t("work.error")} retryLabel={t("work.retry")} onRetry={() => setReload((n) => n + 1)} />
             <div class="work-error-detail">{error()}</div>
           </Show>
 
-          <Show when={!loading() && !error()}>
+          <Show when={workTab() === "items" && !loading() && !error()}>
             <Show
               when={visibleGroups().length > 0 && total() > 0}
               fallback={<EmptyState icon="checklist" title={empty().title} hint={empty().hint} />}
@@ -1593,6 +1747,138 @@ export function WorkBody(props: {
                   isRunning={executingItem}
                 />
               </Show>
+            </Show>
+          </Show>
+
+          <Show when={workTab() === "overview"}>
+            <Show
+              when={selectedInitiative()}
+              fallback={
+                <EmptyState
+                  icon="workspace"
+                  title={t("work.initiative.selectTitle")}
+                  hint={t("work.initiative.selectHint")}
+                />
+              }
+            >
+              {(initiative) => (
+                <div class="work-overview">
+                  <Show
+                    when={overviewEditing()}
+                    fallback={
+                      <>
+                        <Show
+                          when={initiative().overview}
+                          fallback={
+                            <EmptyState
+                              icon="workspace"
+                              title={t("work.overview.empty")}
+                              hint={t("work.overview.emptyHint")}
+                            />
+                          }
+                        >
+                          <div class="work-overview-body os-scroll">
+                            <ctx.ui.Markdown text={initiative().overview!} class="work-overview-markdown" />
+                          </div>
+                        </Show>
+                        <div class="work-overview-actions">
+                          <ctx.ui.Button
+                            size="small"
+                            variant="neutral"
+                            icon="pencil-line"
+                            onClick={startOverviewEdit}
+                          >
+                            {t("work.overview.edit")}
+                          </ctx.ui.Button>
+                        </div>
+                      </>
+                    }
+                  >
+                    <textarea
+                      class="work-overview-input"
+                      value={overviewDraft()}
+                      aria-label={t("work.initiative.overview")}
+                      onInput={(event) => setOverviewDraft(event.currentTarget.value)}
+                    />
+                    <div class="work-overview-actions">
+                      <ctx.ui.Button size="small" variant="ghost" onClick={() => setOverviewEditing(false)}>
+                        {t("cancel")}
+                      </ctx.ui.Button>
+                      <ctx.ui.Button size="small" variant="contrast" busy={overviewSaving()} onClick={saveOverview}>
+                        {t("work.initiative.save")}
+                      </ctx.ui.Button>
+                    </div>
+                  </Show>
+                </div>
+              )}
+            </Show>
+          </Show>
+
+          <Show when={workTab() === "settings"}>
+            <Show
+              when={selectedInitiative()}
+              fallback={
+                <EmptyState
+                  icon="workspace"
+                  title={t("work.initiative.selectTitle")}
+                  hint={t("work.initiative.selectHint")}
+                />
+              }
+            >
+              {(initiative) => (
+                <div class="work-initiative-settings">
+                  <div class="work-run-field">
+                    <span class="work-run-field-label">{t("work.initiative.name")}</span>
+                    <ctx.ui.TextInput
+                      value={initiativeName()}
+                      onInput={(value) => setInitiativeName(value)}
+                      label={t("work.initiative.name")}
+                    />
+                  </div>
+                  <div class="work-run-field">
+                    <span class="work-run-field-label">{t("work.initiative.description")}</span>
+                    <textarea
+                      class="work-initiative-textarea"
+                      value={initiativeDescription()}
+                      aria-label={t("work.initiative.description")}
+                      onInput={(event) => setInitiativeDescription(event.currentTarget.value)}
+                    />
+                  </div>
+                  <div class="work-run-field">
+                    <span class="work-run-field-label">{t("work.initiative.repos")}</span>
+                    <div class="work-initiative-repos">
+                      <For each={initiative().repos}>
+                        {(repo) => <span class="work-dep-label">{repo.label ?? repo.directory}</span>}
+                      </For>
+                      <Show when={initiative().repos.length === 0}>
+                        <span class="work-deps-empty">{t("work.initiative.reposEmpty")}</span>
+                      </Show>
+                    </div>
+                    <span class="work-run-hint">{t("work.initiative.reposHint")}</span>
+                  </div>
+                  <div class="work-overview-actions">
+                    <ctx.ui.Button
+                      size="small"
+                      variant="contrast"
+                      busy={initiativeSaving()}
+                      onClick={saveInitiativeSettings}
+                    >
+                      {t("work.initiative.save")}
+                    </ctx.ui.Button>
+                  </div>
+                  <div class="work-danger">
+                    <ctx.ui.Button
+                      size="small"
+                      variant="ghost"
+                      icon="trash"
+                      busy={initiativeDeleting()}
+                      onClick={deleteInitiative}
+                    >
+                      {t("work.initiative.delete")}
+                    </ctx.ui.Button>
+                  </div>
+                </div>
+              )}
             </Show>
           </Show>
         </Show>
