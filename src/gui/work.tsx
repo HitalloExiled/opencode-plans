@@ -177,7 +177,9 @@ const WORK_CSS = `
 .work-detail { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
 .work-detail-head { display: flex; align-items: center; gap: 6px; }
 .work-detail-title { flex: 1; min-width: 0; margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
-.work-detail-id { flex: 0 0 auto; font-size: 10px; color: var(--v2-text-text-faint); font-variant-numeric: tabular-nums; }
+.work-detail-id { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.work-detail-id-row { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.work-detail-id-label { color: var(--v2-text-text-muted); }
 .work-detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--v2-text-text-muted); font-size: 11px; }
 .work-detail-body { flex: 1; min-height: 0; overflow-y: auto; }
 .work-detail-empty { color: var(--v2-text-text-muted); font-size: 11.5px; }
@@ -745,6 +747,19 @@ export function WorkBody(props: {
       })
       .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setSaving(false));
+  };
+
+  const copyItemID = async (id: string) => {
+    try {
+      await ctx.system.copy(id);
+      ctx.toast.show({ title: t("toast.itemIdCopied"), variant: "success" });
+    } catch (cause) {
+      ctx.toast.show({
+        title: t("toast.itemIdCopyError"),
+        description: cause instanceof Error ? cause.message : String(cause),
+        variant: "error",
+      });
+    }
   };
 
   const deleteItem = async (item: { id: string; title: string }) => {
@@ -1807,9 +1822,6 @@ export function WorkBody(props: {
                 <div class="work-detail-head">
                   <ctx.ui.IconButton icon="arrow-left" label={t("work.back")} onClick={closeDetail} />
                   <h2 class="work-detail-title">{current().item.title}</h2>
-                  <span class="work-detail-id" title={current().item.id}>
-                    {t("work.item.id", current().item.id.slice(0, 8))}
-                  </span>
                   <Show
                     when={activePlan()}
                     fallback={<span class="work-run-hint">{t("work.execute.planFirst")}</span>}
@@ -1899,6 +1911,15 @@ export function WorkBody(props: {
                     disabled={moving() || (statusPosition()?.index ?? 0) >= (statusPosition()?.total ?? 1) - 1}
                     onClick={() => move("down")}
                   />
+                  <span class="work-detail-id-row">
+                    <span class="work-detail-id-label">{t("id")}:</span>
+                    <code class="work-detail-id" title={current().item.id}>{current().item.id}</code>
+                    <ctx.ui.IconButton
+                      icon="copy"
+                      label={t("work.copyId")}
+                      onClick={() => void copyItemID(current().item.id)}
+                    />
+                  </span>
                 </div>
 
                 <div class="work-deps">
