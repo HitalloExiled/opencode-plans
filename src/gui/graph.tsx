@@ -60,7 +60,9 @@ const CSS = `
   overflow: hidden;
   overflow-wrap: anywhere;
 }
-.work-graph-node-meta { display: flex; align-items: center; gap: 6px; margin-top: auto; }
+.work-graph-node-meta { display: flex; align-items: center; gap: 6px; }
+/* Pills on top, title in the middle, the action and the progress at the bottom. */
+.work-graph-node-foot { display: flex; align-items: center; gap: 6px; margin-top: auto; }
 .work-graph-progress { font-size: 10px; color: var(--v2-text-text-faint); font-variant-numeric: tabular-nums; }
 .work-graph-handle {
   position: absolute;
@@ -551,22 +553,22 @@ export function WorkGraph(props: {
                               }
                             }}
                           >
+                            <span class="work-graph-node-meta">
+                              <StatusChip tone={statusTone(node.status)} label={t(`work.status.${node.status}`)} />
+                            </span>
                             <span class="work-graph-node-title">{node.title}</span>
-                            <Show when={props.onAction}>
-                              <span
-                                style={{ position: "absolute", top: "4px", right: "4px" }}
-                                onClick={(event) => event.stopPropagation()}
-                              >
+                            <span class="work-graph-node-foot">
+                              <Show when={props.onAction}>
                                 <ctx.ui.IconButton
                                   class={props.hasPlan?.(node.id) ? "play-icon" : undefined}
                                   icon={props.hasPlan?.(node.id) ? "fill-triangle-down" : "brain"}
                                   label={t(props.hasPlan?.(node.id) ? "work.card.execute" : "work.card.plan")}
-                                  onClick={() => props.onAction?.(node.id)}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    props.onAction?.(node.id);
+                                  }}
                                 />
-                              </span>
-                            </Show>
-                            <span class="work-graph-node-meta">
-                              <StatusChip tone={statusTone(node.status)} label={t(`work.status.${node.status}`)} />
+                              </Show>
                               <Show when={node.plan}>
                                 {(plan) => (
                                   <span class="work-graph-progress">
