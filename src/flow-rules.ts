@@ -20,25 +20,3 @@ export function pauseAgent(flow: PlanFlow): "plan" | "planner" {
 export function planMessageAgents(flow: PlanFlow): readonly string[] {
   return flow === "dedicated" ? ["plan", "planner"] : ["plan"];
 }
-
-/**
- * The agent a live session moves to when the flow changes, keeping its role.
- * A session planning stays planning and one executing stays executing; any
- * other agent (a custom one) is left alone, so the toggle never replaces a
- * choice the plugin did not make.
- */
-export function flowAgentFor(
-  current: string | undefined,
-  flow: PlanFlow,
-): "plan" | "planner" | "build" | "executor" | undefined {
-  switch (current) {
-    case "plan":
-    case "planner":
-      return pauseAgent(flow);
-    case "build":
-    case "executor":
-      return runAgent(flow);
-    default:
-      return undefined;
-  }
-}
