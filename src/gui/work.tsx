@@ -147,9 +147,9 @@ const WORK_CSS = `
 .work-progress-done { display: block; height: 100%; background: var(--v2-state-fg-success); transition: width .2s ease; }
 .work-progress-label { flex: 0 0 auto; font-size: 10px; color: var(--v2-text-text-muted); font-variant-numeric: tabular-nums; }
 .work-progress-doing { flex: 1 1 auto; width: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--v2-text-text-faint); }
-.work-toolbar, .work-filters { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; }
-/* Filters on the left, the action pushed to the right; collapses on narrow windows. */
-.work-filters-gap { flex: 1 1 0; min-width: 0; }
+.work-toolbar { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; }
+/* Left group stays, right group rides the far edge; collapses on narrow windows. */
+.work-bar-gap { flex: 1 1 0; min-width: 0; }
 .work-detail { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
 .work-detail-head { display: flex; align-items: center; gap: 6px; }
 .work-detail-title { flex: 1; min-width: 0; margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
@@ -234,7 +234,6 @@ const WORK_CSS = `
 .work-board-card.is-drop { box-shadow: inset 0 2px 0 var(--v2-border-border-focus); }
 .work-card-initiative { font-size: 10px; color: var(--v2-text-text-faint); }
 .work-card-actions { display: flex; align-items: center; gap: 4px; }
-.work-run-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .work-run-panel {
   display: flex;
   flex-direction: column;
@@ -1064,10 +1063,22 @@ export function WorkBody(props: {
                   {t("work.view.graph")}
                 </ctx.ui.Button>
               </div>
+            <div class="work-bar-gap" />
+            <ctx.ui.Button
+              size="small"
+              variant="ghost"
+              icon="settings-gear"
+              onClick={() => {
+                setSettingsOpen((value) => !value);
+                syncSettings();
+              }}
+            >
+              {t("work.run.settings")}
+            </ctx.ui.Button>
           </div>
 
-          <Show when={selectedInitiative()}>
-            <div class="work-run-bar">
+          <div class="work-toolbar">
+            <Show when={selectedInitiative()}>
               <ctx.ui.Button
                 size="small"
                 variant="neutral"
@@ -1078,38 +1089,34 @@ export function WorkBody(props: {
               >
                 {t("work.run.button")}
               </ctx.ui.Button>
-              <ctx.ui.Button
-                size="small"
-                variant="ghost"
-                icon="settings-gear"
-                onClick={() => {
-                  setSettingsOpen((value) => !value);
-                  syncSettings();
-                }}
-              >
-                {t("work.run.settings")}
-              </ctx.ui.Button>
-              <Show when={run()}>
-                {(current) => (
-                  <>
-                    <StatusChip
-                      tone={runTone(current().status)}
-                      label={t(`run.status.${current().status}`)}
-                    />
-                    <span class="work-dep-label">
-                      {t(
-                        "work.run.progress",
-                        current().items.filter((entry) => entry.status === "merged").length,
-                        current().items.length,
-                      )}
-                    </span>
-                  </>
-                )}
-              </Show>
-            </div>
-          </Show>
-
-          <div class="work-filters" role="group" aria-label={t("work.filter.label")}>
+            </Show>
+            <Show when={run()}>
+              {(current) => (
+                <>
+                  <StatusChip
+                    tone={runTone(current().status)}
+                    label={t(`run.status.${current().status}`)}
+                  />
+                  <span class="work-dep-label">
+                    {t(
+                      "work.run.progress",
+                      current().items.filter((entry) => entry.status === "merged").length,
+                      current().items.length,
+                    )}
+                  </span>
+                </>
+              )}
+            </Show>
+            <ctx.ui.Button
+              size="small"
+              variant="neutral"
+              icon="plus"
+              disabled={!selectedInitiative()}
+              onClick={openNewItem}
+            >
+              {t("work.newItem")}
+            </ctx.ui.Button>
+            <div class="work-bar-gap" />
             <Show when={props.initiatives.length > 0}>
               <ctx.ui.Menu
                 trigger="button"
@@ -1141,16 +1148,6 @@ export function WorkBody(props: {
                 {t("work.filter.dropped")}
               </ctx.ui.Button>
             </Show>
-            <div class="work-filters-gap" />
-            <ctx.ui.Button
-              size="small"
-              variant="neutral"
-              icon="plus"
-              disabled={!selectedInitiative()}
-              onClick={openNewItem}
-            >
-              {t("work.newItem")}
-            </ctx.ui.Button>
           </div>
 
           <Show when={selectedInitiative()}>
@@ -1290,47 +1287,47 @@ export function WorkBody(props: {
                 </div>
               )}
             </Show>
+          </Show>
 
-            <Show when={settingsOpen()}>
-              <div class="work-run-panel">
-                <div class="work-run-field">
-                  <span class="work-run-field-label">{t("work.run.base")}</span>
-                  <ctx.ui.TextInput
-                    value={baseInput()}
-                    onInput={(value) => setBaseInput(value)}
-                    label={t("work.run.base")}
-                    placeholder={t("work.run.baseHint")}
-                  />
-                  <span class="work-run-hint">{t("work.run.baseDescription")}</span>
-                </div>
-                <div class="work-run-field">
-                  <span class="work-run-field-label">{t("work.run.parallel")}</span>
-                  <ctx.ui.TextInput
-                    value={parallelInput()}
-                    onInput={(value) => setParallelInput(value)}
-                    label={t("work.run.parallel")}
-                  />
-                  <span class="work-run-hint">{t("work.run.parallelDescription")}</span>
-                </div>
-                <div class="work-run-field">
-                  <span class="work-run-field-label">{t("work.run.verify")}</span>
-                  <ctx.ui.TextInput
-                    value={verifyInput()}
-                    onInput={(value) => setVerifyInput(value)}
-                    label={t("work.run.verify")}
-                  />
-                  <span class="work-run-hint">{t("work.run.verifyDescription")}</span>
-                </div>
-                <div class="work-run-actions">
-                  <ctx.ui.Button size="small" variant="ghost" onClick={() => setSettingsOpen(false)}>
-                    {t("cancel")}
-                  </ctx.ui.Button>
-                  <ctx.ui.Button size="small" variant="contrast" busy={runBusy()} onClick={saveSettings}>
-                    {t("work.run.save")}
-                  </ctx.ui.Button>
-                </div>
+          <Show when={settingsOpen()}>
+            <div class="work-run-panel">
+              <div class="work-run-field">
+                <span class="work-run-field-label">{t("work.run.base")}</span>
+                <ctx.ui.TextInput
+                  value={baseInput()}
+                  onInput={(value) => setBaseInput(value)}
+                  label={t("work.run.base")}
+                  placeholder={t("work.run.baseHint")}
+                />
+                <span class="work-run-hint">{t("work.run.baseDescription")}</span>
               </div>
-            </Show>
+              <div class="work-run-field">
+                <span class="work-run-field-label">{t("work.run.parallel")}</span>
+                <ctx.ui.TextInput
+                  value={parallelInput()}
+                  onInput={(value) => setParallelInput(value)}
+                  label={t("work.run.parallel")}
+                />
+                <span class="work-run-hint">{t("work.run.parallelDescription")}</span>
+              </div>
+              <div class="work-run-field">
+                <span class="work-run-field-label">{t("work.run.verify")}</span>
+                <ctx.ui.TextInput
+                  value={verifyInput()}
+                  onInput={(value) => setVerifyInput(value)}
+                  label={t("work.run.verify")}
+                />
+                <span class="work-run-hint">{t("work.run.verifyDescription")}</span>
+              </div>
+              <div class="work-run-actions">
+                <ctx.ui.Button size="small" variant="ghost" onClick={() => setSettingsOpen(false)}>
+                  {t("cancel")}
+                </ctx.ui.Button>
+                <ctx.ui.Button size="small" variant="contrast" busy={runBusy()} onClick={saveSettings}>
+                  {t("work.run.save")}
+                </ctx.ui.Button>
+              </div>
+            </div>
           </Show>
 
           <Show when={actionError()}>
