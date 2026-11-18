@@ -119,19 +119,27 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   hook below is a safety net rather than a live path. Shell stays allowed on
   the planner, exactly like Plan: read-only is an instruction for shell, not a
   permission, so a redirect can still write.
-- **The reminder is replicated byte for byte, and the hook keeps a sane
-  message.** `src/plan-reminder.ts` mirrors the core's `enter`/`leave` text and
-  splices it before the user's prompt on every request (also after a
-  compaction). `index.ts` keeps Plan's `tool.hook` shape for
+- **The core's `enter`/`leave` are replicated byte for byte; the planner has
+  its own reminder.** `src/plan-reminder.ts` mirrors `enter`/`leave` exactly —
+  that is what the native `plan` agent reconciles against, and
+  `test/plan-reminder.test.ts` fails on a one-byte drift. The planner never
+  uses `enter(PLAN_DIR)`: it gets `PLANNER_REMINDER`, the same shape with no
+  `~/.opencode/plan` exception, because the clone has none (only `edit * deny`)
+  and the core never sees this agent, so there is no reconciler to stay
+  byte-identical with. The planner's `<plans-flow>` carries the same idea: no
+  path, no redundant "plan files" disambiguation, and an explicit line saying
+  `initiative.*`, `work.*` and `plans.*` stay allowed — leaving the old facts in
+  made the model read the read-only contract as a ban on those tools (incident,
+  notes #6/#7). `index.ts` still keeps Plan's `tool.hook` shape for
   `edit`/`write`/`patch` denials, but with a flow-accurate message:
   `Cannot use <tool> to modify files: the plans flow is read-only; save the
   plan with plans.save.` ("outside the Plan directory" would be false for every
   path.)
-- **The reminder is spliced, never persisted.** The text is byte-identical to
-  the core's, so a synthetic copy would be indistinguishable from Plan's own
-  reminder; the core's reconciler would then treat it as stale for any agent
-  other than `plan` and append `leave` on every request, which our hook would
-  answer with `enter` again — an endless enter/leave ping-pong. Splicing into
+- **The reminder is spliced, never persisted.** For the native `plan` agent a
+  synthetic copy would be indistinguishable from Plan's own reminder; the
+  core's reconciler would then treat it as stale for any agent other than
+  `plan` and append `leave` on every request, which our hook would answer with
+  `enter` again — an endless enter/leave ping-pong. Splicing into
   `event.messages` gives the model the same bytes without leaving a copy the
   core can fight.
 - **The extension is a `<plans-flow>` tail block.** `src/inject.ts` holds the
