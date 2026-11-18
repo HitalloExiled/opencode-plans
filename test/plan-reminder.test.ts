@@ -6,6 +6,7 @@ import {
   leave,
   PLAN_DIR,
   PLAN_REMINDER,
+  PLANNER_REMINDER,
   planReminderPatch,
   type ReminderMessage,
 } from "../src/plan-reminder";
@@ -40,19 +41,29 @@ describe("plan reminder text", () => {
     expect(PLAN_REMINDER).toContain("If the user asks you to implement changes, do not do so.");
     expect(PLAN_REMINDER).toContain("Tell them they need to switch agents.");
   });
+
+  test("the planner's own reminder never mentions the Plan directory", () => {
+    expect(PLANNER_REMINDER).not.toContain(PLAN_DIR);
+    expect(PLANNER_REMINDER).toContain("plans.db");
+    expect(PLANNER_REMINDER).toContain("If the user asks you to implement changes, do not do so.");
+    expect(PLANNER_REMINDER).toContain("Tell them they need to switch agents.");
+  });
 });
 
 describe("lastReminder", () => {
   test("finds the last one, ignoring unrelated text", () => {
-    const messages = [user(leave), assistant("ok"), user(PLAN_REMINDER)];
-    expect(lastReminder(messages)).toBe(PLAN_REMINDER);
+    const messages = [user(leave), assistant("ok"), user(PLANNER_REMINDER)];
+    expect(lastReminder(messages)).toBe(PLANNER_REMINDER);
   });
 
   test("reads a reminder that shares its message with a tail block", () => {
     const messages: ReminderMessage[] = [
-      { role: "user", content: [{ type: "text", text: PLAN_REMINDER }, { type: "text", text: "<plans-flow/>" }] },
+      {
+        role: "user",
+        content: [{ type: "text", text: PLANNER_REMINDER }, { type: "text", text: "<plans-flow/>" }],
+      },
     ];
-    expect(lastReminder(messages)).toBe(PLAN_REMINDER);
+    expect(lastReminder(messages)).toBe(PLANNER_REMINDER);
   });
 
   test("is undefined without a reminder", () => {
@@ -63,7 +74,7 @@ describe("lastReminder", () => {
 describe("planReminderPatch", () => {
   test("enters before the user's prompt", () => {
     const messages = [user("plan the migration")];
-    expect(planReminderPatch(messages, "planner")).toEqual({ text: PLAN_REMINDER, at: 0 });
+    expect(planReminderPatch(messages, "planner")).toEqual({ text: PLANNER_REMINDER, at: 0 });
   });
 
   test("lands after a previous assistant turn, before the new user message", () => {
@@ -77,16 +88,16 @@ describe("planReminderPatch", () => {
   });
 
   test("does nothing when the planner already has it", () => {
-    expect(planReminderPatch([user(PLAN_REMINDER), user("go")], "planner")).toBeUndefined();
+    expect(planReminderPatch([user(PLANNER_REMINDER), user("go")], "planner")).toBeUndefined();
   });
 
   test("re-injects after a compaction that dropped it", () => {
     const messages = [user("summary"), assistant("ok"), user("continue")];
-    expect(planReminderPatch(messages, "planner")?.text).toBe(PLAN_REMINDER);
+    expect(planReminderPatch(messages, "planner")?.text).toBe(PLANNER_REMINDER);
   });
 
   test("leaves when the session stops using the planner", () => {
-    const messages = [user(PLAN_REMINDER), user("go")];
+    const messages = [user(PLANNER_REMINDER), user("go")];
     expect(planReminderPatch(messages, "executor")).toEqual({ text: leave, at: 1 });
     expect(planReminderPatch(messages, "build")).toEqual({ text: leave, at: 1 });
     expect(planReminderPatch(messages, "plan")).toEqual({ text: leave, at: 1 });
@@ -105,23 +116,23 @@ describe("planReminderPatch", () => {
 describe("applyPlanReminder", () => {
   test("splices the message and returns the persisted text", () => {
     const messages = [user("a"), assistant("b"), user("c")];
-    expect(applyPlanReminder(messages, "planner")).toBe(PLAN_REMINDER);
+    expect(applyPlanReminder(messages, "planner")).toBe(PLANNER_REMINDER);
     expect(messages).toHaveLength(4);
-    expect(messages[2]).toEqual({ role: "user", content: [{ type: "text", text: PLAN_REMINDER }] });
+    expect(messages[2]).toEqual({ role: "user", content: [{ type: "text", text: PLANNER_REMINDER }] });
     // The user's prompt stays last, untouched.
     expect(messages[3]).toEqual(user("c"));
   });
 
   test("is idempotent on the same request", () => {
     const messages = [user("a"), user("b")];
-    expect(applyPlanReminder(messages, "planner")).toBe(PLAN_REMINDER);
+    expect(applyPlanReminder(messages, "planner")).toBe(PLANNER_REMINDER);
     expect(applyPlanReminder(messages, "planner")).toBeUndefined();
-    expect(messages.filter((message) => message.content[0]?.text === PLAN_REMINDER)).toHaveLength(1);
+    expect(messages.filter((message) => message.content[0]?.text === PLANNER_REMINDER)).toHaveLength(1);
   });
 
   test("a tail block appended after it does not cause a duplicate", () => {
     const messages = [user("a")];
-    expect(applyPlanReminder(messages, "planner")).toBe(PLAN_REMINDER);
+    expect(applyPlanReminder(messages, "planner")).toBe(PLANNER_REMINDER);
     // A later layer (the plan context) shares the injected message.
     const injected = messages[0]!;
     injected.content.push({ type: "text", text: "<plans-context/>" });
@@ -130,7 +141,7 @@ describe("applyPlanReminder", () => {
   });
 
   test("switching to the executor swaps it for leave", () => {
-    const messages = [user(PLAN_REMINDER), user("execute")];
+    const messages = [user(PLANNER_REMINDER), user("execute")];
     expect(applyPlanReminder(messages, "executor")).toBe(leave);
     expect(lastReminder(messages)).toBe(leave);
     expect(applyPlanReminder(messages, "executor")).toBeUndefined();

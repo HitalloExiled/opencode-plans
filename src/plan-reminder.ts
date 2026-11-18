@@ -35,6 +35,21 @@ You are NO LONGER in Plan mode. The previous Plan restrictions no longer apply. 
 
 export const PLAN_REMINDER = enter(PLAN_DIR);
 
+/**
+ * The planner's own reminder: same shape and intent as the core's, minus the
+ * `~/.opencode/plan` exception the planner never has (`edit * deny`, no
+ * allow). The core never sees this agent, so there is no reconciler to stay
+ * byte-identical with — unlike `enter`/`leave` above, which must match the
+ * core exactly for the native `plan` agent.
+ */
+export const PLANNER_REMINDER = `<system-reminder>
+You are in Plan mode. Discuss the plan with the user directly in the conversation. The plan record lives in plans.db (plans.save/plans.update), not markdown files.
+
+Do not modify any files.
+
+You remain in Plan mode until the user switches agents. If the user asks you to implement changes, do not do so. Tell them they need to switch agents.
+</system-reminder>`;
+
 export type ReminderPart = { type: string; text?: string };
 export type ReminderMessage = { role: string; content: ReminderPart[] };
 
@@ -51,7 +66,7 @@ export function lastReminder(messages: readonly ReminderMessage[]): string | und
     if (message.role !== "user") return found;
     for (const part of message.content) {
       if (part.type !== "text") continue;
-      if (part.text === PLAN_REMINDER || part.text === leave) return part.text;
+      if (part.text === PLAN_REMINDER || part.text === PLANNER_REMINDER || part.text === leave) return part.text;
     }
     return found;
   }, undefined);
@@ -60,20 +75,22 @@ export function lastReminder(messages: readonly ReminderMessage[]): string | und
 export type ReminderPatch = { text: string; at: number };
 
 /**
- * What the request needs, if anything: `enter` for the planner, `leave` when a
- * session leaves it, both placed right before the user's prompt (where the
- * core's own reminder lands).
+ * What the request needs, if anything: the planner's own reminder, `leave`
+ * when a session leaves it, both placed right before the user's prompt (where
+ * the core's own reminder lands). Only `agent === "planner"` reaches this
+ * path (`applyContextLayers` in `index.ts`); the native `plan` agent keeps
+ * getting its reminder from the core directly.
  */
 export function planReminderPatch(
   messages: readonly ReminderMessage[],
   agent: string | undefined,
 ): ReminderPatch | undefined {
   const reminder = lastReminder(messages);
-  const missing = agent === "planner" && reminder !== PLAN_REMINDER;
-  const stale = agent !== "planner" && reminder === PLAN_REMINDER;
+  const missing = agent === "planner" && reminder !== PLANNER_REMINDER;
+  const stale = agent !== "planner" && (reminder === PLAN_REMINDER || reminder === PLANNER_REMINDER);
   if (!missing && !stale) return undefined;
   const at = messages.at(-1)?.role === "user" ? messages.length - 1 : messages.length;
-  return { text: missing ? PLAN_REMINDER : leave, at };
+  return { text: missing ? PLANNER_REMINDER : leave, at };
 }
 
 /**

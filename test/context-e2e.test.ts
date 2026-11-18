@@ -34,8 +34,8 @@ describe("context layers e2e — agent x flow matrix", () => {
       expect(allText).toContain("Role: planner.");
       if (flow === "native") expect(allText).toContain("switch to the Build agent");
       else expect(allText).toContain("switch to the Executor agent");
-      // The "plan files" disambiguation survives even without the routing rule.
-      expect(allText).toContain('The Plan-mode reminder about "plan files" does not cover plans.save');
+      // Plugin tools stay allowed even without the routing rule.
+      expect(allText).toContain("Tools remain allowed in this role: initiative.*, work.*, plans.*");
     });
 
     test(`executor (${flow}): <plans-flow> tail, no reminder, no routing rule`, () => {

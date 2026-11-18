@@ -102,6 +102,11 @@ describe("routing rule", () => {
   test("keeps every stated requirement inside the plan under construction", () => {
     expect(PLANS_ROUTING_RULE).toContain("every requirement the user states belongs in the plan under construction");
   });
+
+  test("tells agents that plugin tools stay allowed in Plan mode", () => {
+    expect(PLANS_ROUTING_RULE).toContain("Plan mode's restriction is on file edits");
+    expect(PLANS_ROUTING_RULE).toContain("initiative.*, work.*, plans.* stay allowed");
+  });
 });
 
 describe("plans-flow extension", () => {
@@ -131,11 +136,12 @@ describe("plans-flow extension", () => {
     // The clone drops Plan's plan-directory exception, so the flow must say
     // that every edit fails instead of inviting a markdown write.
     expect(planner).toContain("File edits are denied");
-    expect(planner).toContain("~/.opencode/plan");
     expect(planner).toContain("plans.db");
-    // With no routing rule in the planner's system, this line is the only
-    // place disambiguating plans.save from the core's "plan files" reminder.
-    expect(planner).toContain('The Plan-mode reminder about "plan files" does not cover plans.save');
+    // The planner's own reminder (plan-reminder.ts) already disambiguates
+    // plans.db from markdown; this block stays a clean slate otherwise and
+    // only adds the tools the role keeps allowed.
+    expect(planner).not.toContain("~/.opencode/plan");
+    expect(planner).toContain("Tools remain allowed in this role: initiative.*, work.*, plans.*");
     expect(plansFlowBlock("planner", "executor")).not.toContain("are scratch");
     expect(EXECUTOR_FLOW).toContain("plans.get");
     expect(EXECUTOR_FLOW).toContain("doing");
