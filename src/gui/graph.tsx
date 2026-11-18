@@ -22,94 +22,9 @@ import {
   wouldCreateCycle,
   type GraphPlacement,
 } from "../work-graph";
+import graphCss from "./graph.scss?inline";
 
-const CSS = `
-.work-graph { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.work-graph-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px; flex: none; }
-.work-graph-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; }
-.work-graph-viewport.is-panning { cursor: grabbing; }
-.work-graph-canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
-.work-graph-edges { position: absolute; top: 0; left: 0; overflow: visible; }
-.work-graph-edge { fill: none; stroke: var(--v2-text-text-muted); stroke-width: 1.75; pointer-events: none; }
-.work-graph-edge.is-implicit { stroke-dasharray: 5 4; stroke: var(--v2-state-fg-warning); opacity: 0.85; }
-.work-graph-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
-.work-graph-arrow { fill: var(--v2-text-text-muted); }
-.work-graph-arrow.is-implicit { fill: var(--v2-state-fg-warning); }
-.work-graph-arrow.is-ghost { fill: var(--v2-border-border-focus); }
-.work-graph-arrow.is-invalid { fill: var(--v2-state-fg-danger); }
-.work-graph-node {
-  position: absolute;
-  width: ${GRAPH_NODE_WIDTH}px;
-  height: ${GRAPH_NODE_HEIGHT}px;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px;
-  border: 1px solid var(--v2-border-border-muted);
-  border-radius: 6px;
-  background: var(--v2-background-bg-layer-01);
-  cursor: pointer;
-}
-.work-graph-node:hover { border-color: var(--v2-border-border-strong); }
-.work-graph-node-title {
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--v2-text-text-base);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-.work-graph-node-meta { display: flex; align-items: center; gap: 6px; }
-/* Pills on top, title in the middle, the action and the progress at the bottom. */
-.work-graph-node-foot { display: flex; align-items: center; gap: 6px; margin-top: auto; }
-.work-graph-progress { flex: 1; min-width: 0; }
-.work-graph-handle {
-  position: absolute;
-  right: -9px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  border: 1px solid var(--v2-border-border-strong);
-  background: var(--v2-background-bg-layer-01);
-  color: var(--v2-text-text-muted);
-  font-size: 12px;
-  line-height: 16px;
-  text-align: center;
-  cursor: crosshair;
-  user-select: none;
-}
-.work-graph-handle:hover { color: var(--v2-text-text-base); border-color: var(--v2-border-border-focus); }
-.work-graph-ghost { fill: none; stroke: var(--v2-border-border-focus); stroke-width: 1.5; stroke-dasharray: 3 3; pointer-events: none; }
-.work-graph-ghost.is-invalid { stroke: var(--v2-state-fg-danger); }
-.work-graph-controls { display: flex; gap: 4px; flex: none; }
-.work-graph-stage {
-  position: absolute;
-  top: 0;
-  width: ${GRAPH_NODE_WIDTH}px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--v2-text-text-faint);
-  pointer-events: none;
-  white-space: nowrap;
-}
-.work-graph-stage-note { font-weight: 500; text-transform: none; color: var(--v2-state-fg-info); margin-left: 4px; }
-.work-graph-edge.is-active { stroke-width: 2.5; opacity: 1; }
-.work-graph-edge.is-dim { opacity: 0.2; }
-.work-graph-node.is-active { border-color: var(--v2-border-border-focus); }
-.work-graph-handle.is-active { border-color: var(--v2-border-border-focus); }
-.work-graph-legend { position: absolute; left: 6px; bottom: 6px; display: flex; gap: 10px; align-items: center; font-size: 10px; color: var(--v2-text-text-faint); z-index: 1; }
-.work-graph-legend-line { display: inline-block; width: 18px; border-top: 1.5px solid var(--v2-text-text-faint); vertical-align: middle; }
-.work-graph-legend-line.is-implicit { border-top-style: dashed; border-top-color: var(--v2-state-fg-warning); }
-.work-graph-hint { font-size: 10px; color: var(--v2-text-text-faint); min-width: 0; }
-`;
+const CSS = graphCss;
 
 const statusTone = (status: string): ChipTone =>
   status === "doing"

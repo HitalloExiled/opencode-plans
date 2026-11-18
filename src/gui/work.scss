@@ -1,0 +1,195 @@
+.work {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  padding: 12px;
+  overflow: hidden;
+  font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  color: var(--v2-text-text-base);
+  font-size: 12.5px;
+}
+.work-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.work-body.is-hidden { display: none; }
+.work-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; padding-bottom: 24px; overscroll-behavior: contain; }
+.work-initiative { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.work-initiative:last-child { margin-bottom: 0; }
+.work-initiative-name {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v2-text-text-base);
+}
+.work-initiative-count { font-size: 10.5px; font-weight: 500; color: var(--v2-text-text-faint); }
+.work-section { display: flex; flex-direction: column; gap: 6px; }
+.work-section-head {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--v2-text-text-muted);
+}
+.work-section-count { font-weight: 500; color: var(--v2-text-text-faint); }
+.work-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--v2-text-text-faint); }
+.work-dot.is-doing { background: var(--v2-state-fg-info); }
+.work-dot.is-ready { background: var(--v2-state-fg-success); }
+.work-dot.is-blocked { background: var(--v2-state-fg-danger); }
+.work-dot.is-done { background: var(--v2-state-fg-success); opacity: 0.55; }
+.work-dot.is-dropped { background: var(--v2-text-text-faint); opacity: 0.55; }
+.work-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 8px 10px;
+  /* A card never grows past its column: long titles and the "doing" step text
+     ellipsize instead of spilling over the neighbours. */
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: 6px;
+  background: var(--v2-background-bg-layer-01);
+  cursor: pointer;
+}
+.work-card:hover { background-image: linear-gradient(var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)); }
+.work-card:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: -2px; }
+.work-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+/* Title, action and pills on one line; the progress bar on its own below. */
+.work-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
+/* Only the title shrinks; the action and the pills keep their size. */
+.work-card-head > * { flex: 0 0 auto; min-width: 0; }
+.work-card-head > .work-card-title { flex: 1 1 auto; width: 0; }
+.work-card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-card-progress { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
+.work-progress { width: 56px; flex: 0 0 auto; height: 4px; border-radius: 999px; overflow: hidden; background: var(--v2-overlay-simple-overlay-pressed); }
+.work-progress-done { display: block; height: 100%; background: var(--v2-state-fg-success); transition: width .2s ease; }
+.work-progress-label { flex: 0 0 auto; font-size: 10px; color: var(--v2-text-text-muted); font-variant-numeric: tabular-nums; }
+.work-progress-doing { flex: 1 1 auto; width: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--v2-text-text-faint); }
+.work-initiative-head { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--v2-border-border-muted); }
+.work-tabs { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; }
+.work-overview { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.work-overview-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; border: 1px solid var(--v2-border-border-muted); border-radius: 8px; background: var(--v2-background-bg-layer-01); }
+.work-overview-actions { display: flex; justify-content: flex-end; gap: 6px; flex: 0 0 auto; }
+.work-overview-hint { font-size: 10.5px; color: var(--v2-text-text-faint); }
+.work-initiative-settings { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow-y: auto; }
+.work-initiative-textarea { min-height: 80px; resize: vertical; font: inherit; font-size: 12px; line-height: 1.5; color: var(--v2-text-text-base); background: var(--v2-background-bg-layer-01); border: 1px solid var(--v2-border-border-muted); border-radius: 6px; padding: 8px; }
+.work-initiative-repos { display: flex; flex-direction: column; gap: 2px; }
+.work-danger { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--v2-border-border-muted); display: flex; justify-content: flex-start; }
+.work-toolbar { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; }
+/* Left group stays, right group rides the far edge; collapses on narrow windows. */
+.work-bar-gap { flex: 1 1 0; min-width: 0; }
+.work-detail { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
+.work-detail-head { display: flex; align-items: center; gap: 6px; }
+.work-detail-title { flex: 1; min-width: 0; margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.work-detail-id { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.work-detail-id-row { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.work-detail-id-label { color: var(--v2-text-text-muted); }
+.work-detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--v2-text-text-muted); font-size: 11px; }
+.work-detail-body { flex: 1; min-height: 0; overflow-y: auto; }
+.work-detail-empty { color: var(--v2-text-text-muted); font-size: 11.5px; }
+.work-deps { display: flex; flex-direction: column; gap: 6px; }
+.work-deps-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.work-deps-title {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--v2-text-text-muted);
+}
+.work-dep-label { font-size: 10.5px; color: var(--v2-text-text-faint); }
+.work-dep-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.work-dep-row .work-dot { flex: 0 0 auto; }
+/* The plan title is the link: shrink it, never push the progress label away. */
+.work-plan-link { flex: 0 1 auto; min-width: 0; max-width: 100%; justify-content: flex-start; overflow: hidden; }
+.work-plan-link-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-deps-empty { font-size: 11px; color: var(--v2-text-text-muted); }
+.work-editor { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.work-editor textarea {
+  flex: 1;
+  min-height: 120px;
+  resize: none;
+  font: inherit;
+  color: var(--v2-text-text-base);
+  background: var(--v2-background-bg-layer-01);
+  border: 1px solid var(--v2-border-border-strong);
+  border-radius: 6px;
+  padding: 8px;
+}
+.work-editor-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.work-error-detail { font-size: 11px; color: var(--v2-text-text-muted); overflow-wrap: anywhere; }
+.work-pause-icon { display: inline-flex; align-items: center; gap: 3px; margin-right: 5px; }
+.work-pause-icon::before, .work-pause-icon::after {
+  content: "";
+  display: block;
+  width: 4px;
+  height: 12px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.work-run-hint { font-size: 10.5px; color: var(--v2-text-text-faint); }
+.work-run-error { font-size: 10.5px; color: var(--v2-state-fg-danger); overflow-wrap: anywhere; }
+.work-run-field { display: flex; flex-direction: column; gap: 3px; }
+.work-run-field-label { font-size: 11px; font-weight: 600; color: var(--v2-text-text-base); }
+/* Same play glyph as the plan Execute: the down triangle rotated into a play. */
+.play-icon { color: var(--v2-state-fg-success); }
+.play-icon:hover { color: var(--v2-state-fg-success); }
+.play-icon svg { transform: rotate(-90deg); width: 20px; height: 20px; }
+.work-view-switch { display: flex; align-items: center; gap: 4px; }
+.work-board { display: flex; gap: 8px; flex: 1; min-height: 0; overflow-x: auto; padding-bottom: 4px; }
+.work-col {
+  flex: 1 1 0;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 8px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: 8px;
+  background: var(--v2-background-bg-layer-02);
+}
+.work-col.is-over { border-color: var(--v2-border-border-focus); }
+.work-col-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--v2-text-text-muted);
+}
+.work-col-count { margin-left: auto; font-weight: 500; color: var(--v2-text-text-faint); }
+.work-col-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.work-board-card { cursor: grab; flex-shrink: 0; }
+.work-board-card:active { cursor: grabbing; }
+.work-board-card.is-drop { box-shadow: inset 0 2px 0 var(--v2-border-border-focus); }
+.work-card-initiative { font-size: 10px; color: var(--v2-text-text-faint); }
+.work-card-actions { display: flex; align-items: center; gap: 4px; }
+.work-run-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: 6px;
+  background: var(--v2-background-bg-layer-01);
+}
+.work-run-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.work-run-row { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.work-run-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.work-run-blockers { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--v2-state-fg-danger); }
+.work-run-badge { flex: 0 0 auto; }
+.work-board-empty { font-size: 10.5px; color: var(--v2-text-text-faint); }

@@ -13,32 +13,9 @@ import { DIALOG_SURFACE_CSS } from "./dialog-surface";
 import { useT } from "./i18n";
 import { planWorkItem } from "./plan-item";
 import { repoForItem } from "../work-plan";
+import planDialogCss from "./plan-dialog.scss?inline";
 
-const CSS = `
-.plan-dialog { display: flex; flex-direction: column; gap: 10px; width: min(560px, calc(100vw - 48px)); max-height: min(70vh, 560px); pointer-events: auto; }
-.plan-dialog-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--v2-text-text-base); overflow-wrap: anywhere; }
-.plan-dialog-hint { margin: 0; font-size: 11px; color: var(--v2-text-text-muted); }
-.plan-dialog-list { flex: 1; min-height: 120px; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
-.plan-dialog-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
-  border: 1px solid var(--v2-border-border-muted);
-  border-radius: 6px;
-  background: var(--v2-background-bg-layer-01);
-  cursor: pointer;
-  text-align: left;
-}
-.plan-dialog-row:hover { background-image: linear-gradient(var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)); }
-.plan-dialog-row.is-selected { border-color: var(--v2-border-border-focus); }
-.plan-dialog-row-name { font-size: 12px; font-weight: 600; color: var(--v2-text-text-base); }
-.plan-dialog-row-path { font-size: 10.5px; color: var(--v2-text-text-muted); overflow-wrap: anywhere; }
-.plan-dialog-add { display: flex; align-items: flex-end; gap: 6px; }
-.plan-dialog-add > :first-child { flex: 1; min-width: 0; }
-.plan-dialog-actions { display: flex; justify-content: flex-end; gap: 6px; }
-.plan-dialog-empty { font-size: 11px; color: var(--v2-text-text-muted); }
-`;
+const CSS = planDialogCss;
 
 export type PlanDialogInput = {
   ctx: Context;

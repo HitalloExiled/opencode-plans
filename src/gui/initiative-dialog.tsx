@@ -10,13 +10,9 @@ import { ErrorBanner, SHARED_CSS } from "opencode-shared/gui";
 import { PlansRpc, type Initiative } from "./contract";
 import { DIALOG_SURFACE_CSS } from "./dialog-surface";
 import { useT } from "./i18n";
+import initiativeDialogCss from "./initiative-dialog.scss?inline";
 
-const CSS = `
-.initiative-dialog { display: flex; flex-direction: column; gap: 10px; width: min(560px, calc(100vw - 48px)); pointer-events: auto; }
-.initiative-dialog-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--v2-text-text-base); overflow-wrap: anywhere; }
-.initiative-dialog-actions { display: flex; justify-content: flex-end; gap: 6px; }
-.initiative-dialog-hint { margin: 0; font-size: 11px; color: var(--v2-text-text-muted); }
-`;
+const CSS = initiativeDialogCss;
 
 export type InitiativeDialogInput = {
   ctx: Context;

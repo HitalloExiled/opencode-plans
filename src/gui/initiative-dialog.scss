@@ -1,0 +1,27 @@
+.initiative-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(560px, calc(100vw - 48px));
+  pointer-events: auto;
+}
+
+.initiative-dialog-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-text-base);
+  overflow-wrap: anywhere;
+}
+
+.initiative-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.initiative-dialog-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--v2-text-text-muted);
+}

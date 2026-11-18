@@ -1,0 +1,38 @@
+.work-item-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(600px, calc(100vw - 48px));
+  pointer-events: auto;
+}
+
+.work-item-dialog-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-text-base);
+  overflow-wrap: anywhere;
+}
+
+.work-item-dialog textarea {
+  min-height: 160px;
+  resize: vertical;
+  font: inherit;
+  color: var(--v2-text-text-base);
+  background: var(--v2-background-bg-layer-01);
+  border: 1px solid var(--v2-border-border-strong);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.work-item-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.work-item-dialog-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--v2-text-text-muted);
+}
