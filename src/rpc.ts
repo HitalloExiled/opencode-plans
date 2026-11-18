@@ -24,6 +24,7 @@ import {
   type WorkItemDetail,
 } from "./gui/contract.js";
 import { getFlow, setFlow as persistFlow } from "./flow.js";
+import { registerAgents } from "./agents.js";
 import { sortWorkItems } from "./work-list.js";
 import { captureWorkItem } from "./work-capture.js";
 import { notificationLocale, tn } from "./notifications.js";
@@ -450,7 +451,13 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
 
     getFlow: async () => getFlow() as PlanFlow,
 
-    setFlow: async (flow) => persistFlow(flow as PlanFlow),
+    setFlow: async (flow) => {
+      const next = persistFlow(flow as PlanFlow);
+      // The planner's baked-in `system` names the peer agent (Build/Executor)
+      // per flow; re-register so it stays accurate after the toggle.
+      await registerAgents(ctx, next);
+      return next;
+    },
 
     listInitiatives: async () => {
       const store = await requireStore();

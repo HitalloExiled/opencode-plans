@@ -66,28 +66,33 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   `PlansRpc.save` (editor) are the explicit entry points. The hint button only
   sends a user-message nudge asking the agent to call `plans.save`; it never
   captures the last message itself.
-- **The clones carry no `system`.** Plan and Build have none either: Plan's
-  behavior comes from its permission set plus the reminder the core injects per
-  request. Giving `planner`/`executor` a system prompt would be a byte the
-  native agents never send, so the dedicated flow could never match. The
-  system is the FIRST system part (`baseTranscript`); keep it identical and put
-  everything flow-specific in the request tail.
-- **The routing rule goes to every agent that does not carry a `<plans-flow>`
-  tail.** `planner`/`executor` already carry the same contract in their tail
-  block, so the system rule would just duplicate it; every other agent (`plan`,
-  `build`, subagents) gets it. It is constant and re-pushed VERBATIM on every
+- **`planner`/`executor` carry the `<plans-flow>` role baked into `system`,
+  not in the request tail.** Plan and Build have no `system` of their own, and
+  matching that byte for byte used to be a hard rule — abandoned deliberately
+  (2026-11-18) because the role text is constant per flow (only the peer
+  agent's name changes, and only on the rare flow toggle), so re-sending it
+  as a tail block on every single request was pure token waste, not a
+  cache-correctness need: it never touched the cache-sensitive prefix either
+  way. `agentSpecs(flow)` in `src/agents.ts` computes it; `registerAgents(ctx,
+  flow)` writes it into `item.system` once at `setup()` and again whenever
+  `setFlow` (the GUI toggle, `src/rpc.ts`) changes the flow. An A/B smoke test
+  (two real planner sessions, same task, old tail vs. new system) showed no
+  quality difference. The dynamic reminder (`plan-reminder.ts`) could not move
+  the same way — it reacts to Plan-mode enter/leave transitions — and still
+  rides the tail every request.
+- **The routing rule goes to every agent except `planner`/`executor`.** Those
+  two already carry the equivalent contract baked into `system`, so the
+  routing rule would just duplicate it; every other agent (`plan`, `build`,
+  subagents) gets it instead. It is constant and re-pushed VERBATIM on every
   request it applies to — never only on the first one: a shrinking head forces
-  a full re-prefill of the conversation. Whether an agent has the rule or the
-  tail depends only on the agent id, never on the flow switch; it does change
-  once, the instant an agent's `<plans-flow>` status changes (e.g. a session
-  switches from `plan` to `planner`), which already re-prefills anyway because
-  the agent and the tail changed in the same request.
-- **Injection is cache-first, in two layers.** The routing rule is constant and
-  re-pushed VERBATIM on every request — never conditionally, never only on the
-  first one: a shrinking head forces a full re-prefill of the conversation
-  (notes/memory document the same rule). Anything dynamic (progress, step ids,
-  plan titles) goes to the tail of the last user message, never to `system`.
-  There is no post-turn nudge.
+  a full re-prefill of the conversation. Whether an agent gets the rule depends
+  only on the agent id, never on the flow switch.
+- **Injection is cache-first, in three layers.** The routing rule (`plan`,
+  `build`, subagents) and the `<plans-flow>` role (`planner`, `executor`) are
+  both constant and live in `system`, pushed/registered once, not recomputed
+  per request. Anything dynamic (progress, step ids, plan titles, the
+  Plan-mode reminder) goes to the tail of the last user message, never to
+  `system`. There is no post-turn nudge.
 - **Tool descriptions are truncated by the Code Mode catalog at ~119
   characters.** Keep every tool and namespace description ≤110 with the
   load-bearing sentence first; parameter descriptions stay ≤6 words.
@@ -110,7 +115,8 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   code — see `applyContextLayers` in `index.ts` and `test/context-e2e.test.ts`.
 - **`planner` is Plan and `executor` is Build, replicated by behavior.** Both
   live in `src/agents.ts` (registered with `ctx.agent.transform`; `update`
-  upserts). They copy the native descriptions and carry **no `system`**.
+  upserts). They copy the native descriptions; unlike Plan/Build, they carry
+  the `<plans-flow>` role baked into `system` (see above).
   `executor` keeps Build's rules (editing open). `planner` keeps Plan's
   **minus the `~/.opencode/plan/*` exception**: only `edit * deny`. The plan
   record is `plans.db`, so there is no markdown to allow. With no allow rule
@@ -142,17 +148,20 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   `enter` again — an endless enter/leave ping-pong. Splicing into
   `event.messages` gives the model the same bytes without leaving a copy the
   core can fight.
-- **The extension is a `<plans-flow>` tail block.** `src/inject.ts` holds the
-  shared contract (save in the same turn, one plan per request, step tracking)
-  plus the per-agent role (`plannerFlow(runAgentName)`, `EXECUTOR_FLOW`);
-  `index.ts` appends it whenever the agent is `planner`/`executor`, in either
-  flow — not gated by `dedicated`. **Dedicated seeds are short on purpose**:
-  execute names only the plan (and the
-  work item), plan/replan names the item, the body and the `plans.save` call;
-  the tail carries the rest. The native flow has no tail and keeps the long
-  prompts (`execute.prompt*`, `work.plan.prompt`, `work.replan.prompt`).
-  It never touches `system` or the reminder, so the clone above stays intact
-  and a planner <-> executor switch only re-prefills the new tail.
+- **The extension is a `<plans-flow>` role in `system`, not a tail block
+  anymore.** `src/inject.ts` still holds the shared contract (save in the same
+  turn, one plan per request, step tracking) plus the per-agent role
+  (`plannerFlow(runAgentName)`, `EXECUTOR_FLOW`) as `plansFlowBlock`, but
+  `src/agents.ts`'s `agentSpecs(flow)` is what consumes it now, baking it into
+  `item.system` for `planner`/`executor` via `registerAgents`. `index.ts` no
+  longer appends it to the tail. **Dedicated seeds are short on purpose**:
+  execute names only the plan (and the work item), plan/replan names the item,
+  the body and the `plans.save` call; the baked-in system carries the rest.
+  The native flow keeps the long prompts (`execute.prompt*`, `work.plan.prompt`,
+  `work.replan.prompt`). A planner <-> executor switch re-prefills nothing
+  extra from this layer (same role shape in both); a flow toggle (`setFlow`)
+  re-registers both agents so the peer agent's name inside `planner`'s role
+  stays accurate.
 - **Saving is the expected behavior, not a permission.** The routing rule says
   it imperatively and spells out that the core Plan-mode reminder about "plan
   files" does not cover `plans.save`/`plans.update` (it means markdown under
@@ -285,7 +294,7 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   (status + blockers, from `getWorkItem`'s `map`) and the instructions to read
   the repository before planning and to declare `touches` in `plans.save`. It is
   per item, so it goes in the seed (a user message), never in the constant
-  `<plans-flow>` tail. Replanning reuses the plan's session; a
+  `<plans-flow>` role (now baked into `system`). Replanning reuses the plan's session; a
   `location not found` (a removed worktree) falls back to a new session in the
   repository, like Execute.
 - **`plans.link`** adopts a saved plan into an item (`workItemID: null`

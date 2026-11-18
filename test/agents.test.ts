@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  agentSpecs,
   AGENTS,
   EXECUTOR_AGENT,
   PLANNER_AGENT,
@@ -58,26 +59,36 @@ describe("registerAgents", () => {
     return { created, api };
   };
 
-  test("upserts both agents as primary, without a system prompt", async () => {
+  test("upserts both agents as primary, with the plans-flow role baked into system", async () => {
     const { created, api } = editor();
-    await registerAgents({ agent: { transform: (fn: (e: unknown) => void) => fn(api) } } as never);
+    await registerAgents({ agent: { transform: (fn: (e: unknown) => void) => fn(api) } } as never, "native");
     expect([...created.keys()]).toEqual(AGENTS.map((agent) => agent.id));
     expect(created.get("planner").mode).toBe("primary");
     expect(created.get("planner").name).toBe("Planner");
     expect(created.get("planner").permissions).toEqual(PLAN_RULES);
-    expect(created.get("planner").system).toBeUndefined();
+    expect(created.get("planner").system).toContain("<plans-flow>");
+    expect(created.get("planner").system).toContain("Role: planner.");
     expect(created.get("executor").name).toBe("Executor");
     expect(created.get("executor").permissions).toEqual(BUILD_RULES);
-    expect(created.get("executor").system).toBeUndefined();
+    expect(created.get("executor").system).toContain("Role: executor.");
+  });
+
+  test("names the peer agent per flow, without re-computing per request", () => {
+    expect(agentSpecs("native").find((a) => a.id === "planner")!.system).toContain(
+      "switch to the Build agent",
+    );
+    expect(agentSpecs("dedicated").find((a) => a.id === "planner")!.system).toContain(
+      "switch to the Executor agent",
+    );
   });
 
   test("a reload neither duplicates nor downgrades permissions", async () => {
     const { created, api } = editor();
     const ctx = { agent: { transform: (fn: (e: unknown) => void) => fn(api) } } as never;
-    await registerAgents(ctx);
+    await registerAgents(ctx, "native");
     // A previous plugin version may have left an extra rule behind.
     created.get("planner").permissions.push({ action: "edit", resource: "*", effect: "allow" });
-    await registerAgents(ctx);
+    await registerAgents(ctx, "native");
     expect(created.get("planner").permissions).toHaveLength(2);
     expect(created.get("planner").permissions).toContainEqual({
       action: "edit",

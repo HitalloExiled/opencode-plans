@@ -1,11 +1,20 @@
 /**
  * The plugin's own agents: Plan and Build, replicated by behavior.
  *
- * Plan and Build carry no `system`. What makes Plan read-only is its permission
- * set plus the reminder the core injects on every request; Build is the same
- * definition with editing allowed. Cloning both — instead of carrying a system
- * prompt of our own — keeps what the model sees identical, which is the only
- * way the dedicated flow can behave like the native one.
+ * What makes Plan read-only is its permission set plus the reminder the core
+ * injects on every request; Build is the same definition with editing
+ * allowed. The permission set mirrors Plan/Build byte for byte.
+ *
+ * The `<plans-flow>` role (`plansFlowBlock` in `inject.ts`) is NOT replayed
+ * per request: it is constant per agent (only the peer agent's name varies
+ * with the flow, and the flow only changes on a rare toggle, not per turn),
+ * so paying its ~500-600 bytes again on every single request is pure waste —
+ * it never contributes to cache busting (it lives in the tail either way),
+ * only to token cost. It is baked into `item.system` instead, which breaks
+ * the previous byte-for-byte parity with native Plan/Build (a deliberate
+ * trade; see notes/decision from 2026-11-18). The dynamic reminder
+ * (`plan-reminder.ts`, reacts to Plan-mode enter/leave) still has to be
+ * spliced per request — there is no per-agent constant for it.
  *
  * One deliberate deviation: the planner drops Plan's `~/.opencode/plan/*`
  * exception. This plugin's plan record lives in `plans.db`, so there is no
@@ -17,6 +26,9 @@
 
 import type { Plugin } from "@opencode/plugin";
 import { Agent } from "@opencode/schema/agent";
+import { plansFlowBlock } from "./inject.js";
+import type { PlanFlow } from "./gui/contract.js";
+import { runAgent } from "./flow-rules.js";
 
 export type AgentPermission = {
   action: string;
@@ -48,6 +60,34 @@ const BUILD_PERMISSIONS: readonly AgentPermission[] = [
   { action: "question", resource: "*", effect: "allow" },
 ];
 
+export type AgentSpecWithSystem = AgentSpec & { system: string };
+
+/**
+ * Builds the two specs for a given flow: the `<plans-flow>` role baked into
+ * `system` (constant for the flow; only the peer agent's name changes between
+ * native and dedicated), computed once per flow instead of once per request.
+ */
+export function agentSpecs(flow: PlanFlow): readonly AgentSpecWithSystem[] {
+  const peer = runAgent(flow);
+  return [
+    {
+      id: "planner",
+      name: "Planner",
+      description: "Read-only agent for exploring the codebase and planning work before implementation.",
+      permissions: PLAN_PERMISSIONS,
+      system: plansFlowBlock("planner", peer)!,
+    },
+    {
+      id: "executor",
+      name: "Executor",
+      description: "The default agent. Executes tools based on configured permissions.",
+      permissions: BUILD_PERMISSIONS,
+      system: plansFlowBlock("executor", peer)!,
+    },
+  ];
+}
+
+// Kept for tests/callers that only need identity/permissions, independent of flow.
 export const PLANNER_AGENT: AgentSpec = {
   id: "planner",
   name: "Planner",
@@ -92,17 +132,19 @@ export function applyPermissions(
   }
 }
 
-/** Registers (upserts) the plugin's agents. Call once from `setup`. */
-export async function registerAgents(ctx: Plugin.Context) {
+/**
+ * Registers (upserts) the plugin's agents. Call once from `setup`, and again
+ * whenever the flow toggles (`setFlow`), so the peer agent named inside the
+ * planner's `system` stays accurate without ever touching it per request.
+ */
+export async function registerAgents(ctx: Plugin.Context, flow: PlanFlow) {
   return ctx.agent.transform((editor) => {
-    for (const spec of AGENTS) {
+    for (const spec of agentSpecs(flow)) {
       editor.update(spec.id, (item) => {
         item.name = Agent.Name.make(spec.name);
         item.description = spec.description;
         item.mode = "primary";
-        // Plan/Build send no system part; anything here would be a byte the
-        // native agent never sends.
-        item.system = undefined;
+        item.system = spec.system;
         applyPermissions(item.permissions, spec.permissions);
       });
     }

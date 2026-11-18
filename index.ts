@@ -19,8 +19,6 @@ import {
   appendTailBlock,
   appendWorkItemsBlock,
   hasCompaction,
-  PLANS_FLOW_OPEN,
-  plansFlowBlock,
   pushRoutingRule,
   renderPlanContext,
   renderWorkItemsContext,
@@ -33,7 +31,7 @@ import { WORK_NAMESPACE, getWorkTool, listWorkTool, saveWorkTool, updateWorkTool
 import { MERGE_NAMESPACE, mergeDoneTool, mergeFailTool, mergeListTool, mergeNextTool } from "./merge.js";
 import { registerAgents } from "./src/agents.js";
 import { getFlow } from "./src/flow.js";
-import { planMessageAgents, runAgent } from "./src/flow-rules.js";
+import { planMessageAgents } from "./src/flow-rules.js";
 import { applyPlanReminder } from "./src/plan-reminder.js";
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
@@ -293,13 +291,14 @@ export function applyContextLayers(
   system: Array<{ type: "text"; text: string }>,
   messages: InjectMessage[],
 ): void {
-  // The flow-block agents (planner/executor) already carry the same contract
-  // in their `<plans-flow>` tail; the system rule would just duplicate it, so
-  // it goes to every other agent (plan, build, subagents) instead.
-  const flowBlock = plansFlowBlock(agent, runAgent(flow));
+  // planner/executor carry the plans-flow role baked into their agent
+  // `system` (agents.ts, registerAgents) — constant per flow, never recomputed
+  // per request, so it stops being paid as fresh tokens on every turn. Every
+  // other agent (plan, build, subagents) gets the routing rule instead.
+  const isFlowAgent = agent === "planner" || agent === "executor";
   // The rule is constant and re-pushed VERBATIM on every request it applies
   // to, so the head of the prompt stays byte-identical.
-  if (!flowBlock) pushRoutingRule(system);
+  if (!isFlowAgent) pushRoutingRule(system);
 
   // The read-only contract replicates Plan mode for the planner, in either
   // flow: the same reminder the core injects before the prompt, reconciled
@@ -313,9 +312,6 @@ export function applyContextLayers(
   // enter/leave ping-pong. Splicing per request gives the model the same
   // bytes without leaving a copy the core can fight.
   if (agent === "planner") applyPlanReminder(messages, agent);
-  // The extension rides the tail too: the Plan/Build clone stays byte
-  // identical, only the new bytes are appended.
-  if (flowBlock) appendTailBlock(messages, flowBlock, PLANS_FLOW_OPEN);
 }
 
 /**
@@ -424,7 +420,7 @@ export default Plugin.define({
         console.error(`[plans] could not emit plan change: ${errorText(error)}`);
       });
     });
-    const agentRegistration = await registerAgents(ctx);
+    const agentRegistration = await registerAgents(ctx, getFlow());
     const registrations = await Promise.all([
       registerTools(ctx),
       registerCommand(ctx),
