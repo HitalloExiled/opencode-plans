@@ -5,7 +5,7 @@ describe("flow -> agents", () => {
   test("native keeps Plan/Build exactly as before the dedicated agents", () => {
     expect(runAgent("native")).toBe("build");
     expect(pauseAgent("native")).toBe("plan");
-    expect(planMessageAgents("native")).toEqual(["plan"]);
+    expect(planMessageAgents("native")).toEqual(["plan", "planner"]);
   });
 
   test("dedicated uses the plugin's own agents", () => {

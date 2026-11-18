@@ -16,7 +16,11 @@ export function pauseAgent(flow: PlanFlow): "plan" | "planner" {
   return flow === "dedicated" ? "planner" : "plan";
 }
 
-/** Agent ids whose messages `/save-plan` accepts. */
-export function planMessageAgents(flow: PlanFlow): readonly string[] {
-  return flow === "dedicated" ? ["plan", "planner"] : ["plan"];
+/**
+ * Agent ids whose messages `/save-plan` accepts. `planner` is captured in
+ * either flow: it is not a flow switch, it is a session that can have a
+ * `planner` agent selected by hand with the switch off.
+ */
+export function planMessageAgents(_flow: PlanFlow): readonly string[] {
+  return ["plan", "planner"];
 }

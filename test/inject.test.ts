@@ -9,7 +9,7 @@ import {
   hasCompaction,
   hasPlanBlock,
   EXECUTOR_FLOW,
-  PLANNER_FLOW,
+  plannerFlow,
   PLANS_FLOW_OPEN,
   PLANS_ROUTING_RULE,
   plansFlowBlock,
@@ -105,26 +105,38 @@ describe("routing rule", () => {
 });
 
 describe("plans-flow extension", () => {
-  test("carries the shared contract plus the role", () => {
-    const planner = plansFlowBlock("planner")!;
-    expect(planner.startsWith(PLANS_FLOW_OPEN)).toBe(true);
-    expect(planner.endsWith("</plans-flow>")).toBe(true);
-    expect(planner).toContain("call plans.save in the same turn");
-    expect(planner).toContain("Save at most one plan per request");
-    expect(planner).toContain("do not call plans.get just to confirm");
-    expect(planner).toContain("plans.update");
-    expect(planner).toContain(PLANNER_FLOW);
-    expect(planner).not.toContain(EXECUTOR_FLOW);
+  test("carries the shared contract plus the role, in either flow", () => {
+    for (const runAgentName of ["build", "executor"] as const) {
+      const planner = plansFlowBlock("planner", runAgentName)!;
+      expect(planner.startsWith(PLANS_FLOW_OPEN)).toBe(true);
+      expect(planner.endsWith("</plans-flow>")).toBe(true);
+      expect(planner).toContain("call plans.save in the same turn");
+      expect(planner).toContain("Save at most one plan per request");
+      expect(planner).toContain("do not call plans.get just to confirm");
+      expect(planner).toContain("plans.update");
+      expect(planner).toContain(plannerFlow(runAgentName));
+      expect(planner).not.toContain(EXECUTOR_FLOW);
+    }
+  });
+
+  test("the planner names the peer agent per flow", () => {
+    expect(plannerFlow("build")).toContain("switch to the Build agent");
+    expect(plannerFlow("build")).not.toContain("switch to the Executor agent");
+    expect(plannerFlow("executor")).toContain("switch to the Executor agent");
+    expect(plannerFlow("executor")).not.toContain("switch to the Build agent");
   });
 
   test("the planner keeps Plan mode and the executor reads the plan", () => {
-    expect(PLANNER_FLOW).toContain("switch to the Executor agent");
+    const planner = plannerFlow("executor");
     // The clone drops Plan's plan-directory exception, so the flow must say
     // that every edit fails instead of inviting a markdown write.
-    expect(PLANNER_FLOW).toContain("File edits are denied");
-    expect(PLANNER_FLOW).toContain("~/.opencode/plan");
-    expect(PLANNER_FLOW).toContain("plans.db");
-    expect(plansFlowBlock("planner")).not.toContain("are scratch");
+    expect(planner).toContain("File edits are denied");
+    expect(planner).toContain("~/.opencode/plan");
+    expect(planner).toContain("plans.db");
+    // With no routing rule in the planner's system, this line is the only
+    // place disambiguating plans.save from the core's "plan files" reminder.
+    expect(planner).toContain('The Plan-mode reminder about "plan files" does not cover plans.save');
+    expect(plansFlowBlock("planner", "executor")).not.toContain("are scratch");
     expect(EXECUTOR_FLOW).toContain("plans.get");
     expect(EXECUTOR_FLOW).toContain("doing");
     expect(EXECUTOR_FLOW).toContain("done");
@@ -136,15 +148,17 @@ describe("plans-flow extension", () => {
     expect(EXECUTOR_FLOW).toContain("do not mark the work item done");
   });
 
-  test("native agents and subagents get no block", () => {
-    expect(plansFlowBlock("plan")).toBeUndefined();
-    expect(plansFlowBlock("build")).toBeUndefined();
-    expect(plansFlowBlock(undefined)).toBeUndefined();
+  test("native agents and subagents get no block, in either flow", () => {
+    for (const runAgentName of ["build", "executor"] as const) {
+      expect(plansFlowBlock("plan", runAgentName)).toBeUndefined();
+      expect(plansFlowBlock("build", runAgentName)).toBeUndefined();
+      expect(plansFlowBlock(undefined, runAgentName)).toBeUndefined();
+    }
   });
 
   test("rides the tail and coexists with the plan context", () => {
     const messages = [user("a")];
-    expect(appendTailBlock(messages, plansFlowBlock("planner")!, PLANS_FLOW_OPEN)).toBe(true);
+    expect(appendTailBlock(messages, plansFlowBlock("planner", "build")!, PLANS_FLOW_OPEN)).toBe(true);
     // A second layer can still append its own block.
     expect(appendTailBlock(messages, BLOCK)).toBe(true);
     expect(messages[0]!.content.at(-1)?.text).toBe(BLOCK);
@@ -153,8 +167,8 @@ describe("plans-flow extension", () => {
 
   test("is idempotent per tag", () => {
     const messages = [user("a")];
-    expect(appendTailBlock(messages, plansFlowBlock("executor")!, PLANS_FLOW_OPEN)).toBe(true);
-    expect(appendTailBlock(messages, plansFlowBlock("executor")!, PLANS_FLOW_OPEN)).toBe(false);
+    expect(appendTailBlock(messages, plansFlowBlock("executor", "executor")!, PLANS_FLOW_OPEN)).toBe(true);
+    expect(appendTailBlock(messages, plansFlowBlock("executor", "executor")!, PLANS_FLOW_OPEN)).toBe(false);
     expect(messages[0]!.content).toHaveLength(2);
   });
 });

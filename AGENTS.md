@@ -72,10 +72,16 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   native agents never send, so the dedicated flow could never match. The
   system is the FIRST system part (`baseTranscript`); keep it identical and put
   everything flow-specific in the request tail.
-- **The routing rule goes to every agent, in both flows.** It is constant and
-  re-pushed VERBATIM on every request — never conditionally, never only on the
-  first one: a shrinking head forces a full re-prefill of the conversation.
-  The dedicated agents get it exactly like the native ones.
+- **The routing rule goes to every agent that does not carry a `<plans-flow>`
+  tail.** `planner`/`executor` already carry the same contract in their tail
+  block, so the system rule would just duplicate it; every other agent (`plan`,
+  `build`, subagents) gets it. It is constant and re-pushed VERBATIM on every
+  request it applies to — never only on the first one: a shrinking head forces
+  a full re-prefill of the conversation. Whether an agent has the rule or the
+  tail depends only on the agent id, never on the flow switch; it does change
+  once, the instant an agent's `<plans-flow>` status changes (e.g. a session
+  switches from `plan` to `planner`), which already re-prefills anyway because
+  the agent and the tail changed in the same request.
 - **Injection is cache-first, in two layers.** The routing rule is constant and
   re-pushed VERBATIM on every request — never conditionally, never only on the
   first one: a shrinking head forces a full re-prefill of the conversation
@@ -87,14 +93,21 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   load-bearing sentence first; parameter descriptions stay ≤6 words.
   `test/inject.test.ts` enforces all three (`plans.save` keeps the Plan-mode
   permission, `plans.update` the call shape).
-- **Two agent flows, toggled by the "Experimental agents flow" switch in the GUI and stored server-side.** `flow.json`
-  next to `plans.db` (RPC `getFlow`/`setFlow`, cached in memory) holds
-  `native` (default) or `dedicated`. `native` reproduces the pre-agents
-  behavior exactly (commit fb70c25): `/save-plan` capturing only `plan`,
-  execute -> `build`, pause -> `plan`. `dedicated` uses our agents (execute ->
-  `executor`, pause -> `planner`, `/save-plan` also accepting `planner`) plus
-  the reminder and the `<plans-flow>` tail. Never key behavior off the agent
-  name alone; read the flow.
+- **Two agent flows, toggled by the "Experimental agents flow" switch in the GUI and stored server-side — and that switch
+  decides only which agent ids Execute/Pause use, nothing else.** `flow.json`
+  next to `plans.db` (RPC `getFlow`/`setFlow`, cached in memory) holds `native`
+  (default) or `dedicated`. `native` maps execute -> `build`, pause -> `plan`;
+  `dedicated` maps execute -> `executor`, pause -> `planner`. `/save-plan`
+  accepts `plan` and `planner` in both flows — it is not an agent switch.
+  The read-only contract (reminder + `<plans-flow>` tail, see below) is a
+  property of the **agent id**, not the flow: a `planner` selected by hand
+  while the switch is off still gets the same bytes as a dedicated-flow
+  planner. The flow is read only to pick the *name* of the peer agent inside
+  the planner's role text (Build in native, Executor in dedicated;
+  `runAgent(flow)`). This used to be gated by flow and caused an incident: a
+  manually-selected `planner` with the switch off ran with no reminder, no
+  `<plans-flow>` block and no shell guardrail, and implemented+committed+pushed
+  code — see `applyContextLayers` in `index.ts` and `test/context-e2e.test.ts`.
 - **`planner` is Plan and `executor` is Build, replicated by behavior.** Both
   live in `src/agents.ts` (registered with `ctx.agent.transform`; `update`
   upserts). They copy the native descriptions and carry **no `system`**.
@@ -123,8 +136,10 @@ dist/gui-experimental.cjs  BUILT GUI artifact (gitignored)
   core can fight.
 - **The extension is a `<plans-flow>` tail block.** `src/inject.ts` holds the
   shared contract (save in the same turn, one plan per request, step tracking)
-  plus the per-agent role; `index.ts` appends it in the dedicated flow only.
-  **Dedicated seeds are short on purpose**: execute names only the plan (and the
+  plus the per-agent role (`plannerFlow(runAgentName)`, `EXECUTOR_FLOW`);
+  `index.ts` appends it whenever the agent is `planner`/`executor`, in either
+  flow — not gated by `dedicated`. **Dedicated seeds are short on purpose**:
+  execute names only the plan (and the
   work item), plan/replan names the item, the body and the `plans.save` call;
   the tail carries the rest. The native flow has no tail and keeps the long
   prompts (`execute.prompt*`, `work.plan.prompt`, `work.replan.prompt`).

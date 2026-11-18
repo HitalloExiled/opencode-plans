@@ -33,7 +33,7 @@ import { WORK_NAMESPACE, getWorkTool, listWorkTool, saveWorkTool, updateWorkTool
 import { MERGE_NAMESPACE, mergeDoneTool, mergeFailTool, mergeListTool, mergeNextTool } from "./merge.js";
 import { registerAgents } from "./src/agents.js";
 import { getFlow } from "./src/flow.js";
-import { planMessageAgents } from "./src/flow-rules.js";
+import { planMessageAgents, runAgent } from "./src/flow-rules.js";
 import { applyPlanReminder } from "./src/plan-reminder.js";
 import { PlansRpc } from "./src/gui/contract.js";
 import { notificationLocale, tn, type NotificationLocale } from "./src/notifications.js";
@@ -252,12 +252,12 @@ function isPermissionBlocked(error: unknown): boolean {
  * With `edit * deny` and no allow rule the runtime hides edit/write/patch from
  * the planner's catalog (`whollyDisabled`), so no call reaches this hook today;
  * it fires again if a path is ever re-allowed. The message is flow-accurate:
- * "outside the Plan directory" would be false for every path. Dedicated flow
- * only; the core already handles the native Plan.
+ * "outside the Plan directory" would be false for every path. Applies to the
+ * `planner` agent in either flow: the read-only contract is the agent's, not
+ * the switch's. The core already handles the native Plan.
  */
 async function registerPlanToolHook(ctx: Ctx) {
   return ctx.tool.hook("execute.after", (event) => {
-    if (getFlow() !== "dedicated") return;
     if (String(event.agent) !== "planner") return;
     if (event.status !== "error") return;
     if (!PLAN_EDIT_TOOLS.has(event.tool)) return;
@@ -282,6 +282,43 @@ function workItemsText(store: Store, directory: string): string | undefined {
 }
 
 /**
+ * The system/reminder/flow-block layer, pure (no DB, no `ctx`): given the
+ * agent and the flow, decides the routing rule, the Plan reminder and the
+ * `<plans-flow>` tail. Kept apart from `onContext` so the agent x flow matrix
+ * is unit-testable without a database — this is the layer the incident broke.
+ */
+export function applyContextLayers(
+  agent: string | undefined,
+  flow: ReturnType<typeof getFlow>,
+  system: Array<{ type: "text"; text: string }>,
+  messages: InjectMessage[],
+): void {
+  // The flow-block agents (planner/executor) already carry the same contract
+  // in their `<plans-flow>` tail; the system rule would just duplicate it, so
+  // it goes to every other agent (plan, build, subagents) instead.
+  const flowBlock = plansFlowBlock(agent, runAgent(flow));
+  // The rule is constant and re-pushed VERBATIM on every request it applies
+  // to, so the head of the prompt stays byte-identical.
+  if (!flowBlock) pushRoutingRule(system);
+
+  // The read-only contract replicates Plan mode for the planner, in either
+  // flow: the same reminder the core injects before the prompt, reconciled
+  // per request so a compaction or revert cannot strip it.
+  //
+  // It is deliberately NOT persisted as a synthetic message. The text is
+  // byte-identical to the core's, so a persisted copy is indistinguishable
+  // from Plan's own reminder; the core's reconciler would then treat it as
+  // stale for any agent other than `plan` and append `leave` on every
+  // request, which our hook would answer with `enter` again — an endless
+  // enter/leave ping-pong. Splicing per request gives the model the same
+  // bytes without leaving a copy the core can fight.
+  if (agent === "planner") applyPlanReminder(messages, agent);
+  // The extension rides the tail too: the Plan/Build clone stays byte
+  // identical, only the new bytes are appended.
+  if (flowBlock) appendTailBlock(messages, flowBlock, PLANS_FLOW_OPEN);
+}
+
+/**
  * Two layers, one cache rule: the routing rule is constant and re-pushed on
  * every request, so the head of the prompt stays byte-identical; the plan
  * block is dynamic, so it only goes to the tail after a compaction, when the
@@ -289,11 +326,8 @@ function workItemsText(store: Store, directory: string): string | undefined {
  */
 async function onContext(ctx: Ctx, event: SessionContext) {
   const agent = String(event.agent);
-  const dedicated = getFlow() === "dedicated";
-  // Outside the try/catch: a broken database must not drop the rule. The rule
-  // is constant and goes to every agent, exactly like the native flow: the
-  // planner/executor clone Plan/Build, so their system must match too.
-  pushRoutingRule(event.system);
+  // Outside the try/catch: a broken database must not drop the rule.
+  applyContextLayers(agent, getFlow(), event.system, event.messages as InjectMessage[]);
 
   // The backlog list is dynamic, so it rides the tail, never the system. Every
   // planning agent (the native Plan included) gets it each turn; an executor
@@ -312,24 +346,6 @@ async function onContext(ctx: Ctx, event: SessionContext) {
   try {
     const messages = event.messages as InjectMessage[];
     const last = messages.at(-1);
-    // The dedicated flow replicates Plan mode for the planner: the same
-    // reminder the core injects before the prompt, reconciled per request so a
-    // compaction or revert cannot strip it.
-    //
-    // It is deliberately NOT persisted as a synthetic message. The text is
-    // byte-identical to the core's, so a persisted copy is indistinguishable
-    // from Plan's own reminder; the core's reconciler would then treat it as
-    // stale for any agent other than `plan` and append `leave` on every
-    // request, which our hook would answer with `enter` again — an endless
-    // enter/leave ping-pong. Splicing per request gives the model the same
-    // bytes without leaving a copy the core can fight.
-    if (dedicated) {
-      applyPlanReminder(messages, agent);
-      // The extension rides the tail too: the Plan/Build clone stays byte
-      // identical, only the new bytes are appended.
-      const flowBlock = plansFlowBlock(agent);
-      if (flowBlock) appendTailBlock(messages, flowBlock, PLANS_FLOW_OPEN);
-    }
     const structural = hasCompaction(messages);
     const flagged = compactedSessions.has(String(event.sessionID));
     // The compaction hook fires for the summarization request itself; that

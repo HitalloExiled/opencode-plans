@@ -56,12 +56,23 @@ const PLANS_FLOW_COMMON = [
   '- Track progress with plans.update (stepID + stepStatus: "doing" then "done"); never rewrite the body to change status.',
 ];
 
-export const PLANNER_FLOW = [
-  "Role: planner.",
-  "- File edits are denied in this flow for every path, including ~/.opencode/plan: edit, write and patch fail. The plan record is plans.db.",
-  "- The Plan-mode reminder above still governs: implement nothing and tell the user to switch to the Executor agent (or to run the plan from the Plans panel).",
-  "- When the user states requirements, keep them in the plan under construction: add steps or amend it.",
-].join("\n");
+/**
+ * The planner's role line names the agent that picks up implementation, which
+ * depends on the flow: Build in native, Executor in dedicated. It also
+ * replaces the routing rule's "plan files" disambiguation: with no routing
+ * rule in the planner's system (see `plansFlowBlock`), this is the only place
+ * telling the model the core's Plan-mode reminder does not cover plans.save.
+ */
+export function plannerFlow(runAgentName: "build" | "executor"): string {
+  const peer = runAgentName === "executor" ? "Executor" : "Build";
+  return [
+    "Role: planner.",
+    "- File edits are denied in this flow for every path, including ~/.opencode/plan: edit, write and patch fail. The plan record is plans.db.",
+    `- The Plan-mode reminder above still governs: implement nothing and tell the user to switch to the ${peer} agent (or to run the plan from the Plans panel).`,
+    '- The Plan-mode reminder about "plan files" does not cover plans.save or plans.update: it means markdown files under ~/.opencode/plan, while these tools write only plans.db.',
+    "- When the user states requirements, keep them in the plan under construction: add steps or amend it.",
+  ].join("\n");
+}
 
 export const EXECUTOR_FLOW = [
   "Role: executor.",
@@ -72,9 +83,18 @@ export const EXECUTOR_FLOW = [
   "- When every step is done and nothing is blocked, do not mark the work item done: summarize the result and say it is ready for acceptance. The item stays doing; done and dropped are the user's call (or the planner's, after review).",
 ].join("\n");
 
-/** The flow block for the dedicated agents, wrapped in its own tag. */
-export function plansFlowBlock(agent: string | undefined): string | undefined {
-  const role = agent === "planner" ? PLANNER_FLOW : agent === "executor" ? EXECUTOR_FLOW : undefined;
+/**
+ * The flow block for `planner`/`executor`, in any flow setting. It is not
+ * limited to the dedicated flow: the read-only contract belongs to the
+ * agent, not to the switch, so a `planner` chosen by hand while the flow is
+ * `native` must get the same bytes a dedicated-flow planner gets. `flow` only
+ * names the peer agent in the planner's role line.
+ */
+export function plansFlowBlock(
+  agent: string | undefined,
+  runAgentName: "build" | "executor",
+): string | undefined {
+  const role = agent === "planner" ? plannerFlow(runAgentName) : agent === "executor" ? EXECUTOR_FLOW : undefined;
   if (!role) return undefined;
   return [PLANS_FLOW_OPEN, ...PLANS_FLOW_COMMON, role, "</plans-flow>"].join("\n");
 }
