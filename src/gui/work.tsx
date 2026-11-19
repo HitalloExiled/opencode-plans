@@ -34,6 +34,7 @@ import {
 } from "./contract";
 import { useT } from "./i18n";
 import { executionFor, planTarget } from "./execution";
+import { errorMessage } from "./errors";
 import { filterWorkGroups } from "../work-filter";
 import { isTerminalWorkStatus } from "../work-graph";
 import { planProgressOf } from "../work-progress";
@@ -195,7 +196,7 @@ export function WorkBody(props: {
       })
       .catch((cause: unknown) => {
         if (current !== generation) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(errorMessage(cause));
         setLoading(false);
       });
   });
@@ -251,7 +252,7 @@ export function WorkBody(props: {
       })
       .catch((cause: unknown) => {
         if (current !== detailGeneration) return;
-        setDetailError(cause instanceof Error ? cause.message : String(cause));
+        setDetailError(errorMessage(cause));
         setDetailLoading(false);
       });
   });
@@ -312,7 +313,7 @@ export function WorkBody(props: {
       .server.client.rpc(PlansRpc)
       .runPreflight({ initiativeID: initiative.id, directory: directoryOf(initiative) })
       .then((value) => setPreflight(value as PreflightView))
-      .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setRunError(errorMessage(cause)))
       .finally(() => setPreflightBusy(false));
   };
 
@@ -344,7 +345,7 @@ export function WorkBody(props: {
         }
         ctx.toast.show({ title: t("work.run.started"), variant: "success" });
       })
-      .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setRunError(errorMessage(cause)))
       .finally(() => setRunBusy(false));
   };
 
@@ -363,7 +364,7 @@ export function WorkBody(props: {
         }
         loadRun(initiative.id);
       })
-      .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setRunError(errorMessage(cause)))
       .finally(() => setRunBusy(false));
   };
 
@@ -382,7 +383,7 @@ export function WorkBody(props: {
         }
         loadRun(initiative.id);
       })
-      .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setRunError(errorMessage(cause)))
       .finally(() => setRunBusy(false));
   };
 
@@ -403,7 +404,7 @@ export function WorkBody(props: {
           .runGet({ runID })
           .then((value) => setRun(value as RunView | null));
       })
-      .catch((cause: unknown) => setRunError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setRunError(errorMessage(cause)))
       .finally(() => setRunBusy(false));
   };
 
@@ -478,7 +479,7 @@ export function WorkBody(props: {
         }
         setReload((n) => n + 1);
       })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setActionError(errorMessage(cause)))
       .finally(() => {
         setPlacing(false);
         setDropColumn(null);
@@ -551,7 +552,7 @@ export function WorkBody(props: {
         setDetailReload((n) => n + 1);
         setReload((n) => n + 1);
       })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setActionError(errorMessage(cause)))
       .finally(() => setSaving(false));
   };
 
@@ -562,7 +563,7 @@ export function WorkBody(props: {
     } catch (cause) {
       ctx.toast.show({
         title: t("toast.itemIdCopyError"),
-        description: cause instanceof Error ? cause.message : String(cause),
+        description: errorMessage(cause),
         variant: "error",
       });
     }
@@ -592,7 +593,7 @@ export function WorkBody(props: {
         setReload((n) => n + 1);
         ctx.toast.show({ title: t("work.item.deleted"), variant: "success" });
       })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setActionError(errorMessage(cause)))
       .finally(() => setDeleting(false));
   };
 
@@ -677,7 +678,7 @@ export function WorkBody(props: {
             ctx.toast.show({ title: t("work.run.settingsSaved"), variant: "success" });
           }),
       )
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setActionError(errorMessage(cause)))
       .finally(() => setInitiativeSaving(false));
   };
 
@@ -707,7 +708,7 @@ export function WorkBody(props: {
             ctx.toast.show({ title: t("work.initiative.deleted"), variant: "success" });
             props.onInitiativeDeleted(initiative.id);
           })
-          .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+          .catch((cause: unknown) => setActionError(errorMessage(cause)))
           .finally(() => setInitiativeDeleting(false));
       });
   };
@@ -736,7 +737,7 @@ export function WorkBody(props: {
         }
         setDetailReload((n) => n + 1);
       })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setActionError(errorMessage(cause)))
       .finally(() => setDepSaving(false));
   };
 
@@ -755,7 +756,7 @@ export function WorkBody(props: {
         }
         setDetailReload((n) => n + 1);
       })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setActionError(errorMessage(cause)))
       .finally(() => setDepSaving(false));
   };
 
@@ -809,7 +810,7 @@ export function WorkBody(props: {
       setPlanning(true);
       void planWorkItem({ ctx, target: props.target(), detail: current, t })
         .then(() => closePlansOverlay())
-        .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+        .catch((cause: unknown) => setActionError(errorMessage(cause)))
         .finally(() => setPlanning(false));
       return;
     }
@@ -837,7 +838,7 @@ export function WorkBody(props: {
         if (!current) throw new Error(t("work.plan.error"));
         startPlanning(current as WorkItemDetail);
       })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)));
+      .catch((cause: unknown) => setActionError(errorMessage(cause)));
   };
 
   /**
@@ -856,7 +857,7 @@ export function WorkBody(props: {
       .then((plan) => {
         if (plan) void toggleRun(plan as Plan);
       })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)));
+      .catch((cause: unknown) => setActionError(errorMessage(cause)));
   };
 
   const openPlan = (plan: PlanSummary) => {
@@ -889,7 +890,7 @@ export function WorkBody(props: {
         setDetailReload((n) => n + 1);
         setReload((n) => n + 1);
       })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setActionError(errorMessage(cause)))
       .finally(() => setParentSaving(false));
   };
 
@@ -920,7 +921,7 @@ export function WorkBody(props: {
         setDetailReload((n) => n + 1);
         setReload((n) => n + 1);
       })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setActionError(errorMessage(cause)))
       .finally(() => setMoving(false));
   };
 
@@ -953,7 +954,7 @@ export function WorkBody(props: {
         setDetailReload((n) => n + 1);
         setReload((n) => n + 1);
       })
-      .catch((cause: unknown) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setActionError(errorMessage(cause)))
       .finally(() => setStatusSaving(false));
   };
 

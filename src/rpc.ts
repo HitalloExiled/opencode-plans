@@ -781,7 +781,10 @@ export function createRpcHandlers(ctx: Ctx): RpcHandlers<typeof PlansRpc> {
         planID: plan.id,
         sessionID: input.sessionID ?? plan.session_id,
       });
-      if (!result.ok) return { ok: false, error: result.error, blocked: result.blocked };
+      // `blocked` is optional in the schema: an explicit `undefined` value
+      // fails Effect Schema's JSON encoding ("Expected JSON value"), so the
+      // key must be omitted rather than set to undefined when it is absent.
+      if (!result.ok) return result.blocked ? { ok: false, error: result.error, blocked: true } : { ok: false, error: result.error };
       // The item is being worked on from now on: it stays doing until the merge
       // closes it. A plan without an item never reaches this point.
       const moved = markWorkItemDoing(store.db, itemID);

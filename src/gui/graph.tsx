@@ -11,6 +11,7 @@ import type { ServerRef } from "@opencode/plugin/gui";
 import { usePlugin } from "@opencode/plugin/gui";
 import { EmptyState, ErrorBanner, LoadingRow, SHARED_CSS, StatusChip, type ChipTone } from "opencode-shared/gui";
 import { PlansRpc, type WorkGraph, type WorkGraphEdge } from "./contract";
+import { errorMessage } from "./errors";
 import { useT } from "./i18n";
 import {
   GRAPH_GAP_X,
@@ -187,7 +188,7 @@ export function WorkGraph(props: {
           .getWorkGraph({ initiativeID: props.initiativeID! })
           .then((value) => setGraph(value as WorkGraph));
       })
-      .catch((cause: unknown) => fail(t("work.graph.addError"), cause instanceof Error ? cause.message : String(cause)));
+      .catch((cause: unknown) => fail(t("work.graph.addError"), errorMessage(cause)));
   };
 
   const startLink = (event: PointerEvent, nodeID: string) => {
@@ -234,7 +235,7 @@ export function WorkGraph(props: {
           .then((value) => setGraph(value as WorkGraph));
       })
       .catch((cause: unknown) =>
-        fail(t("work.graph.removeError"), cause instanceof Error ? cause.message : String(cause)),
+        fail(t("work.graph.removeError"), errorMessage(cause)),
       );
   };
 

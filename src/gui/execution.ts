@@ -14,6 +14,7 @@ import { Schema } from "effect";
 import type { Context, MountedSession, Persisted, ServerRef } from "@opencode/plugin/gui";
 import { PlansRpc, type Plan } from "./contract";
 import { pauseAgent } from "../flow-rules.js";
+import { errorMessage } from "./errors";
 import { runPlan, type ExecutionTarget, type RunPlanResult, type Translate } from "./execute";
 import {
   EXECUTION_INITIAL,
@@ -91,9 +92,7 @@ export function executionFor(ctx: Context, target: ExecutionTarget): ExecutionHa
     const notify = (title: string, variant: "success" | "error", cause?: unknown): void => {
       ctx.toast.show({
         title,
-        ...(cause === undefined
-          ? {}
-          : { description: cause instanceof Error ? cause.message : String(cause) }),
+        ...(cause === undefined ? {} : { description: errorMessage(cause) }),
         variant,
       });
     };

@@ -14,6 +14,7 @@ import { SHARED_CSS, MultiSelect, ScrollNav, createScrollNav, EmptyState, ErrorB
 import { PlansRpc } from "./contract";
 import { executionFor, planTarget, sessionTarget } from "./execution";
 import type { Plan, PlanFlow, PlanStatus, PlanStep, StepStatus, WorkItemDetail } from "./contract";
+import { errorMessage } from "./errors";
 import { useT } from "./i18n";
 import { openPlansOverlay, requestWorkItem } from "./overlay-state";
 import { openSessionTab } from "./session-open";
@@ -505,7 +506,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
   };
 
   const showError = (title: string, cause: unknown) => {
-    const message = cause instanceof Error ? cause.message : String(cause);
+    const message = errorMessage(cause);
     setError(message);
     ctx.toast.show({ title, description: message, variant: "error" });
   };
@@ -623,7 +624,7 @@ export function PlansBody(props: { target: () => PlansTarget }) {
         variant: "success",
       });
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = errorMessage(cause);
       setEditorError(message);
       showError(editing ? t("toast.updateError") : t("toast.createError"), cause);
     } finally {

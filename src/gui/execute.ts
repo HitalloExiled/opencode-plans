@@ -10,6 +10,7 @@
 
 import type { Context, MountedSession } from "@opencode/plugin/gui";
 import { PlansRpc, type Plan } from "./contract";
+import { errorMessage, toError } from "./errors";
 import { runAgent } from "../flow-rules.js";
 
 /** The translation function `useT()` returns; the panel and the setup share it. */
@@ -71,8 +72,12 @@ export async function runPlan(input: {
   // The flow setting picks the agent (one tested mapping, `runAgent`). The
   // dedicated agents get the contract from the <plans-flow> tail, so the seed
   // only names the plan (and the item); the native flow has no tail and keeps
-  // the full prompt.
-  const flow = await target.client.rpc(PlansRpc).getFlow({});
+  // the full prompt. A transient RPC failure (e.g. right after a plugin
+  // hot-reload) must not abort the execution: "native" is the default flow.
+  const flow = await target.client
+    .rpc(PlansRpc)
+    .getFlow({})
+    .catch(() => "native" as const);
   const short = flow === "dedicated";
   const seed = detail
     ? t(
@@ -124,12 +129,14 @@ export async function runPlan(input: {
   try {
     await startIn(sessionID);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     // The plan may have been written in a worktree that no longer exists (a
     // finished run). Give it a live session in the directory beginWork chose —
     // or the plan's own project, when even that call failed — and retry once.
     const directory = (begun?.ok ? begun.directory : undefined) ?? current.projectDirectory;
-    if (!/location not found/i.test(message) || !directory) throw error;
+    // `error` may be a plain RPC error object (not an `Error`); normalize it
+    // before it reaches a toast, so a caller never sees "[object Object]".
+    if (!/location not found/i.test(message) || !directory) throw toError(error);
     const recovered = await target.client.session.create({
       agent: runAgent(flow),
       title: t("execute.worktreeTitle", current.title),
